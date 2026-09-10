@@ -1,0 +1,148 @@
+/*
+ * Kaizen BMS marketing-site design system.
+ * Scoped entirely under the .kbms-site wrapper applied in this route
+ * group's layout — never touches globals.css so it cannot leak into
+ * /hospital-management, /placement-services, or any other route.
+ */
+
+.kbms-site {
+  --kbms-bg: #FAFAF7;
+  --kbms-ink: #080808;
+  --kbms-ink-soft: #555555;
+  --kbms-line: #D8D8D3;
+  --kbms-accent: #08DCDC;
+  --kbms-accent-2: #6E5BFF;
+  --kbms-surface: #F3F3EF;
+  --kbms-hover: #FFFFFF;
+  --kbms-track: #EDEDE7;
+
+  background: var(--kbms-bg);
+  color: var(--kbms-ink);
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+/* Dark mode: an explicit toggle choice always wins (data-theme). With no
+   choice made yet, fall back to the OS/browser preference. Both paths
+   redefine the same tokens so every component that already reads them
+   (bg-(--kbms-bg), text-(--kbms-ink), etc.) themes for free — the few
+   permanently-dark editorial blocks (CTA, the tech flow panel, the
+   footer) are deliberately left on their own literal near-black and are
+   untouched by either mode, by design. */
+.kbms-site[data-theme="dark"] {
+  --kbms-bg: #121212;
+  --kbms-ink: #F5F5F2;
+  --kbms-ink-soft: #A3A3A0;
+  --kbms-line: #2E2E2B;
+  --kbms-surface: #191917;
+  --kbms-hover: #1C1C1A;
+  --kbms-track: #232321;
+}
+
+@media (prefers-color-scheme: dark) {
+  .kbms-site:not([data-theme="light"]):not([data-theme="dark"]) {
+    --kbms-bg: #121212;
+    --kbms-ink: #F5F5F2;
+    --kbms-ink-soft: #A3A3A0;
+    --kbms-line: #2E2E2B;
+    --kbms-surface: #191917;
+    --kbms-hover: #1C1C1A;
+    --kbms-track: #232321;
+  }
+}
+
+.kbms-site .font-display {
+  font-family: var(--font-kbms-serif), "Playfair Display", Georgia, serif;
+}
+
+.kbms-site .font-body {
+  font-family: var(--font-kbms-sans), "Inter", Helvetica, Arial, sans-serif;
+}
+
+.kbms-site ::selection {
+  background: var(--kbms-accent);
+  color: var(--kbms-ink);
+}
+
+/* ---------- motion system ---------- */
+
+@keyframes kbms-float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -14px, 0) scale(1.015); }
+}
+.kbms-float {
+  animation: kbms-float 14s ease-in-out infinite;
+}
+
+@keyframes kbms-morph {
+  0%, 100% {
+    d: path("M431,320Q420,440,300,462Q180,484,110,390Q40,296,104,196Q168,96,290,92Q412,88,452,204Q492,320,431,320Z");
+  }
+  50% {
+    d: path("M420,300Q430,420,310,450Q190,480,120,380Q50,280,120,190Q190,100,300,110Q410,120,440,210Q470,300,420,300Z");
+  }
+}
+.kbms-morph {
+  animation: kbms-morph 18s ease-in-out infinite;
+}
+
+@keyframes kbms-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.kbms-pulse {
+  animation: kbms-pulse 3.4s ease-in-out infinite;
+}
+
+@keyframes kbms-drift {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.kbms-drift {
+  animation: kbms-drift 40s linear infinite;
+}
+
+.kbms-site .kbms-num-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- buttons ---------- */
+
+/* Every clickable control gets an explicit pointer cursor — browsers only
+   default <a> to one; <button> defaults to `cursor: default`. */
+.kbms-site button,
+.kbms-site [role="button"],
+.kbms-site a {
+  cursor: pointer;
+}
+
+/* Glass surface for buttons sitting on the normal (theme-aware) page
+   background — a translucent, blurred ink tint rather than a flat fill.
+   Kept restrained: one blur pass, a hairline border, a soft shadow. */
+.kbms-glass {
+  background: color-mix(in srgb, var(--kbms-ink) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--kbms-bg) 14%, transparent);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+}
+
+/* Light-tinted counterpart — for surfaces that keep dark text/icons on a
+   pale glass (the floating theme toggle), rather than the ink-tinted
+   glass above (which pairs with light text/icons). */
+.kbms-glass-light {
+  background: color-mix(in srgb, var(--kbms-bg) 80%, transparent);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--kbms-ink) 10%, transparent);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+}
+
+/* Same idea, inverted — for buttons on the site's permanently-dark
+   editorial blocks (the final CTA), which don't flip with the theme. */
+.kbms-glass-invert {
+  background: rgba(250, 250, 247, 0.14);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(250, 250, 247, 0.28);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
