@@ -155,7 +155,14 @@ export default function Header() {
           )}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          {/* Hard nav on purpose: /login is a different route group + layout. */}
+          <a
+            href="/login"
+            className="font-body hidden text-sm text-(--kbms-ink)/80 transition-colors hover:text-(--kbms-ink) lg:inline"
+          >
+            Log in
+          </a>
           <a
             href={withHome("#contact")}
             className="kbms-glass group hidden items-center gap-2 px-5 py-2 font-body text-sm font-medium text-(--kbms-bg) transition-colors hover:bg-[#08DCDC] hover:text-(--kbms-ink) lg:inline-flex"
@@ -305,6 +312,20 @@ export default function Header() {
                 className="kbms-glass mt-6 inline-flex w-fit items-center gap-2 px-6 py-3 font-body text-lg font-medium text-(--kbms-bg) transition-colors hover:bg-[#08DCDC] hover:text-(--kbms-ink)"
               >
                 Book a Consultation →
+              </motion.a>
+              <motion.a
+                href="/login"
+                onClick={() => setMenuOpen(false)}
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  delay: 0.06 * (NAV_LINKS.length + 1),
+                  duration: 0.5,
+                  ease: "easeOut",
+                }}
+                className="font-body mt-4 w-fit text-base text-(--kbms-ink-soft) transition-colors hover:text-(--kbms-ink)"
+              >
+                Staff log in →
               </motion.a>
             </nav>
           </motion.div>

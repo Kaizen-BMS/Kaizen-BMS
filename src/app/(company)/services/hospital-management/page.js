@@ -91,7 +91,8 @@ const SERVICES = [
       "Lab, pharmacy & accounts",
       "Attendance & payroll system",
     ],
-    ctaLabel: "View System",
+    ctaLabel: "Open Hospital App",
+    ctaHref: "/login",
   },
   {
     title: "Placement Services",
