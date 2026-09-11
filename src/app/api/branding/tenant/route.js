@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { query } from "@/lib/db";
-import { requireTenantId, scopedQueryOne } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 import { emitToTenant } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +12,7 @@ const putSchema = z.object({
   qualifications: z.string().trim().max(255).optional().or(z.literal("")),
   address: z.string().trim().max(500).optional().or(z.literal("")),
   phone: z.string().trim().max(64).optional().or(z.literal("")),
+  gstin: z.string().trim().max(20).optional().or(z.literal("")),
   footerText: z.string().trim().max(500).optional().or(z.literal("")),
 });
 
@@ -20,39 +20,28 @@ const putSchema = z.object({
 // For a solo tenant this IS the owner's personal practice branding.
 export const PUT = apiRoute("branding:manage_tenant", async (request, { session }) => {
   const body = await parseBody(request, putSchema);
-  const tid = requireTenantId();
 
-  const existing = await scopedQueryOne(
-    "SELECT id FROM print_branding WHERE tenant_id = :tid AND scope = 'TENANT' LIMIT 1",
-  );
-  const values = [
-    body.headerName,
-    body.logoUrl || null,
-    body.qualifications || null,
-    body.address || null,
-    body.phone || null,
-    body.footerText || null,
-  ];
+  const existing = await tenantDb.print_branding.findFirst({
+    where: { scope: "TENANT" },
+    select: { id: true },
+  });
+  const values = {
+    header_name: body.headerName,
+    logo_url: body.logoUrl || null,
+    qualifications: body.qualifications || null,
+    address: body.address || null,
+    phone: body.phone || null,
+    gstin: body.gstin || null,
+    footer_text: body.footerText || null,
+  };
 
   if (existing) {
-    await query(
-      `UPDATE print_branding
-          SET header_name = ?, logo_url = ?, qualifications = ?, address = ?, phone = ?, footer_text = ?
-        WHERE id = ?`,
-      [...values, existing.id],
-    );
+    await tenantDb.print_branding.update({ where: { id: existing.id }, data: values });
   } else {
-    await query(
-      `INSERT INTO print_branding
-         (tenant_id, scope, header_name, logo_url, qualifications, address, phone, footer_text)
-       VALUES (?, 'TENANT', ?, ?, ?, ?, ?, ?)`,
-      [tid, ...values],
-    );
+    await tenantDb.print_branding.create({ data: { scope: "TENANT", ...values } });
   }
 
-  const tenantBranding = await scopedQueryOne(
-    "SELECT * FROM print_branding WHERE tenant_id = :tid AND scope = 'TENANT' LIMIT 1",
-  );
+  const tenantBranding = await tenantDb.print_branding.findFirst({ where: { scope: "TENANT" } });
   emitToTenant(session.tenantId, "branding:updated", { scope: "TENANT", branding: tenantBranding });
   return json({ tenantBranding });
 });

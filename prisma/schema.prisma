@@ -1,0 +1,662 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model admissions {
+  id              BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id       BigInt                     @db.UnsignedBigInt
+  visit_id        BigInt                     @db.UnsignedBigInt
+  bed_id          BigInt                     @db.UnsignedBigInt
+  admitted_by     BigInt?                    @db.UnsignedBigInt
+  admitted_at     DateTime                   @default(now())
+  discharged_at   DateTime?
+  discharge_type  admissions_discharge_type?
+  discharge_notes String?                    @db.VarChar(2000)
+  users           users?                     @relation(fields: [admitted_by], references: [id], onUpdate: Restrict, map: "fk_admissions_admitted_by")
+  beds            beds                       @relation(fields: [bed_id], references: [id], onUpdate: Restrict, map: "fk_admissions_bed")
+  tenants         tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_admissions_tenant")
+  visits          visits                     @relation(fields: [visit_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_admissions_visit")
+  consent_forms   consent_forms[]
+  nursing_notes   nursing_notes[]
+
+  @@index([admitted_by], map: "fk_admissions_admitted_by")
+  @@index([visit_id], map: "fk_admissions_visit")
+  @@index([bed_id], map: "idx_admissions_bed")
+  @@index([tenant_id], map: "idx_admissions_tenant")
+  @@index([tenant_id, visit_id], map: "idx_admissions_tenant_visit")
+}
+
+model beds {
+  id         BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id  BigInt         @db.UnsignedBigInt
+  ward_type  beds_ward_type
+  bed_number String         @db.VarChar(50)
+  daily_rate Decimal        @default(0.00) @db.Decimal(10, 2)
+  status     beds_status    @default(VACANT)
+  created_at DateTime       @default(now())
+  admissions admissions[]
+  tenants    tenants        @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_beds_tenant")
+
+  @@unique([tenant_id, ward_type, bed_number], map: "uq_beds_tenant_ward_number")
+  @@index([tenant_id], map: "idx_beds_tenant")
+  @@index([tenant_id, status], map: "idx_beds_tenant_status")
+}
+
+model bill_items {
+  id             BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  bill_id        BigInt            @db.UnsignedBigInt
+  source         bill_items_source
+  description    String            @db.VarChar(500)
+  amount         Decimal           @default(0.00) @db.Decimal(12, 2)
+  reference_type String?           @db.VarChar(50)
+  reference_id   BigInt?           @db.UnsignedBigInt
+  created_at     DateTime          @default(now())
+  bills          bills             @relation(fields: [bill_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bill_items_bill")
+
+  @@index([bill_id], map: "idx_bill_items_bill")
+  @@index([reference_type, reference_id], map: "idx_bill_items_reference")
+}
+
+model bills {
+  id           BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id    BigInt          @db.UnsignedBigInt
+  patient_id   BigInt          @db.UnsignedBigInt
+  visit_id     BigInt?         @db.UnsignedBigInt
+  bill_type    bills_bill_type
+  total_amount Decimal         @default(0.00) @db.Decimal(12, 2)
+  status       bills_status    @default(OPEN)
+  created_by   BigInt?         @db.UnsignedBigInt
+  created_at   DateTime        @default(now())
+  finalized_at DateTime?
+  bill_items   bill_items[]
+  users        users?          @relation(fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_bills_created_by")
+  patients     patients        @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bills_patient")
+  tenants      tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bills_tenant")
+  visits       visits?         @relation(fields: [visit_id], references: [id], onUpdate: Restrict, map: "fk_bills_visit")
+  discounts    discounts[]
+  payments     payments[]
+  refunds      refunds[]
+
+  @@index([tenant_id], map: "idx_bills_hospital")
+  @@index([patient_id], map: "idx_bills_patient")
+  @@index([created_by], map: "fk_bills_created_by")
+  @@index([tenant_id, status], map: "idx_bills_tenant_status")
+  @@index([visit_id], map: "idx_bills_visit")
+}
+
+model consent_forms {
+  id           BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id    BigInt     @db.UnsignedBigInt
+  admission_id BigInt     @db.UnsignedBigInt
+  form_type    String     @db.VarChar(100)
+  signed_at    DateTime   @default(now())
+  file_url     String?    @db.VarChar(500)
+  recorded_by  BigInt?    @db.UnsignedBigInt
+  admissions   admissions @relation(fields: [admission_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_consent_forms_admission")
+  users        users?     @relation(fields: [recorded_by], references: [id], onUpdate: Restrict, map: "fk_consent_forms_recorded_by")
+  tenants      tenants    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_consent_forms_tenant")
+
+  @@index([recorded_by], map: "fk_consent_forms_recorded_by")
+  @@index([admission_id], map: "idx_consent_forms_admission")
+  @@index([tenant_id], map: "idx_consent_forms_tenant")
+}
+
+model consultations {
+  id            BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id     BigInt          @db.UnsignedBigInt
+  visit_id      BigInt?         @db.UnsignedBigInt
+  patient_id    BigInt          @db.UnsignedBigInt
+  doctor_id     BigInt          @db.UnsignedBigInt
+  notes         String?         @db.Text
+  diagnosis     String?         @db.VarChar(500)
+  fee           Decimal         @default(0.00) @db.Decimal(10, 2)
+  custom_fields String?         @db.LongText
+  created_at    DateTime        @default(now())
+  users         users           @relation(fields: [doctor_id], references: [id], onUpdate: Restrict, map: "fk_consultations_doctor")
+  patients      patients        @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_consultations_patient")
+  tenants       tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_consultations_tenant")
+  visits        visits?         @relation(fields: [visit_id], references: [id], onUpdate: Restrict, map: "fk_consultations_visit")
+  lab_orders    lab_orders[]
+  prescriptions prescriptions[]
+
+  @@index([doctor_id], map: "idx_consultations_doctor")
+  @@index([tenant_id], map: "idx_consultations_hospital")
+  @@index([patient_id], map: "idx_consultations_patient")
+  @@index([visit_id], map: "idx_consultations_visit")
+}
+
+model follow_ups {
+  id             BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id      BigInt            @db.UnsignedBigInt
+  patient_id     BigInt            @db.UnsignedBigInt
+  visit_id       BigInt?           @db.UnsignedBigInt
+  scheduled_date DateTime          @db.Date
+  reason         String?           @db.VarChar(500)
+  status         follow_ups_status @default(SCHEDULED)
+  created_by     BigInt?           @db.UnsignedBigInt
+  created_at     DateTime          @default(now())
+  patients       patients          @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_follow_ups_patient")
+  tenants        tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_follow_ups_tenant")
+  visits         visits?           @relation(fields: [visit_id], references: [id], onUpdate: Restrict, map: "fk_follow_ups_visit")
+
+  @@index([visit_id], map: "fk_follow_ups_visit")
+  @@index([tenant_id], map: "idx_follow_ups_hospital")
+  @@index([tenant_id, scheduled_date], map: "idx_follow_ups_hospital_date")
+  @@index([patient_id], map: "idx_follow_ups_patient")
+}
+
+model form_templates {
+  id         BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id  BigInt                   @db.UnsignedBigInt
+  form_type  form_templates_form_type
+  fields     String                   @db.LongText
+  updated_at DateTime                 @default(now())
+  tenants    tenants                  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_form_templates_tenant")
+
+  @@unique([tenant_id, form_type], map: "uq_form_templates_hospital_type")
+  @@index([tenant_id], map: "idx_form_templates_hospital")
+}
+
+model lab_orders {
+  id              BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id       BigInt            @db.UnsignedBigInt
+  visit_id        BigInt?           @db.UnsignedBigInt
+  consultation_id BigInt            @db.UnsignedBigInt
+  patient_id      BigInt            @db.UnsignedBigInt
+  tests           String            @db.LongText
+  custom_fields   String?           @db.LongText
+  status          lab_orders_status @default(ORDERED)
+  results         String?           @db.LongText
+  ordered_by      BigInt?           @db.UnsignedBigInt
+  collected_at    DateTime?
+  received_at     DateTime?
+  resulted_by     BigInt?           @db.UnsignedBigInt
+  created_at      DateTime          @default(now())
+  resulted_at     DateTime?
+  consultations   consultations     @relation(fields: [consultation_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_consultation")
+  patients        patients          @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_patient")
+  tenants         tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_tenant")
+  visits          visits?           @relation(fields: [visit_id], references: [id], onUpdate: Restrict, map: "fk_lab_orders_visit")
+
+  @@index([consultation_id], map: "idx_lab_orders_consultation")
+  @@index([tenant_id], map: "idx_lab_orders_hospital")
+  @@index([tenant_id, status], map: "idx_lab_orders_hospital_status")
+  @@index([patient_id], map: "idx_lab_orders_patient")
+  @@index([visit_id], map: "idx_lab_orders_visit")
+}
+
+model nursing_notes {
+  id             BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id      BigInt     @db.UnsignedBigInt
+  admission_id   BigInt     @db.UnsignedBigInt
+  author_user_id BigInt     @db.UnsignedBigInt
+  note           String?    @db.VarChar(4000)
+  vitals         String?    @db.LongText
+  created_at     DateTime   @default(now())
+  admissions     admissions @relation(fields: [admission_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_nursing_notes_admission")
+  users          users      @relation(fields: [author_user_id], references: [id], onUpdate: Restrict, map: "fk_nursing_notes_author")
+  tenants        tenants    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_nursing_notes_tenant")
+
+  @@index([author_user_id], map: "fk_nursing_notes_author")
+  @@index([admission_id], map: "idx_nursing_notes_admission")
+  @@index([tenant_id], map: "idx_nursing_notes_tenant")
+}
+
+model patients {
+  id            BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id     BigInt           @db.UnsignedBigInt
+  name          String
+  age           Int?             @db.UnsignedSmallInt
+  gender        patients_gender?
+  phone         String?          @db.VarChar(32)
+  custom_fields String?          @db.LongText
+  allergies     String?          @db.LongText
+  abha_id       String?          @db.VarChar(64)
+  created_at    DateTime         @default(now())
+  bills         bills[]
+  consultations consultations[]
+  follow_ups    follow_ups[]
+  lab_orders    lab_orders[]
+  tenants       tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_patients_tenant")
+  visits        visits[]
+
+  @@index([tenant_id], map: "idx_patients_hospital")
+  @@index([tenant_id, created_at], map: "idx_patients_hospital_created")
+}
+
+model pharmacy_stock {
+  id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                BigInt                     @db.UnsignedBigInt
+  medicine_name            String
+  batch_number             String?
+  expiry_date              DateTime?                  @db.Date
+  quantity                 Int                        @default(0)
+  tenants                  tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_stock_tenant")
+  pharmacy_stock_movements pharmacy_stock_movements[]
+
+  @@unique([tenant_id, medicine_name, batch_number], map: "uq_pharmacy_stock_batch")
+  @@index([tenant_id], map: "idx_stock_hospital")
+  @@index([tenant_id, medicine_name], map: "idx_stock_hospital_medicine")
+}
+
+model pharmacy_stock_movements {
+  id                   BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id            BigInt                        @db.UnsignedBigInt
+  stock_id             BigInt                        @db.UnsignedBigInt
+  type                 pharmacy_stock_movements_type
+  quantity_delta       Int
+  reason               String?                       @db.VarChar(500)
+  prescription_item_id BigInt?                       @db.UnsignedBigInt
+  performed_by         BigInt?                       @db.UnsignedBigInt
+  created_at           DateTime                      @default(now())
+  prescription_items   prescription_items?           @relation(fields: [prescription_item_id], references: [id], onUpdate: Restrict, map: "fk_stock_movements_item")
+  pharmacy_stock       pharmacy_stock                @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_stock_movements_stock")
+  tenants              tenants                       @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_stock_movements_tenant")
+  users                users?                        @relation(fields: [performed_by], references: [id], onUpdate: Restrict, map: "fk_stock_movements_user")
+
+  @@index([prescription_item_id], map: "fk_stock_movements_item")
+  @@index([performed_by], map: "fk_stock_movements_user")
+  @@index([stock_id], map: "idx_stock_movements_stock")
+  @@index([tenant_id], map: "idx_stock_movements_tenant")
+  @@index([tenant_id, type], map: "idx_stock_movements_tenant_type")
+}
+
+model pharmacy_thresholds {
+  id                  BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id           BigInt   @db.UnsignedBigInt
+  medicine_name       String
+  low_stock_threshold Int      @default(10) @db.UnsignedInt
+  updated_at          DateTime @default(now())
+  tenants             tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_pharmacy_thresholds_tenant")
+
+  @@unique([tenant_id, medicine_name], map: "uq_pharmacy_thresholds")
+  @@index([tenant_id], map: "idx_pharmacy_thresholds_tenant")
+}
+
+model prescription_item_acks {
+  id                   BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id            BigInt             @db.UnsignedBigInt
+  prescription_item_id BigInt             @db.UnsignedBigInt
+  warning              String             @db.VarChar(500)
+  acknowledged_by      BigInt             @db.UnsignedBigInt
+  acknowledged_at      DateTime           @default(now())
+  prescription_items   prescription_items @relation(fields: [prescription_item_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_presc_acks_item")
+  tenants              tenants            @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_presc_acks_tenant")
+  users                users              @relation(fields: [acknowledged_by], references: [id], onUpdate: Restrict, map: "fk_presc_acks_user")
+
+  @@index([acknowledged_by], map: "fk_presc_acks_user")
+  @@index([prescription_item_id], map: "idx_presc_acks_item")
+  @@index([tenant_id], map: "idx_presc_acks_tenant")
+}
+
+model prescription_items {
+  id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                BigInt                     @db.UnsignedBigInt
+  prescription_id          BigInt                     @db.UnsignedBigInt
+  medicine_name            String
+  dosage                   String?
+  quantity                 Int                        @default(1) @db.UnsignedInt
+  dispensed_quantity       Int                        @default(0) @db.UnsignedInt
+  batch_number             String?
+  status                   prescription_items_status  @default(PENDING)
+  pharmacy_stock_movements pharmacy_stock_movements[]
+  prescription_item_acks   prescription_item_acks[]
+  prescriptions            prescriptions              @relation(fields: [prescription_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_presc_items_prescription")
+  tenants                  tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_presc_items_tenant")
+
+  @@index([tenant_id], map: "idx_presc_items_hospital")
+  @@index([prescription_id], map: "idx_presc_items_prescription")
+}
+
+model prescriptions {
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id          BigInt               @db.UnsignedBigInt
+  visit_id           BigInt?              @db.UnsignedBigInt
+  consultation_id    BigInt               @db.UnsignedBigInt
+  status             prescriptions_status @default(PENDING)
+  notes              String?              @db.VarChar(500)
+  created_by         BigInt?              @db.UnsignedBigInt
+  created_at         DateTime             @default(now())
+  fulfilled_by       BigInt?              @db.UnsignedBigInt
+  fulfilled_at       DateTime?
+  prescription_items prescription_items[]
+  consultations      consultations        @relation(fields: [consultation_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_prescriptions_consultation")
+  tenants            tenants              @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_prescriptions_tenant")
+  visits             visits?              @relation(fields: [visit_id], references: [id], onUpdate: Restrict, map: "fk_prescriptions_visit")
+
+  @@index([consultation_id], map: "idx_prescriptions_consultation")
+  @@index([tenant_id], map: "idx_prescriptions_hospital")
+  @@index([tenant_id, status], map: "idx_prescriptions_hospital_status")
+  @@index([visit_id], map: "idx_prescriptions_visit")
+}
+
+model print_branding {
+  id             BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id      BigInt               @db.UnsignedBigInt
+  scope          print_branding_scope @default(TENANT)
+  doctor_user_id BigInt?              @db.UnsignedBigInt
+  header_name    String
+  logo_url       String?              @db.VarChar(500)
+  qualifications String?              @db.VarChar(255)
+  address        String?              @db.VarChar(500)
+  phone          String?              @db.VarChar(64)
+  gstin          String?              @db.VarChar(20)
+  footer_text    String?              @db.VarChar(500)
+  updated_at     DateTime             @default(now())
+  users          users?               @relation(fields: [doctor_user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_print_branding_doctor")
+  tenants        tenants              @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_print_branding_tenant")
+
+  @@unique([tenant_id, doctor_user_id], map: "uq_print_branding_doctor")
+  @@index([doctor_user_id], map: "fk_print_branding_doctor")
+  @@index([tenant_id], map: "idx_print_branding_tenant")
+}
+
+model tenant_modules {
+  id          BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id   BigInt                     @db.UnsignedBigInt
+  module_name tenant_modules_module_name
+  is_active   Boolean                    @default(false)
+  tenants     tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_tenant_modules_tenant")
+
+  @@unique([tenant_id, module_name], map: "uq_hospital_module")
+  @@index([tenant_id], map: "idx_hospital_modules_hospital")
+}
+
+model tenants {
+  id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  name                     String
+  type                     tenants_type               @default(HOSPITAL)
+  active                   Boolean                    @default(true)
+  allow_doctor_branding    Boolean                    @default(false)
+  contact_email            String?
+  contact_phone            String?                    @db.VarChar(64)
+  slug                     String                     @unique(map: "uq_hospitals_slug")
+  created_at               DateTime                   @default(now())
+  admissions               admissions[]
+  beds                     beds[]
+  bills                    bills[]
+  consent_forms            consent_forms[]
+  consultations            consultations[]
+  follow_ups               follow_ups[]
+  form_templates           form_templates[]
+  lab_orders               lab_orders[]
+  nursing_notes            nursing_notes[]
+  patients                 patients[]
+  pharmacy_stock           pharmacy_stock[]
+  pharmacy_stock_movements pharmacy_stock_movements[]
+  pharmacy_thresholds      pharmacy_thresholds[]
+  prescription_item_acks   prescription_item_acks[]
+  prescription_items       prescription_items[]
+  prescriptions            prescriptions[]
+  print_branding           print_branding[]
+  tenant_modules           tenant_modules[]
+  users                    users[]
+  visits                   visits[]
+}
+
+model users {
+  id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                BigInt?                    @db.UnsignedBigInt
+  name                     String
+  email                    String
+  password_hash            String                     @db.VarChar(255)
+  role                     users_role
+  created_at               DateTime                   @default(now())
+  admissions               admissions[]
+  bills                    bills[]
+  consent_forms            consent_forms[]
+  consultations            consultations[]
+  discounts                discounts[]
+  nursing_notes            nursing_notes[]
+  payments                 payments[]
+  pharmacy_stock_movements pharmacy_stock_movements[]
+  prescription_item_acks   prescription_item_acks[]
+  print_branding           print_branding[]
+  refunds                  refunds[]
+  tenants                  tenants?                   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_users_tenant")
+  visits                   visits[]
+
+  @@unique([tenant_id, email], map: "uq_users_hospital_email")
+  @@index([tenant_id], map: "idx_users_hospital")
+}
+
+model visits {
+  id             BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id      BigInt            @db.UnsignedBigInt
+  patient_id     BigInt            @db.UnsignedBigInt
+  entry_type     visits_entry_type @default(OPD)
+  token_number   Int?              @db.UnsignedInt
+  status         visits_status     @default(REGISTERED)
+  reason         String?           @db.VarChar(500)
+  custom_fields  String?           @db.LongText
+  registered_by  BigInt?           @db.UnsignedBigInt
+  follow_up_date DateTime?         @db.Date
+  created_at     DateTime          @default(now())
+  updated_at     DateTime          @default(now())
+  discharged_at  DateTime?
+  admissions     admissions[]
+  bills          bills[]
+  consultations  consultations[]
+  follow_ups     follow_ups[]
+  lab_orders     lab_orders[]
+  prescriptions  prescriptions[]
+  patients       patients          @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_patient")
+  users          users?            @relation(fields: [registered_by], references: [id], onUpdate: Restrict, map: "fk_visits_registered_by")
+  tenants        tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_tenant")
+
+  @@index([registered_by], map: "fk_visits_registered_by")
+  @@index([tenant_id], map: "idx_visits_hospital")
+  @@index([tenant_id, created_at], map: "idx_visits_hospital_created")
+  @@index([tenant_id, status], map: "idx_visits_hospital_status")
+  @@index([patient_id], map: "idx_visits_patient")
+}
+
+model kaizen_schema_migrations {
+  id         Int      @id @default(autoincrement())
+  filename   String   @unique(map: "filename") @db.VarChar(255)
+  applied_at DateTime @default(now()) @db.DateTime(0)
+  baseline   Boolean  @default(false)
+
+  @@map("_kaizen_schema_migrations")
+}
+
+model discounts {
+  id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  bill_id         BigInt   @db.UnsignedBigInt
+  idempotency_key String?  @db.VarChar(64)
+  amount          Decimal  @db.Decimal(10, 2)
+  reason          String   @db.VarChar(500)
+  authorized_by   BigInt   @db.UnsignedBigInt
+  created_at      DateTime @default(now())
+  users           users    @relation(fields: [authorized_by], references: [id], onUpdate: Restrict, map: "fk_discounts_authorized_by")
+  bills           bills    @relation(fields: [bill_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_discounts_bill")
+
+  @@unique([bill_id, idempotency_key], map: "uq_discounts_bill_idempotency")
+  @@index([authorized_by], map: "fk_discounts_authorized_by")
+  @@index([bill_id], map: "idx_discounts_bill")
+}
+
+model payments {
+  id              BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  bill_id         BigInt        @db.UnsignedBigInt
+  idempotency_key String?       @db.VarChar(64)
+  amount          Decimal       @db.Decimal(10, 2)
+  mode            payments_mode
+  recorded_by     BigInt?       @db.UnsignedBigInt
+  paid_at         DateTime      @default(now())
+  bills           bills         @relation(fields: [bill_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_payments_bill")
+  users           users?        @relation(fields: [recorded_by], references: [id], onUpdate: Restrict, map: "fk_payments_recorded_by")
+  refunds         refunds[]
+
+  @@unique([bill_id, idempotency_key], map: "uq_payments_bill_idempotency")
+  @@index([recorded_by], map: "fk_payments_recorded_by")
+  @@index([bill_id], map: "idx_payments_bill")
+}
+
+model refunds {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  bill_id         BigInt    @db.UnsignedBigInt
+  idempotency_key String?   @db.VarChar(64)
+  payment_id      BigInt?   @db.UnsignedBigInt
+  amount          Decimal   @db.Decimal(10, 2)
+  reason          String    @db.VarChar(500)
+  authorized_by   BigInt    @db.UnsignedBigInt
+  refunded_at     DateTime  @default(now())
+  users           users     @relation(fields: [authorized_by], references: [id], onUpdate: Restrict, map: "fk_refunds_authorized_by")
+  bills           bills     @relation(fields: [bill_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_refunds_bill")
+  payments        payments? @relation(fields: [payment_id], references: [id], onUpdate: Restrict, map: "fk_refunds_payment")
+
+  @@unique([bill_id, idempotency_key], map: "uq_refunds_bill_idempotency")
+  @@index([authorized_by], map: "fk_refunds_authorized_by")
+  @@index([payment_id], map: "fk_refunds_payment")
+  @@index([bill_id], map: "idx_refunds_bill")
+}
+
+enum beds_ward_type {
+  GENERAL
+  PRIVATE
+  ICU
+}
+
+enum form_templates_form_type {
+  PATIENT_REGISTRATION
+  CONSULTATION
+  LAB_ORDER
+  BILLING
+}
+
+enum print_branding_scope {
+  TENANT
+  DOCTOR
+}
+
+enum tenants_type {
+  HOSPITAL
+  DOCTOR_SOLO
+  PHARMACY_SOLO
+  LAB_SOLO
+}
+
+enum tenant_modules_module_name {
+  PHARMACY
+  DOCTOR_OPD
+  LAB
+  BILLING
+  IPD
+}
+
+enum pharmacy_stock_movements_type {
+  IN
+  DISPENSE
+  ADJUSTMENT
+}
+
+enum visits_entry_type {
+  OPD
+  EMERGENCY
+  DIRECT_ADMISSION
+}
+
+enum beds_status {
+  VACANT
+  OCCUPIED
+  CLEANING
+  MAINTENANCE
+}
+
+enum patients_gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum prescriptions_status {
+  PENDING
+  PARTIALLY_FULFILLED
+  FULFILLED
+  NOT_REQUIRED
+  CANCELLED
+}
+
+enum users_role {
+  SUPER_ADMIN
+  HOSPITAL_ADMIN
+  DOCTOR
+  PHARMACIST
+  LAB_TECH
+  BILLING_STAFF
+  RECEPTIONIST
+  NURSE
+  OWNER_DOCTOR
+  OWNER_PHARMACIST
+  OWNER_LAB_TECH
+}
+
+enum visits_status {
+  REGISTERED
+  TRIAGE
+  WITH_DOCTOR
+  PHARMACY
+  LAB
+  BILLING
+  ADMITTED
+  DISCHARGED
+  CANCELLED
+}
+
+enum follow_ups_status {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum admissions_discharge_type {
+  ROUTINE
+  TRANSFER
+  AGAINST_MEDICAL_ADVICE
+  DEATH
+}
+
+enum lab_orders_status {
+  ORDERED
+  IN_PROGRESS
+  RESULTED
+  CANCELLED
+  NOT_REQUIRED
+}
+
+enum prescription_items_status {
+  PENDING
+  DISPENSED
+  OUT_OF_STOCK
+}
+
+enum payments_mode {
+  CASH
+  CARD
+  UPI
+}
+
+enum bill_items_source {
+  CONSULTATION
+  PHARMACY
+  LAB
+  IPD_ROOM
+}
+
+enum bills_bill_type {
+  OPD
+  IPD
+}
+
+enum bills_status {
+  OPEN
+  PAID
+  PARTIALLY_PAID
+  REFUNDED
+}

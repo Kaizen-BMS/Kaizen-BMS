@@ -1,7 +1,7 @@
 "use strict";
 
 const { z } = require("zod");
-const { queryOne } = require("./db");
+const { prisma } = require("./prismaClient");
 const { HttpError } = require("./apiRoute");
 
 /**
@@ -93,10 +93,10 @@ async function resolveForm(tenantId, formType) {
 
   let extra = [];
   if (tenantId != null) {
-    const row = await queryOne(
-      "SELECT fields FROM form_templates WHERE tenant_id = ? AND form_type = ? LIMIT 1",
-      [tenantId, formType],
-    );
+    const row = await prisma.form_templates.findFirst({
+      where: { tenant_id: BigInt(tenantId), form_type: formType },
+      select: { fields: true },
+    });
     if (row?.fields) {
       const raw = typeof row.fields === "string" ? JSON.parse(row.fields) : row.fields;
       const parsed = templateFieldsSchema.safeParse(raw);

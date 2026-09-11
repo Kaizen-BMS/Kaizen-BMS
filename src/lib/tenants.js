@@ -1,6 +1,6 @@
 "use strict";
 
-const { queryOne } = require("./db");
+const { prisma } = require("./prismaClient");
 
 const TENANT_TYPES = ["HOSPITAL", "DOCTOR_SOLO", "PHARMACY_SOLO", "LAB_SOLO"];
 
@@ -21,14 +21,23 @@ const SOLO_TYPE_OWNER_ROLE = {
 
 const isSolo = (type) => type !== "HOSPITAL";
 
-/** Load a tenant row, or null. */
+/**
+ * Load a tenant row, or null. Called before the tenant context exists (it's
+ * what decides whether to grant one) — raw `prisma`, explicit tenantId.
+ */
 async function getTenant(tenantId) {
   if (tenantId == null) return null;
-  return queryOne(
-    `SELECT id, name, slug, type, active, allow_doctor_branding
-       FROM tenants WHERE id = ? LIMIT 1`,
-    [tenantId],
-  );
+  return prisma.tenants.findUnique({
+    where: { id: BigInt(tenantId) },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      type: true,
+      active: true,
+      allow_doctor_branding: true,
+    },
+  });
 }
 
 module.exports = {

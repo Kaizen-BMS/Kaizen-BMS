@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { query } from "@/lib/db";
-import { requireTenantId } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
+import { requireTenantId } from "@/lib/requestContext";
 import {
   FORM_TYPES,
   templateFieldsSchema,
@@ -46,12 +46,11 @@ export const PUT = apiRoute("formtemplate:manage", async (request, ctx) => {
   }
 
   const hid = requireTenantId();
-  await query(
-    `INSERT INTO form_templates (tenant_id, form_type, fields)
-     VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE fields = VALUES(fields)`,
-    [hid, body.formType, JSON.stringify(body.fields)],
-  );
+  await tenantDb.form_templates.upsert({
+    where: { tenant_id_form_type: { tenant_id: BigInt(hid), form_type: body.formType } },
+    update: { fields: JSON.stringify(body.fields) },
+    create: { form_type: body.formType, fields: JSON.stringify(body.fields) },
+  });
 
   const form = await resolveForm(ctx.session.tenantId, body.formType);
   emitToTenant(ctx.session.tenantId, "formtemplate:updated", { form });

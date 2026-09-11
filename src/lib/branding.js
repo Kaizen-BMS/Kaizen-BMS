@@ -1,6 +1,6 @@
 "use strict";
 
-const { queryOne } = require("./db");
+const { prisma } = require("./prismaClient");
 
 /**
  * Resolves what actually prints on a document for this tenant (and,
@@ -17,11 +17,13 @@ const { queryOne } = require("./db");
  */
 async function resolveBranding(tenantId, doctorUserId) {
   const [tenantRow, brandingRow] = await Promise.all([
-    queryOne("SELECT name, allow_doctor_branding FROM tenants WHERE id = ? LIMIT 1", [tenantId]),
-    queryOne(
-      "SELECT * FROM print_branding WHERE tenant_id = ? AND scope = 'TENANT' LIMIT 1",
-      [tenantId],
-    ),
+    prisma.tenants.findUnique({
+      where: { id: BigInt(tenantId) },
+      select: { name: true, allow_doctor_branding: true },
+    }),
+    prisma.print_branding.findFirst({
+      where: { tenant_id: BigInt(tenantId), scope: "TENANT" },
+    }),
   ]);
 
   const header = brandingRow || {
@@ -30,15 +32,16 @@ async function resolveBranding(tenantId, doctorUserId) {
     qualifications: null,
     address: null,
     phone: null,
+    gstin: null,
     footer_text: null,
   };
 
   let signature = null;
   if (doctorUserId && tenantRow?.allow_doctor_branding) {
-    const docRow = await queryOne(
-      "SELECT header_name, qualifications FROM print_branding WHERE tenant_id = ? AND scope = 'DOCTOR' AND doctor_user_id = ? LIMIT 1",
-      [tenantId, doctorUserId],
-    );
+    const docRow = await prisma.print_branding.findFirst({
+      where: { tenant_id: BigInt(tenantId), scope: "DOCTOR", doctor_user_id: BigInt(doctorUserId) },
+      select: { header_name: true, qualifications: true },
+    });
     if (docRow) signature = { name: docRow.header_name, qualifications: docRow.qualifications };
   }
 

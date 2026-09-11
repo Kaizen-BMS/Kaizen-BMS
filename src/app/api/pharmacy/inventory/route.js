@@ -1,5 +1,5 @@
 import { apiRoute, json } from "@/lib/apiRoute";
-import { scopedQuery } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 import { EXPIRY_WARNING_DAYS } from "@/lib/pharmacyConstants";
 
 export const dynamic = "force-dynamic";
@@ -8,12 +8,12 @@ export const dynamic = "force-dynamic";
 // the "current inventory view" + the alerts screen in one payload.
 export const GET = apiRoute("stock:read", async () => {
   const [batches, thresholds] = await Promise.all([
-    scopedQuery(
-      `SELECT * FROM pharmacy_stock
-        WHERE tenant_id = :tid
-        ORDER BY medicine_name ASC, (expiry_date IS NULL) ASC, expiry_date ASC, id ASC`,
-    ),
-    scopedQuery("SELECT medicine_name, low_stock_threshold FROM pharmacy_thresholds WHERE tenant_id = :tid"),
+    tenantDb.pharmacy_stock.findMany({
+      orderBy: [{ medicine_name: "asc" }, { expiry_date: "asc" }, { id: "asc" }],
+    }),
+    tenantDb.pharmacy_thresholds.findMany({
+      select: { medicine_name: true, low_stock_threshold: true },
+    }),
   ]);
 
   const thresholdMap = new Map(thresholds.map((t) => [t.medicine_name, t.low_stock_threshold]));

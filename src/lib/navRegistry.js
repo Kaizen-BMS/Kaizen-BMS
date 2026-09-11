@@ -51,9 +51,9 @@ const NAV = [
   { key: "branding", label: "Branding", section: "ADMINISTRATION", route: "/dashboard/branding", icon: "branding", action: "branding:read", adminOnly: false, status: "live" },
 
   // ── Platform (SUPER_ADMIN only) ──
-  { key: "tenants", label: "Tenants", section: "PLATFORM", route: "/dashboard/platform/tenants", icon: "tenants", status: "soon" },
-  { key: "createTenant", label: "Create Tenant", section: "PLATFORM", route: "/dashboard/platform/tenants/new", icon: "createTenant", status: "soon" },
-  { key: "registry", label: "Module Registry", section: "PLATFORM", route: "/dashboard/platform/modules", icon: "registry", status: "soon" },
+  { key: "tenants", label: "Tenants", section: "PLATFORM", route: "/dashboard/platform/tenants", icon: "tenants", action: "tenant:read", status: "live" },
+  { key: "createTenant", label: "Create Tenant", section: "PLATFORM", route: "/dashboard/platform/tenants/new", icon: "createTenant", action: "tenant:manage", status: "live" },
+  { key: "registry", label: "Module Registry", section: "PLATFORM", route: "/dashboard/platform/modules", icon: "registry", action: "tenant:read", status: "live" },
 ];
 
 /**

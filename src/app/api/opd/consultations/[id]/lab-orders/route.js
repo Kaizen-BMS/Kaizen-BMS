@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { insert, findById, scopedQueryOne } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 import { validateCustomFields } from "@/lib/forms";
 import { emitToModule } from "@/lib/realtime";
 
@@ -19,14 +19,13 @@ const createSchema = z.object({
 export const POST = apiRoute("laborder:create", async (request, ctx) => {
   const { session } = ctx;
   const { id } = await ctx.params;
-  const consultationId = Number(id);
+  const consultationId = BigInt(id);
   const body = await parseBody(request, createSchema);
 
-  const consultation = await findById(
-    "consultations",
-    consultationId,
-    "id, visit_id, patient_id",
-  );
+  const consultation = await tenantDb.consultations.findUnique({
+    where: { id: consultationId },
+    select: { id: true, visit_id: true, patient_id: true },
+  });
   if (!consultation) return json({ error: "consultation_not_found" }, 404);
 
   const custom = await validateCustomFields(
@@ -35,22 +34,24 @@ export const POST = apiRoute("laborder:create", async (request, ctx) => {
     body.customFields,
   );
 
-  const labOrderId = await insert("lab_orders", {
-    visit_id: consultation.visit_id,
-    consultation_id: consultation.id,
-    patient_id: consultation.patient_id,
-    tests: JSON.stringify(body.tests),
-    custom_fields: custom ? JSON.stringify(custom) : null,
-    status: "ORDERED",
-    ordered_by: session.userId,
+  const created = await tenantDb.lab_orders.create({
+    data: {
+      visit_id: consultation.visit_id,
+      consultation_id: consultation.id,
+      patient_id: consultation.patient_id,
+      tests: JSON.stringify(body.tests),
+      custom_fields: custom ? JSON.stringify(custom) : null,
+      status: "ORDERED",
+      ordered_by: BigInt(session.userId),
+    },
   });
 
-  const labOrder = await scopedQueryOne(
-    `SELECT lo.*, p.name AS patient_name
-       FROM lab_orders lo JOIN patients p ON p.id = lo.patient_id
-      WHERE lo.tenant_id = :tid AND lo.id = :id`,
-    { id: labOrderId },
-  );
+  const withPatient = await tenantDb.lab_orders.findUnique({
+    where: { id: created.id },
+    include: { patients: { select: { name: true } } },
+  });
+  const { patients: p, ...rest } = withPatient;
+  const labOrder = { ...rest, patient_name: p.name };
 
   // Routes to the Lab sub-room live, in this same request cycle.
   emitToModule(session.tenantId, "LAB", "laborder:created", { labOrder });

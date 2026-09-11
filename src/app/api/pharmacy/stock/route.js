@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { transaction } from "@/lib/db";
-import { requireTenantId, scopedQueryOne } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 import { emitToModule } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
@@ -24,44 +23,46 @@ const createSchema = z.object({
 // duplicate row.
 export const POST = apiRoute("stock:create", async (request, { session }) => {
   const body = await parseBody(request, createSchema);
-  const tid = requireTenantId();
   const expiry = body.expiryDate || null;
 
-  const stockId = await transaction(async (conn) => {
-    const [existingRows] = await conn.execute(
-      `SELECT id FROM pharmacy_stock
-        WHERE tenant_id = ? AND medicine_name = ? AND batch_number = ?
-        LIMIT 1`,
-      [tid, body.medicineName, body.batchNumber],
-    );
+  const stockId = await tenantDb.$transaction(async (tx) => {
+    const existing = await tx.pharmacy_stock.findFirst({
+      where: { medicine_name: body.medicineName, batch_number: body.batchNumber },
+      select: { id: true },
+    });
     let id;
-    if (existingRows[0]) {
-      id = existingRows[0].id;
-      await conn.execute(
-        `UPDATE pharmacy_stock
-            SET quantity = quantity + ?, expiry_date = COALESCE(?, expiry_date)
-          WHERE id = ?`,
-        [body.quantity, expiry, id],
-      );
+    if (existing) {
+      id = existing.id;
+      await tx.pharmacy_stock.update({
+        where: { id },
+        data: {
+          quantity: { increment: body.quantity },
+          ...(expiry ? { expiry_date: new Date(expiry) } : {}),
+        },
+      });
     } else {
-      const [res] = await conn.execute(
-        `INSERT INTO pharmacy_stock (tenant_id, medicine_name, batch_number, expiry_date, quantity)
-         VALUES (?, ?, ?, ?, ?)`,
-        [tid, body.medicineName, body.batchNumber, expiry, body.quantity],
-      );
-      id = res.insertId;
+      const created = await tx.pharmacy_stock.create({
+        data: {
+          medicine_name: body.medicineName,
+          batch_number: body.batchNumber,
+          expiry_date: expiry ? new Date(expiry) : null,
+          quantity: body.quantity,
+        },
+      });
+      id = created.id;
     }
-    await conn.execute(
-      `INSERT INTO pharmacy_stock_movements (tenant_id, stock_id, type, quantity_delta, performed_by)
-       VALUES (?, ?, 'IN', ?, ?)`,
-      [tid, id, body.quantity, session.userId],
-    );
+    await tx.pharmacy_stock_movements.create({
+      data: {
+        stock_id: id,
+        type: "IN",
+        quantity_delta: body.quantity,
+        performed_by: BigInt(session.userId),
+      },
+    });
     return id;
   });
 
-  const batch = await scopedQueryOne("SELECT * FROM pharmacy_stock WHERE tenant_id = :tid AND id = :id", {
-    id: stockId,
-  });
+  const batch = await tenantDb.pharmacy_stock.findUnique({ where: { id: stockId } });
 
   emitToModule(session.tenantId, "PHARMACY", "stock:updated", { batch });
   return json({ batch }, 201);

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { transaction } from "@/lib/db";
-import { requireTenantId, scopedQueryOne } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
+import { requireTenantId } from "@/lib/requestContext";
 import { emitToModule, emitToTenant } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
@@ -17,16 +17,10 @@ const dispenseSchema = z.object({
 // when stock falls short — never a strict all-or-nothing block.
 export const POST = apiRoute("dispense:create", async (request, ctx) => {
   const { itemId } = await ctx.params;
-  const id = Number(itemId);
+  const id = BigInt(itemId);
   const tid = requireTenantId();
 
-  const item = await scopedQueryOne(
-    `SELECT i.*, pr.id AS prescription_id
-       FROM prescription_items i
-       JOIN prescriptions pr ON pr.id = i.prescription_id
-      WHERE i.tenant_id = :tid AND i.id = :id`,
-    { id },
-  );
+  const item = await tenantDb.prescription_items.findUnique({ where: { id } });
   if (!item) return json({ error: "not_found" }, 404);
 
   const body = await parseBody(request, dispenseSchema);
@@ -34,14 +28,15 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
   if (outstanding <= 0) throw new HttpError(400, "already fully dispensed");
   const requested = Math.min(body.quantity ?? outstanding, outstanding);
 
-  const result = await transaction(async (conn) => {
-    const [batches] = await conn.execute(
+  const result = await tenantDb.$transaction(async (tx) => {
+    const batches = await tx.$queryRawUnsafe(
       `SELECT * FROM pharmacy_stock
         WHERE tenant_id = ? AND medicine_name = ? AND quantity > 0
           AND (expiry_date IS NULL OR expiry_date >= CURDATE())
         ORDER BY (expiry_date IS NULL) ASC, expiry_date ASC, id ASC
         FOR UPDATE`,
-      [tid, item.medicine_name],
+      BigInt(tid),
+      item.medicine_name,
     );
 
     let remaining = requested;
@@ -50,17 +45,20 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
       if (remaining <= 0) break;
       const take = Math.min(batch.quantity, remaining);
       if (take <= 0) continue;
-      await conn.execute("UPDATE pharmacy_stock SET quantity = quantity - ? WHERE id = ?", [
-        take,
-        batch.id,
-      ]);
-      await conn.execute(
-        `INSERT INTO pharmacy_stock_movements
-           (tenant_id, stock_id, type, quantity_delta, prescription_item_id, performed_by)
-         VALUES (?, ?, 'DISPENSE', ?, ?, ?)`,
-        [tid, batch.id, -take, id, ctx.session.userId],
-      );
-      consumed.push({ batchId: batch.id, batchNumber: batch.batch_number, quantity: take });
+      await tx.pharmacy_stock.update({
+        where: { id: batch.id },
+        data: { quantity: { decrement: take } },
+      });
+      await tx.pharmacy_stock_movements.create({
+        data: {
+          stock_id: batch.id,
+          type: "DISPENSE",
+          quantity_delta: -take,
+          prescription_item_id: id,
+          performed_by: BigInt(ctx.session.userId),
+        },
+      });
+      consumed.push({ batchId: Number(batch.id), batchNumber: batch.batch_number, quantity: take });
       remaining -= take;
     }
 
@@ -70,47 +68,38 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
       newDispensed >= item.quantity ? "DISPENSED" : dispensedNow > 0 ? "PENDING" : "OUT_OF_STOCK";
     const primaryBatch = consumed[consumed.length - 1]?.batchNumber ?? item.batch_number;
 
-    await conn.execute(
-      `UPDATE prescription_items
-          SET dispensed_quantity = ?, status = ?, batch_number = ?
-        WHERE tenant_id = ? AND id = ?`,
-      [newDispensed, itemStatus, primaryBatch, tid, id],
-    );
+    await tx.prescription_items.update({
+      where: { id },
+      data: { dispensed_quantity: newDispensed, status: itemStatus, batch_number: primaryBatch },
+    });
 
-    const [allItems] = await conn.execute(
-      "SELECT quantity, dispensed_quantity FROM prescription_items WHERE tenant_id = ? AND prescription_id = ?",
-      [tid, item.prescription_id],
-    );
+    const allItems = await tx.prescription_items.findMany({
+      where: { prescription_id: item.prescription_id },
+      select: { quantity: true, dispensed_quantity: true },
+    });
     const allDone = allItems.every((i) => i.dispensed_quantity >= i.quantity);
     const anyDone = allItems.some((i) => i.dispensed_quantity > 0);
     const prescriptionStatus = allDone ? "FULFILLED" : anyDone ? "PARTIALLY_FULFILLED" : "PENDING";
 
     if (prescriptionStatus === "FULFILLED") {
-      await conn.execute(
-        `UPDATE prescriptions SET status = ?, fulfilled_by = ?, fulfilled_at = CURRENT_TIMESTAMP(3)
-          WHERE tenant_id = ? AND id = ?`,
-        [prescriptionStatus, ctx.session.userId, tid, item.prescription_id],
-      );
+      await tx.prescriptions.update({
+        where: { id: item.prescription_id },
+        data: { status: prescriptionStatus, fulfilled_by: BigInt(ctx.session.userId), fulfilled_at: new Date() },
+      });
     } else {
-      await conn.execute("UPDATE prescriptions SET status = ? WHERE tenant_id = ? AND id = ?", [
-        prescriptionStatus,
-        tid,
-        item.prescription_id,
-      ]);
+      await tx.prescriptions.update({
+        where: { id: item.prescription_id },
+        data: { status: prescriptionStatus },
+      });
     }
 
     return { consumed, dispensedNow, itemStatus, prescriptionStatus };
   });
 
-  const updatedItem = await scopedQueryOne(
-    "SELECT * FROM prescription_items WHERE tenant_id = :tid AND id = :id",
-    { id },
-  );
+  const updatedItem = await tenantDb.prescription_items.findUnique({ where: { id } });
   const updatedBatches = [];
   for (const c of result.consumed) {
-    const batch = await scopedQueryOne("SELECT * FROM pharmacy_stock WHERE tenant_id = :tid AND id = :id", {
-      id: c.batchId,
-    });
+    const batch = await tenantDb.pharmacy_stock.findUnique({ where: { id: BigInt(c.batchId) } });
     if (batch) updatedBatches.push(batch);
   }
 
@@ -120,7 +109,7 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
   });
   emitToModule(ctx.session.tenantId, "PHARMACY", "stock:updated", { batches: updatedBatches });
   emitToTenant(ctx.session.tenantId, "prescription:updated", {
-    prescription: { id: item.prescription_id, status: result.prescriptionStatus },
+    prescription: { id: Number(item.prescription_id), status: result.prescriptionStatus },
   });
 
   return json({

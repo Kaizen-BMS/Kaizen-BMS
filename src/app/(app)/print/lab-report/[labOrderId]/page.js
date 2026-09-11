@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
-import { queryOne } from "@/lib/db";
+import { prisma } from "@/lib/prismaClient";
 import { resolveBranding } from "@/lib/branding";
 import PrintButton from "@/components/hms/PrintButton";
 
@@ -28,20 +28,26 @@ export default async function LabReportPrintPage({ params }) {
   }
 
   const { labOrderId } = await params;
-  const id = Number(labOrderId);
+  const id = BigInt(labOrderId);
 
-  const order = await queryOne(
-    `SELECT lo.*, c.doctor_id, u.name AS doctor_name,
-            p.name AS patient_name, p.age AS patient_age, p.gender AS patient_gender
-       FROM lab_orders lo
-       JOIN consultations c ON c.id = lo.consultation_id
-       JOIN users u ON u.id = c.doctor_id
-       JOIN patients p ON p.id = lo.patient_id
-      WHERE lo.tenant_id = ? AND lo.id = ?
-      LIMIT 1`,
-    [session.tenantId, id],
-  );
-  if (!order || order.status !== "RESULTED") redirect("/dashboard");
+  const row = await prisma.lab_orders.findFirst({
+    where: { id, tenant_id: BigInt(session.tenantId) },
+    include: {
+      consultations: { include: { users: { select: { name: true } } } },
+      patients: { select: { name: true, age: true, gender: true } },
+    },
+  });
+  if (!row || row.status !== "RESULTED") redirect("/dashboard");
+
+  const { consultations: c, patients: p, ...rest } = row;
+  const order = {
+    ...rest,
+    doctor_id: c.doctor_id,
+    doctor_name: c.users.name,
+    patient_name: p.name,
+    patient_age: p.age,
+    patient_gender: p.gender,
+  };
 
   const results = typeof order.results === "string" ? JSON.parse(order.results) : order.results || [];
 
@@ -51,7 +57,9 @@ export default async function LabReportPrintPage({ params }) {
 
   // The signing pathologist: their own branding override if they've set one
   // up, else just the plain name of whoever finalized the report.
-  const resulter = await queryOne("SELECT name FROM users WHERE id = ? LIMIT 1", [order.resulted_by]);
+  const resulter = order.resulted_by
+    ? await prisma.users.findUnique({ where: { id: BigInt(order.resulted_by) }, select: { name: true } })
+    : null;
   const finalSignatureName = branding.signature?.name || resulter?.name || "";
 
   return (

@@ -1,6 +1,6 @@
 import { apiRoute, json } from "@/lib/apiRoute";
 import { can } from "@/lib/rbac";
-import { scopedQuery } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +13,12 @@ export const GET = apiRoute("patient:read", async (request, { session }) => {
 
   let patients = [];
   if (can(session.role, "visit:create")) {
-    const rows = await scopedQuery(
-      `SELECT id, name, age, phone FROM patients
-        WHERE tenant_id = :tid AND (name LIKE :like OR phone LIKE :like)
-        ORDER BY created_at DESC LIMIT 8`,
-      { like: `%${q}%` },
-    );
+    const rows = await tenantDb.patients.findMany({
+      where: { OR: [{ name: { contains: q } }, { phone: { contains: q } }] },
+      select: { id: true, name: true, age: true, phone: true },
+      orderBy: { created_at: "desc" },
+      take: 8,
+    });
     patients = rows.map((p) => ({
       id: p.id,
       label: p.name,

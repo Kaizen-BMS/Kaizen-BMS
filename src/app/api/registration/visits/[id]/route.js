@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { findById, updateById, scopedQuery } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 import { emitToTenant } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
@@ -32,25 +32,29 @@ const patchSchema = z
 
 export const PATCH = apiRoute("visit:update", async (request, ctx) => {
   const { id } = await ctx.params;
-  const visitId = Number(id);
+  const visitId = BigInt(id);
   const body = await parseBody(request, patchSchema);
 
-  const existing = await findById("visits", visitId, "id, status");
+  const existing = await tenantDb.visits.findUnique({
+    where: { id: visitId },
+    select: { id: true, status: true },
+  });
   if (!existing) return json({ error: "not_found" }, 404);
 
   const patch = {};
   if (body.status) patch.status = body.status;
   if (body.status === "DISCHARGED") patch.discharged_at = new Date();
-  if (body.followUpDate !== undefined) patch.follow_up_date = body.followUpDate;
+  if (body.followUpDate !== undefined) {
+    patch.follow_up_date = body.followUpDate ? new Date(body.followUpDate) : null;
+  }
 
-  await updateById("visits", visitId, patch);
-
-  const [visit] = await scopedQuery(
-    `SELECT v.*, p.name AS patient_name, p.age AS patient_age, p.phone AS patient_phone
-       FROM visits v JOIN patients p ON p.id = v.patient_id
-      WHERE v.tenant_id = :tid AND v.id = :id`,
-    { id: visitId },
-  );
+  const updated = await tenantDb.visits.update({
+    where: { id: visitId },
+    data: patch,
+    include: { patients: { select: { name: true, age: true, phone: true } } },
+  });
+  const { patients: p, ...rest } = updated;
+  const visit = { ...rest, patient_name: p.name, patient_age: p.age, patient_phone: p.phone };
 
   emitToTenant(ctx.session.tenantId, "visit:updated", { visit });
   return json({ visit });

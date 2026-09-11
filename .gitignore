@@ -37,6 +37,9 @@ yarn-error.log*
 # local dev database datadir
 /.devdb/
 
+# automatic pre-migration database backups (full production data — never commit)
+/backups/
+
 # vercel
 .vercel
 

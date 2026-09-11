@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { transaction } from "@/lib/db";
-import { findById, requireTenantId, scopedQueryOne, scopedQuery } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 import { emitToModule } from "@/lib/realtime";
 import { matchAllergy } from "@/lib/allergyCheck";
 
@@ -28,13 +27,19 @@ const createSchema = z.object({
 export const POST = apiRoute("prescription:create", async (request, ctx) => {
   const { session } = ctx;
   const { id } = await ctx.params;
-  const consultationId = Number(id);
+  const consultationId = BigInt(id);
   const body = await parseBody(request, createSchema);
 
-  const consultation = await findById("consultations", consultationId, "id, visit_id, patient_id");
+  const consultation = await tenantDb.consultations.findUnique({
+    where: { id: consultationId },
+    select: { id: true, visit_id: true, patient_id: true },
+  });
   if (!consultation) return json({ error: "consultation_not_found" }, 404);
 
-  const patient = await findById("patients", consultation.patient_id, "allergies");
+  const patient = await tenantDb.patients.findUnique({
+    where: { id: consultation.patient_id },
+    select: { allergies: true },
+  });
   const allergies = Array.isArray(patient?.allergies)
     ? patient.allergies
     : typeof patient?.allergies === "string" && patient.allergies
@@ -54,49 +59,52 @@ export const POST = apiRoute("prescription:create", async (request, ctx) => {
     );
   }
 
-  const hid = requireTenantId();
-  const { prescriptionId } = await transaction(async (conn) => {
-    const [res] = await conn.execute(
-      `INSERT INTO prescriptions (tenant_id, visit_id, consultation_id, status, notes, created_by)
-       VALUES (?, ?, ?, 'PENDING', ?, ?)`,
-      [hid, consultation.visit_id, consultationId, body.notes || null, session.userId],
-    );
-    const pid = res.insertId;
+  const { prescriptionId } = await tenantDb.$transaction(async (tx) => {
+    const created = await tx.prescriptions.create({
+      data: {
+        visit_id: consultation.visit_id,
+        consultation_id: consultationId,
+        status: "PENDING",
+        notes: body.notes || null,
+        created_by: BigInt(session.userId),
+      },
+    });
     const ids = [];
     for (const it of body.items) {
-      const [itemRes] = await conn.execute(
-        `INSERT INTO prescription_items
-           (tenant_id, prescription_id, medicine_name, dosage, quantity)
-         VALUES (?, ?, ?, ?, ?)`,
-        [hid, pid, it.medicineName, it.dosage || null, it.quantity],
-      );
-      ids.push(itemRes.insertId);
+      const item = await tx.prescription_items.create({
+        data: {
+          prescription_id: created.id,
+          medicine_name: it.medicineName,
+          dosage: it.dosage || null,
+          quantity: it.quantity,
+        },
+      });
+      ids.push(item.id);
     }
     // Audit trail: who overrode which allergy warning, and when.
     for (let i = 0; i < body.items.length; i++) {
       if (matches[i] && body.items[i].allergyAck) {
-        await conn.execute(
-          `INSERT INTO prescription_item_acks
-             (tenant_id, prescription_item_id, warning, acknowledged_by)
-           VALUES (?, ?, ?, ?)`,
-          [hid, ids[i], `Allergy match: ${matches[i]}`, session.userId],
-        );
+        await tx.prescription_item_acks.create({
+          data: {
+            prescription_item_id: ids[i],
+            warning: `Allergy match: ${matches[i]}`,
+            acknowledged_by: BigInt(session.userId),
+          },
+        });
       }
     }
-    return { prescriptionId: pid, itemIds: ids };
+    return { prescriptionId: created.id, itemIds: ids };
   });
 
-  const prescription = await scopedQueryOne(
-    `SELECT * FROM prescriptions WHERE tenant_id = :tid AND id = :id`,
-    { id: prescriptionId },
-  );
-  prescription.items = await scopedQuery(
-    `SELECT * FROM prescription_items WHERE tenant_id = :tid AND prescription_id = :id ORDER BY id ASC`,
-    { id: prescriptionId },
-  );
+  const prescription = await tenantDb.prescriptions.findUnique({
+    where: { id: prescriptionId },
+    include: { prescription_items: { orderBy: { id: "asc" } } },
+  });
+  const { prescription_items, ...rest } = prescription;
+  const out = { ...rest, items: prescription_items };
 
   // Routes to the Pharmacy sub-room live, in this same request cycle.
-  emitToModule(session.tenantId, "PHARMACY", "prescription:created", { prescription });
+  emitToModule(session.tenantId, "PHARMACY", "prescription:created", { prescription: out });
 
-  return json({ prescription }, 201);
+  return json({ prescription: out }, 201);
 });

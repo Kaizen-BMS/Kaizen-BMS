@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { queryOne } from "@/lib/db";
+import { prisma } from "@/lib/prismaClient";
 import { getActiveModules } from "@/lib/modules";
 import { getTenant } from "@/lib/tenants";
 import { groupedNav } from "@/lib/navRegistry";
@@ -16,16 +16,13 @@ export default async function DashboardLayout({ children }) {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const user =
-    session.tenantId == null
-      ? await queryOne(
-          "SELECT id, name, email, role FROM users WHERE id = ? AND tenant_id IS NULL LIMIT 1",
-          [session.userId],
-        )
-      : await queryOne(
-          "SELECT id, name, email, role FROM users WHERE id = ? AND tenant_id = ? LIMIT 1",
-          [session.userId, session.tenantId],
-        );
+  const user = await prisma.users.findFirst({
+    where: {
+      id: BigInt(session.userId),
+      tenant_id: session.tenantId == null ? null : BigInt(session.tenantId),
+    },
+    select: { id: true, name: true, email: true, role: true },
+  });
   if (!user) redirect("/login");
 
   const tenant =

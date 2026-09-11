@@ -1,6 +1,6 @@
 import { apiRoute, json } from "@/lib/apiRoute";
 import { can } from "@/lib/rbac";
-import { scopedQueryOne } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 
 export const dynamic = "force-dynamic";
 
@@ -12,26 +12,17 @@ export const GET = apiRoute(null, async (_request, { session }) => {
   const badges = {};
 
   if (can(session.role, "stock:read")) {
-    const r = await scopedQueryOne(
-      `SELECT COUNT(*) AS n FROM prescriptions
-        WHERE tenant_id = :tid AND status = 'PENDING'`,
-    );
-    badges.pharmacy = Number(r.n);
+    badges.pharmacy = await tenantDb.prescriptions.count({ where: { status: "PENDING" } });
   }
 
   if (can(session.role, "lab:read")) {
-    const r = await scopedQueryOne(
-      `SELECT COUNT(*) AS n FROM lab_orders
-        WHERE tenant_id = :tid AND status IN ('ORDERED', 'IN_PROGRESS')`,
-    );
-    badges.lab = Number(r.n);
+    badges.lab = await tenantDb.lab_orders.count({
+      where: { status: { in: ["ORDERED", "IN_PROGRESS"] } },
+    });
   }
 
   if (can(session.role, "bed:read")) {
-    const r = await scopedQueryOne(
-      `SELECT COUNT(*) AS n FROM beds WHERE tenant_id = :tid AND status = 'CLEANING'`,
-    );
-    badges.ipd = Number(r.n);
+    badges.ipd = await tenantDb.beds.count({ where: { status: "CLEANING" } });
   }
 
   return json({ badges });

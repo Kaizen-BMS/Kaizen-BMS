@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { findById, updateById } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 import { emitToTenant } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +16,12 @@ const patchSchema = z.object({
 // editable from here.
 export const PATCH = apiRoute("patient:update", async (request, ctx) => {
   const { id } = await ctx.params;
-  const patientId = Number(id);
+  const patientId = BigInt(id);
 
-  const existing = await findById("patients", patientId, "id");
+  const existing = await tenantDb.patients.findUnique({
+    where: { id: patientId },
+    select: { id: true },
+  });
   if (!existing) return json({ error: "not_found" }, 404);
 
   const body = await parseBody(request, patchSchema);
@@ -28,12 +31,11 @@ export const PATCH = apiRoute("patient:update", async (request, ctx) => {
   }
   if (body.abhaId !== undefined) patch.abha_id = body.abhaId || null;
 
-  await updateById("patients", patientId, patch);
-  const patient = await findById(
-    "patients",
-    patientId,
-    "id, name, age, phone, allergies, abha_id",
-  );
+  await tenantDb.patients.update({ where: { id: patientId }, data: patch });
+  const patient = await tenantDb.patients.findUnique({
+    where: { id: patientId },
+    select: { id: true, name: true, age: true, phone: true, allergies: true, abha_id: true },
+  });
 
   emitToTenant(ctx.session.tenantId, "patient:updated", { patient });
   return json({ patient });

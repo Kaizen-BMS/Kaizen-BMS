@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { query } from "@/lib/db";
-import { requireTenantId, scopedQueryOne } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
+import { requireTenantId } from "@/lib/requestContext";
 import { getTenant } from "@/lib/tenants";
 import { emitToTenant } from "@/lib/realtime";
 
@@ -26,17 +26,22 @@ export const PUT = apiRoute("branding:manage_own", async (request, { session }) 
   const body = await parseBody(request, putSchema);
   const tid = requireTenantId();
 
-  await query(
-    `INSERT INTO print_branding (tenant_id, scope, doctor_user_id, header_name, qualifications)
-     VALUES (?, 'DOCTOR', ?, ?, ?)
-     ON DUPLICATE KEY UPDATE header_name = VALUES(header_name), qualifications = VALUES(qualifications)`,
-    [tid, session.userId, body.headerName, body.qualifications || null],
-  );
+  await tenantDb.print_branding.upsert({
+    where: {
+      tenant_id_doctor_user_id: { tenant_id: BigInt(tid), doctor_user_id: BigInt(session.userId) },
+    },
+    update: { header_name: body.headerName, qualifications: body.qualifications || null },
+    create: {
+      scope: "DOCTOR",
+      doctor_user_id: BigInt(session.userId),
+      header_name: body.headerName,
+      qualifications: body.qualifications || null,
+    },
+  });
 
-  const ownBranding = await scopedQueryOne(
-    "SELECT * FROM print_branding WHERE tenant_id = :tid AND scope = 'DOCTOR' AND doctor_user_id = :uid LIMIT 1",
-    { uid: session.userId },
-  );
+  const ownBranding = await tenantDb.print_branding.findFirst({
+    where: { scope: "DOCTOR", doctor_user_id: BigInt(session.userId) },
+  });
   emitToTenant(session.tenantId, "branding:updated", { scope: "DOCTOR", branding: ownBranding });
   return json({ ownBranding });
 });

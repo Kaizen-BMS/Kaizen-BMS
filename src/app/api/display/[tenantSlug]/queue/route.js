@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { query, queryOne } from "@/lib/db";
+import { prisma } from "@/lib/prismaClient";
 
 export const dynamic = "force-dynamic";
 
@@ -14,30 +14,30 @@ export const dynamic = "force-dynamic";
 export async function GET(_request, ctx) {
   const { tenantSlug } = await ctx.params;
 
-  const tenant = await queryOne(
-    "SELECT id FROM tenants WHERE slug = ? AND active = 1 LIMIT 1",
-    [tenantSlug],
-  );
+  const tenant = await prisma.tenants.findFirst({
+    where: { slug: tenantSlug, active: true },
+    select: { id: true },
+  });
   if (!tenant) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  const serving = await queryOne(
+  const servingRows = await prisma.$queryRawUnsafe(
     `SELECT token_number FROM visits
       WHERE tenant_id = ? AND DATE(created_at) = CURDATE() AND status = 'WITH_DOCTOR'
       ORDER BY updated_at DESC LIMIT 1`,
-    [tenant.id],
+    tenant.id,
   );
-  const waitingRows = await query(
+  const waitingRows = await prisma.$queryRawUnsafe(
     `SELECT token_number FROM visits
       WHERE tenant_id = ? AND DATE(created_at) = CURDATE()
         AND status IN ('REGISTERED', 'TRIAGE') AND token_number IS NOT NULL
       ORDER BY token_number ASC LIMIT 10`,
-    [tenant.id],
+    tenant.id,
   );
 
   return NextResponse.json({
-    nowServing: serving?.token_number ?? null,
+    nowServing: servingRows[0]?.token_number ?? null,
     waiting: waitingRows.map((r) => r.token_number),
   });
 }

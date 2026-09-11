@@ -9,6 +9,7 @@ const EMPTY_TENANT = {
   qualifications: "",
   address: "",
   phone: "",
+  gstin: "",
   footerText: "",
 };
 const EMPTY_OWN = { headerName: "", qualifications: "" };
@@ -30,6 +31,7 @@ export default function BrandingClient() {
         qualifications: d.tenantBranding.qualifications || "",
         address: d.tenantBranding.address || "",
         phone: d.tenantBranding.phone || "",
+        gstin: d.tenantBranding.gstin || "",
         footerText: d.tenantBranding.footer_text || "",
       });
     }
@@ -113,6 +115,7 @@ export default function BrandingClient() {
           )}
           <Field label="Address" value={tenantForm.address} onChange={(v) => setTenantForm((s) => ({ ...s, address: v }))} />
           <Field label="Phone" value={tenantForm.phone} onChange={(v) => setTenantForm((s) => ({ ...s, phone: v }))} />
+          <Field label="GSTIN" value={tenantForm.gstin} onChange={(v) => setTenantForm((s) => ({ ...s, gstin: v }))} />
           <Field label="Footer text" value={tenantForm.footerText} onChange={(v) => setTenantForm((s) => ({ ...s, footerText: v }))} />
           <button
             disabled={busy}

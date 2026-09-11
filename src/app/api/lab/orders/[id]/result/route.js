@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { findById, updateById, scopedQueryOne } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 import { emitToModule, emitToTenant } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
@@ -23,22 +23,24 @@ const resultSchema = z.object({
 // Stage 3 of 3: results entered, report finalized.
 export const POST = apiRoute("lab:result", async (request, ctx) => {
   const { id } = await ctx.params;
-  const orderId = Number(id);
-  const order = await findById("lab_orders", orderId, "id, received_at, status");
+  const orderId = BigInt(id);
+  const order = await tenantDb.lab_orders.findUnique({
+    where: { id: orderId },
+    select: { id: true, received_at: true, status: true },
+  });
   if (!order) return json({ error: "not_found" }, 404);
   if (!order.received_at) throw new HttpError(400, "not_received_yet");
 
   const body = await parseBody(request, resultSchema);
 
-  await updateById("lab_orders", orderId, {
-    results: JSON.stringify(body.results),
-    status: "RESULTED",
-    resulted_by: ctx.session.userId,
-    resulted_at: new Date(),
-  });
-
-  const labOrder = await scopedQueryOne("SELECT * FROM lab_orders WHERE tenant_id = :tid AND id = :id", {
-    id: orderId,
+  const labOrder = await tenantDb.lab_orders.update({
+    where: { id: orderId },
+    data: {
+      results: JSON.stringify(body.results),
+      status: "RESULTED",
+      resulted_by: BigInt(ctx.session.userId),
+      resulted_at: new Date(),
+    },
   });
 
   emitToModule(ctx.session.tenantId, "LAB", "laborder:updated", { labOrder });

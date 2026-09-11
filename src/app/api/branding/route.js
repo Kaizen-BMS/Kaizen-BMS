@@ -1,6 +1,6 @@
 import { apiRoute, json } from "@/lib/apiRoute";
 import { can } from "@/lib/rbac";
-import { scopedQueryOne } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
 import { getTenant } from "@/lib/tenants";
 
 export const dynamic = "force-dynamic";
@@ -10,16 +10,13 @@ export const dynamic = "force-dynamic";
 // tenant currently allows doctors to set one up at all.
 export const GET = apiRoute("branding:read", async (_request, { session }) => {
   const tenant = await getTenant(session.tenantId);
-  const tenantBranding = await scopedQueryOne(
-    "SELECT * FROM print_branding WHERE tenant_id = :tid AND scope = 'TENANT' LIMIT 1",
-  );
+  const tenantBranding = await tenantDb.print_branding.findFirst({ where: { scope: "TENANT" } });
 
   let ownBranding = null;
   if (tenant?.allow_doctor_branding) {
-    ownBranding = await scopedQueryOne(
-      "SELECT * FROM print_branding WHERE tenant_id = :tid AND scope = 'DOCTOR' AND doctor_user_id = :uid LIMIT 1",
-      { uid: session.userId },
-    );
+    ownBranding = await tenantDb.print_branding.findFirst({
+      where: { scope: "DOCTOR", doctor_user_id: BigInt(session.userId) },
+    });
   }
 
   return json({

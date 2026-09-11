@@ -1,36 +1,35 @@
 /**
- * Lists the migration files in ../migrations and prints how to apply them.
- * It does NOT connect to any database and does NOT apply anything — this
- * project has one (production) database and all schema changes are applied
- * by hand by the project owner. See CLAUDE.md "Database rule".
+ * Applies every not-yet-applied migrations/*.sql file to the database,
+ * backing the whole database up first (see scripts/dbApplyGuard.js). This
+ * project has ONE database and it is effectively production — there is no
+ * separate copy to rehearse against, which is exactly why the backup step
+ * is not optional by default. See CLAUDE.md "Database rule".
  *
- * Usage: npm run db:migrate
+ * Usage:
+ *   npm run db:migrate                 (backup, then apply pending files)
+ *   npm run db:migrate -- --skip-backup  (apply without backing up first —
+ *                                          only for a change you've been
+ *                                          told explicitly to skip it for)
  */
 "use strict";
 
-const fs = require("fs");
-const path = require("path");
+require("./loadEnv");
+const { applyPendingMigrations } = require("./dbApplyGuard");
 
-const DIR = path.resolve(__dirname, "..", "migrations");
+const skipBackup = process.argv.includes("--skip-backup");
 
-const files = fs
-  .readdirSync(DIR)
-  .filter((f) => /^\d+_.*\.sql$/.test(f))
-  .sort();
-
-console.log(
-  [
-    "",
-    "Migrations in this repo (apply in this order, by hand, on the DB):",
-    "",
-    ...files.map((f) => `  ${f}`),
-    "",
-    "Apply a file with either:",
-    "  • phpMyAdmin  -> Import -> choose the file",
-    "  • mysql CLI   -> mysql -h <host> -u <user> -p <db> < migrations/<file>",
-    "",
-    "Then also run migrations/seed.sql once, if you want the demo tenants.",
-    "This script never touches the database itself.",
-    "",
-  ].join("\n"),
-);
+applyPendingMigrations({ skipBackup })
+  .then(({ applied }) => {
+    if (applied.length > 0) {
+      console.log(`\nDone — applied ${applied.length} migration(s):`);
+      for (const { file, backupPath } of applied) {
+        console.log(`  ${file}${backupPath ? `  (backup: ${backupPath})` : ""}`);
+      }
+    }
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("\n[db:migrate] FAILED:", err.message || err);
+    console.error("No further migration files were applied after this failure.");
+    process.exit(1);
+  });

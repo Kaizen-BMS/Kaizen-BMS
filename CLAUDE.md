@@ -44,10 +44,11 @@ unaffected and still served by the same process.
   `/dashboard/*` and `/api/*` request (except `/api/auth/login`), strips any
   client-supplied `x-kaizen-*` headers, and re-sets them from the verified
   token. API handlers use `apiRoute(action, handler)` which runs the body
-  inside an AsyncLocalStorage tenant context; the repo layer
-  (`src/lib/repo/tenant.js`) forces `tenant_id` into every query and throws
-  if used outside that context. No raw string-concatenated SQL — mysql2
-  prepared statements only.
+  inside an AsyncLocalStorage tenant context; `tenantDb` (Prisma, see
+  "Prisma" below) forces `tenant_id` into every query and throws if used
+  outside that context. No raw string-concatenated SQL — every raw query is
+  parameterized (`$queryRawUnsafe` with `?` placeholders, never string
+  interpolation).
 - **Auth.** Passwords bcrypt (cost 12), never logged, never stored plain.
   Session = HS256 JWT (`{uid, hid, role}`, 8h) in an httpOnly + secure +
   sameSite=strict cookie. Never localStorage. Login is rate-limited to 5
@@ -72,35 +73,35 @@ unaffected and still served by the same process.
   optimistic-then-wait lag. For >1 server instance later, add
   `@socket.io/redis-adapter`.
 - **Secrets** live in `.env` (gitignored), read via `process.env`, never
-  hardcoded. Production runs the Node app and MySQL on the **same Hostinger
-  account** (Node.js hosting / VPS, not PHP shared hosting), so
-  `DB_HOST=localhost` and no Remote MySQL / IP whitelist is needed. See
-  `.env.example`.
-- **Build order** (do not skip ahead): 1. auth + RBAC + tenant scaffold
-  (done). 1b. Tenant generalization — Tenant + type + tenant_modules,
-  owner roles, print_branding table, migration 003 (done; awaiting prod
-  apply). 2. Super Admin dashboard (create tenant / module rentals /
-  suspend) — **not built yet, deliberately deferred** in favour of 3+4
-  below. 3. PrintBranding edit-permission logic + solo/hospital branding
-  screens — **done**, see "Print branding" below. 4. Registration +
-  OPD/Doctor (built) + prescription print template — **done**. 5. Pharmacy —
-  **done**: full inventory lifecycle (stock-in, batch-wise inventory,
-  low-stock + expiry alerts, FEFO dispense, logged manual adjustments — see
-  "Pharmacy inventory" below), not just dispensing. Purchase orders to
-  suppliers deliberately out of scope for now. 6. Lab — scaffold exists
-  (`(app)/dashboard/lab`), result entry + diagnostic report print not built
-  yet — **next**. 7. Billing — scaffold exists (`(app)/dashboard/billing`),
-  aggregation + receipt print not built yet.
+  hardcoded. Dev (this machine) connects to the real database over
+  Hostinger's **Remote MySQL** (`DB_HOST=srv1872.hstgr.io`, not `localhost`
+  — Remote MySQL + this machine's IP are enabled/whitelisted on the
+  Hostinger side). When the Node app is eventually deployed onto Hostinger
+  itself, that deployment's own env vars can use `DB_HOST=localhost`
+  instead — that's a property of *where the app runs*, not a fixed value.
+  See `.env.example`.
+- **Build order** (do not skip ahead) — **all 7 steps done as of
+  2026-09-11**: 1. auth + RBAC + tenant scaffold. 1b. Tenant generalization
+  (Tenant + type + tenant_modules, owner roles, print_branding). 2. Super
+  Admin dashboard — tenants list, Create Tenant (provisions tenant +
+  modules + owner with a shareable temp password), tenant detail (module
+  toggles, staff list, suspend/reactivate), Module Registry (a read-only
+  catalog, not a dynamic "add module" form — see "Super Admin" below for
+  why). 3. PrintBranding. 4. Registration + OPD/Doctor + prescription
+  print. 5. Pharmacy — full inventory lifecycle (stock-in, batch-wise
+  inventory, low-stock + expiry alerts, FEFO dispense, logged manual
+  adjustments — see "Pharmacy inventory" below); purchase orders to
+  suppliers deliberately out of scope. 6. Lab — result entry + diagnostic
+  report print. 7. Billing — OPD (aggregated at checkout) + IPD (a running
+  bill, event-driven) + receipt print — see "Billing module" below.
   Also built out of the original numbered order, since the owner asked for
   them directly: the dashboard shell (registry-driven sidebar/topbar,
-  `src/lib/navRegistry.js`), patient-journey IPD branch (migration 004),
-  patient-safety/queue-display work (migration 005), and a dedicated `NURSE`
-  role + `patients.gender` (migration 006) — see "Patient journey model",
-  "Patient safety & queue display", and "Role hierarchy" below. After each
-  module: real-time check in two tabs, and confirm a solo tenant sees only
-  its one module's UI. Migrations 004, 005, 006 and 007 are pending owner
-  apply —
-  see "Database rule".
+  `src/lib/navRegistry.js`), the patient-journey IPD branch, patient-safety/
+  queue-display work, and a dedicated `NURSE` role + `patients.gender` — see
+  "Patient journey model", "Patient safety & queue display", and "Role
+  hierarchy" below. After each module: real-time check in two tabs, confirm
+  a solo tenant sees only its one module's UI. All migrations through
+  012 are applied (see "Database rule" for the current auto-apply flow).
 - **Module isolation.** Each module is a genuinely separate slice: its own
   route group / folder under `(app)/dashboard/<module>`, its own API
   namespace `/api/<module>/*`, its own Socket.io sub-room
@@ -108,32 +109,102 @@ unaffected and still served by the same process.
   Pharmacy / Lab / Billing code paths active — enforced by module gating on
   every route, not by hiding nav.
 
-## Database rule
+## Database rule (updated 2026-09-11 — supersedes the earlier manual-only policy)
 
-There is **exactly one database** for this project — the production database.
-No separate local/dev database exists. It has no real hospital/patient data
-yet (pre-launch) but is treated with production-level caution from now on.
+There is **one database** (still no separate dev database, still effectively
+production). Prisma may apply schema migrations directly via
+`prisma migrate deploy` (or equivalent) — this reverses the project's
+earlier manual-only policy. Before every auto-applied migration, take a
+timestamped backup automatically first, unless explicitly told to skip it
+for a specific change. Direct manual edits to production data outside
+normal app CRUD or a proper migration remain forbidden — this rule change
+concerns schema/migrations only, not ad-hoc data changes.
 
-- **Nothing in this repo ever applies a schema change or seeds data to it.**
-  Not in dev, not at deploy. No auto-migrate, no `db push`, no seed script
-  hitting the DB.
-- When a schema change is needed: write `migrations/NNN_<desc>.sql` (hand-authored
-  — this repo uses mysql2 + raw SQL, the installed Prisma is the incompatible
-  v8 RC), then tell the owner verbatim: *"Schema change ready — migration file
-  at `migrations/NNN_<desc>.sql`. Run this on the database yourself before I
-  build anything that depends on it."* Wait for the owner to confirm they
-  applied it.
-- Demo data: `npm run db:seed` writes `migrations/seed.sql` (no DB
-  connection); the owner runs it by hand, once, on a fresh DB.
-- `npm run db:migrate` only lists the migration files; it never connects.
-  `scripts/dbApplyGuard.js` (`blockDbApply`) refuses **unconditionally** —
-  it does not check DB_HOST or "is this local", because that distinction is
-  gone.
-- The app still needs a DB to run during development; whatever it connects to
-  for `npm run dev` is kept schema-synced **by hand** with the migration
-  files — never by a script.
+**What "equivalent" means in practice here:** `prisma/schema.prisma` is
+introspected (`db pull`), not hand-authored, and there's no baselined
+Prisma migration history — running literal `prisma migrate deploy` isn't
+usable without first baselining every migration already applied by hand.
+So the actual mechanism is `migrations/NNN_<desc>.sql` files (unchanged —
+still hand-authored SQL, still numbered/ordered) applied by
+`npm run db:migrate`, which now really connects:
+
+1. `scripts/dbApplyGuard.js` backs up the whole database first
+   (`backupDatabase()` — pure-JS `mysqldump` npm package, no CLI binary
+   needed/available on this machine) to `backups/<timestamp>__<label>.sql`
+   (gitignored — never committed, it's a full data dump), unless
+   `skipBackup`/`--skip-backup` was explicitly requested for that change.
+2. Applies every `migrations/*.sql` file not yet recorded in the
+   `_kaizen_schema_migrations` tracking table, in order, stopping at the
+   first failure.
+3. The first-ever run baselines every migration file already in the repo
+   as applied (they already are, by hand, from before this policy changed)
+   without re-executing them — only files added after that point actually
+   run.
+4. After a successful apply, run `npx prisma db pull` so
+   `prisma/schema.prisma` stays in sync with what just changed.
+
+- Demo data stays manual: `npm run db:seed` only writes `migrations/seed.sql`
+  (no DB connection); the owner still runs it by hand, once, on a fresh DB —
+  this policy change is schema/migrations only, seeding is unaffected.
 - **Customizable form fields never trigger a migration** — that is the whole
   point of the `form_templates` + `custom_fields` pattern below.
+
+## Prisma
+
+The originally-installed `prisma@8.0.0-rc` ("Prisma Next", data-contracts
+CLI) was incompatible with the standard workflow and is **replaced** with
+stable, pinned **`prisma@6.19.3` / `@prisma/client@6.19.3`** — a normal
+Prisma, normal `schema.prisma`, normal CLI. `prisma/schema.prisma` was
+generated by introspecting the live production database —
+`npx prisma db pull` — not hand-written; re-run that after every migration
+the owner confirms applied, to keep it in sync. `npx prisma studio` is the
+project's day-to-day **database GUI** (browse/edit rows) — genuinely useful
+right now, independent of anything below.
+
+**Status: migration complete, mysql2 removed.** Every route reads/writes
+through `tenantDb`/`prisma`. `src/lib/db.js` and `src/lib/repo/tenant.js`
+(mysql2) were deleted 2026-09-11 once the full cross-tenant raw-query audit
+(every `$queryRawUnsafe` call site, including the 2 IPD ones that needed a
+second IPD-active tenant to test — unblocked by the Super Admin dashboard)
+came back fully green. Complex joins / `CURDATE()`-dependent /
+`FOR UPDATE`-locked queries stayed as `$queryRawUnsafe`/`tx.$queryRawUnsafe`
+with an explicit `tenant_id = ?` (the tenant-scoping extension does not
+intercept raw queries); everything else uses `tenantDb.<model>.<method>()`.
+
+- **`src/lib/prismaClient.js`** exports `prisma` (raw client — only for
+  genuinely cross-tenant work: SUPER_ADMIN platform screens, login's
+  pre-session lookup) and `tenantDb` (the one route code should use). `tenantDb`
+  is `prisma.$extends(...)` with a query extension that auto-injects
+  `tenant_id` into every read/write `where` and every `create`'s `data`, for
+  every model in `TENANT_SCOPED_MODELS` — sourced from the same
+  AsyncLocalStorage context `src/lib/requestContext.js` already provides (via
+  `requireTenantId()`) — "physically cannot forget the tenant filter" by
+  construction. Verified: a no-context call throws; tenant 2's
+  `findUnique` on tenant 1's row returns `null`, not the row; `create` in a
+  tenant-2 context is auto-stamped `tenant_id: 2`.
+- **Interactive-transaction timeout, raised and still watch carefully**:
+  this DB is remote (Hostinger, not same-host) with observed per-query
+  latency of 300ms-3.5s and at least one outlier past 80s. Prisma's default
+  transaction timeout (5s) is nowhere near enough — `makeClient()` sets
+  `transactionOptions: { maxWait: 10_000, timeout: 30_000 }`. Found and
+  fixed the hard way (a real 500 on the prescription-override flow); see
+  "Billing module" below for the more serious follow-on finding (a timed-out
+  transaction's write is not guaranteed rolled back before the connection
+  is reused — mitigated with idempotency keys on money-movement writes, not
+  just a bigger timeout number).
+- `bill_items` is deliberately excluded from `TENANT_SCOPED_MODELS` (it has
+  no `tenant_id` column, only `bill_id` — scoped transitively through
+  `bills`); so are `tenants`, `users` (nullable `tenant_id`, needs
+  case-by-case handling), and `migrations`.
+- **Gotcha, verified the hard way:** the tenant context only survives into
+  Prisma's query engine if the `runWithContext(ctx, fn)` callback is an
+  `async` function that itself `await`s the Prisma call
+  (`async () => { return await tenantDb.x.findMany(); }`) — a bare
+  `() => tenantDb.x.findMany()` loses the AsyncLocalStorage context crossing
+  Prisma's native query-engine boundary and the call throws "no tenant
+  context." `apiRoute()`'s handler wrapper already awaits internally, so any
+  route written the normal way (awaiting its DB calls) is safe by
+  construction — this is only a trap for code written outside that wrapper.
 
 ## Role hierarchy
 
@@ -216,14 +287,47 @@ was `hospitals`) has a `type`: `HOSPITAL`, `DOCTOR_SOLO`, `PHARMACY_SOLO`, or
   (LAB_SOLO → LAB). Super Admin's Create Tenant flow provisions the tenant,
   its `tenant_modules`, and the initial owner account with a temp password.
 
-## Super Admin
+## Super Admin — built
 
-`SUPER_ADMIN` (`tenant_id = NULL`) owns platform control: create tenants
-(any type + pack), tenant list/detail (type, modules, staff count, created),
-toggle any `tenant_modules.is_active` (rent / un-rent), deactivate /
-reactivate a whole tenant (`tenants.active` — suspends all its logins,
-keeps data). Platform-wide counts only — **no "view as tenant" browser into
-a tenant's clinical data** (compliance decision, flag separately if needed).
+`SUPER_ADMIN` (`tenant_id = NULL`) owns platform control at
+`(app)/dashboard/platform/*`, `/api/admin/*`. Every route there uses the
+raw `prisma` client, never `tenantDb` — `apiRoute()` runs a SUPER_ADMIN
+request with `tenantId: null`, so `tenantDb`'s `requireTenantId()` would
+throw; there is no single tenant to scope these routes by, they operate
+*across* tenants by design. Gated by a `tenant:read`/`tenant:manage` action
+pair that only `SUPER_ADMIN`'s `["*"]` wildcard satisfies — no other role's
+permission list names them, so nothing else needs to change in rbac.js.
+
+- **Tenants list** (`GET /api/admin/tenants`) — name/type/active
+  modules/staff count/created/status, client-side search.
+- **Create Tenant** (`POST /api/admin/tenants`) — provisions the tenant row,
+  its `tenant_modules` (a solo type always gets exactly
+  `SOLO_TYPE_MODULE[type]`, ignoring any client-supplied list — the "exactly
+  one module" invariant is enforced server-side, not just by the form UI),
+  and the owner account (`HOSPITAL_ADMIN` or the type's `SOLO_TYPE_OWNER_ROLE`)
+  with a random temp password. **The temp password is returned once, in
+  that response only** — never logged, never stored anywhere but its bcrypt
+  hash; the Super Admin copies it out to share with the owner.
+- **Tenant detail** (`GET`/`PATCH /api/admin/tenants/[id]`, `PATCH
+  .../modules`) — per-module rent/un-rent toggle, staff list, suspend/
+  reactivate (`tenants.active` — blocks every login for that tenant
+  immediately; found and fixed a real gap here, see below). Platform-wide
+  counts only — **no "view as tenant" browser into a tenant's clinical
+  data** (compliance decision, flag separately if needed).
+- **Module Registry** (`GET /api/admin/modules`, `src/lib/moduleRegistry.js`)
+  — **a static, code-defined, read-only catalog, not a form that creates new
+  module types.** `tenant_modules.module_name` is a fixed MySQL ENUM, and a
+  genuinely new module needs real routes/RBAC/room wiring regardless of any
+  registry row — a "Module Registry" that let you type in a new module name
+  would imply capabilities that don't exist. Lists what's rentable today
+  (`DOCTOR_OPD`/`PHARMACY`/`LAB`/`IPD`/`BILLING`) vs. planned
+  (`RADIOLOGY`/`APPOINTMENTS`, already stubbed `status:"soon"` in
+  `navRegistry.js`).
+- **Bug found and fixed while building this**: `POST /api/auth/login`
+  never checked `tenants.active` — a suspended tenant's user could still log
+  in and receive a valid session cookie (only rejected on their *next*
+  request, by `apiRoute()`/`guardPage()`). Login now checks it directly and
+  returns `403 tenant_suspended` immediately.
 
 ## Print branding — built
 
@@ -306,6 +410,89 @@ purchase orders to suppliers are the one deliberate scope cut, for later.
 - Actions: `stock:read` (view), `stock:create` (stock-in), `stock:adjust`
   (manual correction + set thresholds), `dispense:create`/`dispense:read` —
   all `PHARMACIST` / `OWNER_PHARMACIST`, all module-gated on `PHARMACY`.
+
+## Billing module
+
+Two distinct flows: OPD billing (one-time, settled at checkout) and IPD
+billing (a running `Bill` that accumulates `bill_items` throughout an
+admission via the existing event system, finalized at discharge). Discounts
+always require a reason and `authorized_by` — never anonymous. Payments
+support multiple modes and partial payment. Package billing is explicitly
+out of scope until a later phase.
+
+- **Schema**: `bills` (one per OPD visit or per IPD admission;
+  `bill_type` OPD/IPD, `status` OPEN/PARTIALLY_PAID/PAID/REFUNDED,
+  `total_amount` always derived, never hand-set), `bill_items` (no
+  `tenant_id` — scoped transitively through `bills`, same as the existing
+  `bill_items` pattern already documented for the Prisma extension;
+  `reference_type`/`reference_id` point back at the source row so the IPD
+  event-driven accrual is idempotent), `payments`, `discounts`
+  (`authorized_by` required), `refunds` (its own action, never a silent
+  negative payment — optionally tied to the `payment_id` it reverses).
+  `src/lib/billing.js`'s `recomputeBillStatus(db, billId)` is the one place
+  `total_amount`/`status` get written — every route that touches a child row
+  calls it afterward (inside the same transaction) instead of computing
+  status inline.
+- **`bills`/`bill_items` pre-existed** as a bare placeholder scaffold from
+  001_init.sql (`hospital_id`, no `visit_id`/`bill_type`, a different status
+  enum) — migration 009's `CREATE TABLE IF NOT EXISTS` silently no-op'd on
+  both (both were empty, 0 rows — confirmed before correcting, no data was
+  at risk). Migration 010 `ALTER`s them into the real shape. Worth
+  remembering for the *next* new table too: **check `SHOW TABLES`/`SHOW
+  COLUMNS` for a name before assuming `CREATE TABLE IF NOT EXISTS` will
+  actually create it** — this project has scaffold tables from early
+  migrations that predate a feature's real design.
+- **OPD flow** (`POST /api/billing/opd`, action `bill:create`): given a
+  `visitId`, aggregates what already happened on that visit into line items
+  — one `CONSULTATION` item per consultation (amount = `consultations.fee`,
+  known exactly), one `PHARMACY` item per prescription item with
+  `dispensed_quantity > 0`, one `LAB` item per lab order. **Pharmacy/lab
+  item amounts start at 0** — there is no medicine/test price catalog
+  anywhere in this system, so billing staff price them via
+  `PATCH /api/billing/[id]/items/[itemId]` before checkout. Calling the
+  create endpoint twice for the same visit returns the existing bill rather
+  than duplicating it.
+- **IPD flow**: a `Bill(IPD, OPEN)` is created automatically when an
+  admission is created, and a room-charge `IPD_ROOM` item is added
+  automatically at discharge (nights stayed × the admitted bed's
+  `daily_rate` — added to `beds` by migration 009, since nothing in the
+  schema had a room rate before). Both happen via `src/lib/billingEvents.js`
+  subscribing to `admission:created`/`admission:discharged`/
+  `dispense:created`/`lab:result` on `realtime.js`'s new in-process
+  `serverEvents` bus — **billing never imports IPD/Pharmacy/Lab route code
+  directly**, it only reacts to the same events those modules already emit
+  for Socket.io clients. `finalized_at` is set at discharge; the event
+  listeners skip appending further items to a bill once it's finalized.
+  Payment collection still happens as its own step (billing counter),
+  independent of the finalize.
+- **`serverEvents` (in `src/lib/realtime.js`)**: every `emitToTenant`/
+  `emitToModule` call also fires the same event on this in-process
+  `EventEmitter`, synchronously, from inside the write's own
+  AsyncLocalStorage tenant context. A listener registered here is NOT
+  awaited by the emitter (fire-and-forget) but still correctly sees that
+  request's tenant context for its own Prisma calls, **as long as the
+  listener itself is `async` and directly `await`s the Prisma call** — same
+  rule as `prismaClient.js`'s context-propagation note, because that rule
+  is about the direct awaiting function, not about who invoked it or
+  whether they awaited it. Verified empirically (two concurrent "requests"
+  for different tenants, real Prisma calls from inside each one's listener,
+  zero cross-tenant bleed) before anything was built on top of this.
+- **GSTIN**: `print_branding.gstin` (migration 011), optional, shown on the
+  receipt header when set. **The receipt is GST-formatted, not
+  GST-tax-computed** — there is no HSN/tax-rate catalog in this system and
+  healthcare GST rates are exemption/category-dependent, so no tax amount
+  is calculated or charged; the receipt just carries the fields a real GST
+  invoice needs (seller GSTIN, itemization, an invoice number derived as
+  `INV-<tenantId>-<billId>`, no separate DB column for it).
+- **RBAC** (already scaffolded, unchanged by this module):
+  `BILLING_STAFF`/`HOSPITAL_ADMIN` get `bill:create`/`bill:read`/
+  `bill:update` (the last one covers editing item prices, recording
+  payments/discounts/refunds — same action grain as the rest of this
+  project, not a separate action per sub-write); `DOCTOR`/`PHARMACIST` get
+  `bill:read` only (can see status, cannot edit).
+- **Print**: `(app)/print/receipt/[billId]`, same `PrintBranding` system and
+  route-tree pattern as prescription/lab-report print (authenticated,
+  tenant-scoped, no dashboard chrome).
 
 ## Product UI
 

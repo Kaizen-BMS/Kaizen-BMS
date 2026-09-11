@@ -12,7 +12,11 @@ const { verifySession } = require("./src/lib/auth");
 const { SESSION_COOKIE } = require("./src/lib/authConstants");
 const { getActiveModules, moduleRoomsForRole } = require("./src/lib/modules");
 const { registerIo } = require("./src/lib/realtime");
-const { queryOne } = require("./src/lib/db");
+const { prisma } = require("./src/lib/prismaClient");
+// Side-effect require: registers Billing's IPD event listeners on the
+// serverEvents bus once, for the lifetime of this process. See
+// src/lib/billingEvents.js / CLAUDE.md "Billing module".
+require("./src/lib/billingEvents");
 
 function parseCookies(header) {
   const out = {};
@@ -57,12 +61,12 @@ app.prepare().then(() => {
 
       const slug = socket.handshake.query?.displayTenant;
       if (slug) {
-        const tenant = await queryOne(
-          "SELECT id FROM tenants WHERE slug = ? AND active = 1 LIMIT 1",
-          [String(slug)],
-        );
+        const tenant = await prisma.tenants.findFirst({
+          where: { slug: String(slug), active: true },
+          select: { id: true },
+        });
         if (tenant) {
-          socket.data.display = { tenantId: tenant.id };
+          socket.data.display = { tenantId: Number(tenant.id) };
           return nextFn();
         }
       }

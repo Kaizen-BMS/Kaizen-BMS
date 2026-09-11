@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { query } from "@/lib/db";
-import { requireTenantId } from "@/lib/repo/tenant";
+import { prisma } from "@/lib/prismaClient";
+import { requireTenantId } from "@/lib/requestContext";
 import { getTenant } from "@/lib/tenants";
 import { emitToTenant } from "@/lib/realtime";
 
@@ -16,10 +16,10 @@ export const PATCH = apiRoute("branding:manage_tenant", async (request, { sessio
   const body = await parseBody(request, patchSchema);
   const tid = requireTenantId();
 
-  await query("UPDATE tenants SET allow_doctor_branding = ? WHERE id = ?", [
-    body.allowDoctorBranding ? 1 : 0,
-    tid,
-  ]);
+  await prisma.tenants.update({
+    where: { id: BigInt(tid) },
+    data: { allow_doctor_branding: body.allowDoctorBranding },
+  });
   const tenant = await getTenant(tid);
 
   emitToTenant(session.tenantId, "tenant:updated", { tenant });

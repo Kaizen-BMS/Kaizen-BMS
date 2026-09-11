@@ -1,6 +1,6 @@
 "use strict";
 
-const { query } = require("./db");
+const { prisma } = require("./prismaClient");
 const { can } = require("./rbac");
 
 const MODULE_NAMES = ["PHARMACY", "DOCTOR_OPD", "LAB", "BILLING", "IPD"];
@@ -58,23 +58,28 @@ function requiredModules(action) {
   return ACTION_MODULE[action] || [];
 }
 
+// Called from apiRoute() BEFORE the tenant AsyncLocalStorage context exists
+// (it decides whether to grant that context), and from server.js outside
+// any request at all — so these use the raw `prisma` client with an
+// explicit tenant_id filter, never the ambient-context `tenantDb`.
+
 /** Active module names for a hospital. */
 async function getActiveModules(tenantId) {
   if (tenantId == null) return [];
-  const rows = await query(
-    "SELECT module_name FROM tenant_modules WHERE tenant_id = ? AND is_active = 1",
-    [tenantId],
-  );
+  const rows = await prisma.tenant_modules.findMany({
+    where: { tenant_id: BigInt(tenantId), is_active: true },
+    select: { module_name: true },
+  });
   return rows.map((r) => r.module_name);
 }
 
 async function isModuleActive(tenantId, moduleName) {
   if (tenantId == null) return false;
-  const rows = await query(
-    "SELECT 1 FROM tenant_modules WHERE tenant_id = ? AND module_name = ? AND is_active = 1 LIMIT 1",
-    [tenantId, moduleName],
-  );
-  return rows.length > 0;
+  const row = await prisma.tenant_modules.findFirst({
+    where: { tenant_id: BigInt(tenantId), module_name: moduleName, is_active: true },
+    select: { id: true },
+  });
+  return !!row;
 }
 
 /** True if the tenant has any of `moduleNames` active. */

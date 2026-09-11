@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { insert, scopedQuery, scopedQueryOne } from "@/lib/repo/tenant";
+import { tenantDb } from "@/lib/prismaClient";
+import { requireTenantId } from "@/lib/requestContext";
 import { validateCustomFields } from "@/lib/forms";
 import { emitToTenant } from "@/lib/realtime";
 
@@ -23,16 +24,34 @@ const createSchema = z.object({
 export const GET = apiRoute("patient:read", async (request) => {
   const q = new URL(request.url).searchParams.get("q")?.trim() || "";
   if (q.length < 2) return json({ patients: [] });
-  const patients = await scopedQuery(
-    `SELECT id, name, age, phone, custom_fields, allergies, abha_id, created_at
-       FROM patients
-      WHERE tenant_id = :tid AND (name LIKE :like OR phone LIKE :like)
-      ORDER BY created_at DESC
-      LIMIT 20`,
-    { like: `%${q}%` },
-  );
+  const patients = await tenantDb.patients.findMany({
+    where: { OR: [{ name: { contains: q } }, { phone: { contains: q } }] },
+    select: {
+      id: true,
+      name: true,
+      age: true,
+      phone: true,
+      custom_fields: true,
+      allergies: true,
+      abha_id: true,
+      created_at: true,
+    },
+    orderBy: { created_at: "desc" },
+    take: 20,
+  });
   return json({ patients });
 });
+
+function flattenVisit(v) {
+  const { patients: p, ...rest } = v;
+  return {
+    ...rest,
+    patient_name: p.name,
+    patient_age: p.age,
+    patient_phone: p.phone,
+    patient_allergies: p.allergies,
+  };
+}
 
 // Register a new patient. Optionally opens a visit (queue entry) at once —
 // the common front-desk flow. The visit gets today's next sequential
@@ -45,41 +64,46 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
     body.customFields,
   );
 
-  const patientId = await insert("patients", {
-    name: body.name,
-    age: body.age,
-    gender: body.gender || null,
-    phone: body.phone,
-    custom_fields: custom ? JSON.stringify(custom) : null,
-    allergies: body.allergies?.length ? JSON.stringify(body.allergies) : null,
-    abha_id: body.abhaId || null,
+  const patient = await tenantDb.patients.create({
+    data: {
+      name: body.name,
+      age: body.age,
+      gender: body.gender || null,
+      phone: body.phone,
+      custom_fields: custom ? JSON.stringify(custom) : null,
+      allergies: body.allergies?.length ? JSON.stringify(body.allergies) : null,
+      abha_id: body.abhaId || null,
+    },
   });
 
   let visit = null;
   if (body.openVisit) {
-    const tokenRow = await scopedQueryOne(
-      `SELECT COUNT(*) AS n FROM visits WHERE tenant_id = :tid AND DATE(created_at) = CURDATE()`,
+    // DATE(created_at) = CURDATE() depends on the DB server's own clock —
+    // keep this one query raw so "today" means exactly what it always has.
+    const tid = requireTenantId();
+    const countRows = await tenantDb.$queryRawUnsafe(
+      "SELECT COUNT(*) AS n FROM visits WHERE tenant_id = ? AND DATE(created_at) = CURDATE()",
+      BigInt(tid),
     );
-    const visitId = await insert("visits", {
-      patient_id: patientId,
-      status: "REGISTERED",
-      entry_type: "OPD",
-      token_number: Number(tokenRow.n) + 1,
-      reason: body.reason || null,
-      registered_by: session.userId,
+    const tokenNumber = Number(countRows[0].n) + 1;
+
+    const created = await tenantDb.visits.create({
+      data: {
+        patient_id: patient.id,
+        status: "REGISTERED",
+        entry_type: "OPD",
+        token_number: tokenNumber,
+        reason: body.reason || null,
+        registered_by: BigInt(session.userId),
+      },
+      include: { patients: true },
     });
-    [visit] = await scopedQuery(
-      `SELECT v.*, p.name AS patient_name, p.age AS patient_age, p.phone AS patient_phone,
-              p.allergies AS patient_allergies
-         FROM visits v JOIN patients p ON p.id = v.patient_id
-        WHERE v.tenant_id = :tid AND v.id = :id`,
-      { id: visitId },
-    );
+    visit = flattenVisit(created);
     emitToTenant(session.tenantId, "visit:created", { visit });
   }
 
-  const patient = {
-    id: patientId,
+  const patientOut = {
+    id: Number(patient.id),
     name: body.name,
     age: body.age,
     phone: body.phone,
@@ -87,7 +111,7 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
     allergies: body.allergies || [],
     abha_id: body.abhaId || null,
   };
-  emitToTenant(session.tenantId, "patient:created", { patient });
+  emitToTenant(session.tenantId, "patient:created", { patient: patientOut });
 
-  return json({ patient, visit }, 201);
+  return json({ patient: patientOut, visit }, 201);
 });

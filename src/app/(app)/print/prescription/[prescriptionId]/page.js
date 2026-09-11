@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
-import { queryOne, query } from "@/lib/db";
+import { prisma } from "@/lib/prismaClient";
 import { resolveBranding } from "@/lib/branding";
 import PrintButton from "@/components/hms/PrintButton";
 
@@ -21,27 +21,29 @@ export default async function PrescriptionPrintPage({ params }) {
   if (!can(session.role, "prescription:read")) redirect("/dashboard");
 
   const { prescriptionId } = await params;
-  const id = Number(prescriptionId);
+  const id = BigInt(prescriptionId);
 
-  const prescription = await queryOne(
-    `SELECT pr.*, c.diagnosis, c.created_at AS consultation_at, c.doctor_id,
-            u.name AS doctor_name,
-            p.name AS patient_name, p.age AS patient_age, p.gender AS patient_gender
-       FROM prescriptions pr
-       JOIN consultations c ON c.id = pr.consultation_id
-       JOIN users u ON u.id = c.doctor_id
-       JOIN visits v ON v.id = pr.visit_id
-       JOIN patients p ON p.id = v.patient_id
-      WHERE pr.tenant_id = ? AND pr.id = ?
-      LIMIT 1`,
-    [session.tenantId, id],
-  );
-  if (!prescription) redirect("/dashboard");
+  const row = await prisma.prescriptions.findFirst({
+    where: { id, tenant_id: BigInt(session.tenantId) },
+    include: {
+      consultations: { include: { users: { select: { name: true } } } },
+      visits: { include: { patients: { select: { name: true, age: true, gender: true } } } },
+      prescription_items: { orderBy: { id: "asc" } },
+    },
+  });
+  if (!row) redirect("/dashboard");
 
-  const items = await query(
-    "SELECT * FROM prescription_items WHERE tenant_id = ? AND prescription_id = ? ORDER BY id ASC",
-    [session.tenantId, id],
-  );
+  const { consultations: c, visits: v, prescription_items: items, ...rest } = row;
+  const prescription = {
+    ...rest,
+    diagnosis: c.diagnosis,
+    consultation_at: c.created_at,
+    doctor_id: c.doctor_id,
+    doctor_name: c.users.name,
+    patient_name: v.patients.name,
+    patient_age: v.patients.age,
+    patient_gender: v.patients.gender,
+  };
 
   const branding = await resolveBranding(session.tenantId, prescription.doctor_id);
   const signatureName = branding.signature?.name || prescription.doctor_name;
