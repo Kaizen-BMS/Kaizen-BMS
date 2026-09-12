@@ -20,17 +20,22 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  reactCompiler: true,
-  // Forces single-worker static generation. Works around a known Next.js
-  // 16.x bug (vercel/next.js#86178, #95741) where prerendering the
-  // framework's internal /_global-error page crashes with
-  // "Cannot read properties of null (reading 'useContext')" under worker
-  // parallelism — a race condition in Next's own build-worker scheduling,
-  // not application code (reproduces even with global-error.tsx removed
-  // entirely). Costs some build time, not runtime performance.
-  experimental: {
-    cpus: 1,
-  },
+  // reactCompiler DISABLED 2026-09-12 — deployment builds crash prerendering
+  // Next's own internal /_global-error page ("Cannot read properties of
+  // null (reading 'useContext')"), traced into Next's built-in
+  // DefaultGlobalError component (node_modules/next/dist/.../global-error.js),
+  // not this app's code (no custom global-error.js exists here, and there
+  // is no createContext() anywhere in src/). Neither `experimental.cpus: 1`
+  // (ruling out a build-worker race — vercel/next.js#86178/#95741) nor
+  // bumping to the latest stable Next 16.3.5 fixed it on the deploy
+  // platform, despite this machine never reproducing the crash either way
+  // to verify locally. React Compiler is the one remaining experimental,
+  // removable setting most likely to interact badly with framework-internal
+  // rendering — trying with it off next. If this ALSO doesn't fix the real
+  // deploy, the documented last-resort fallback is pinning back to Next
+  // 15.5.6, confirmed by the community not to have this regression (see
+  // CLAUDE.md "Deployment gotchas").
+  // reactCompiler: true,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

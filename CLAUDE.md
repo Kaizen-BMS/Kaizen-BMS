@@ -178,20 +178,40 @@ one masking the other:**
    --ignore-scripts` (postinstall never runs) followed by plain
    `npm run build` — succeeds.
 2. **Next.js 16.x internal `/_global-error` prerender crash** (`TypeError:
-   Cannot read properties of null (reading 'useContext')`) — a confirmed
-   upstream Next.js bug (vercel/next.js#86178, #95741), a race condition in
-   build-worker scheduling that reproduces even with no custom
-   `global-error` page in the project; not application code. **This bug
-   never reproduced on this machine**, only on the deploy platform, so
-   neither fix below could be locally verified to resolve it — only that
-   they don't break anything. Applied both since there's no single
-   confirmed fix yet: bumped `next`/`eslint-config-next` to the latest
-   stable patch (16.3.5), and set `experimental.cpus: 1` in
-   `next.config.mjs` (forces single-worker static generation, removing the
-   parallelism the race needs — costs some build time, not runtime
-   performance). If this resurfaces after a redeploy, it needs to be
-   chased further: try Next's `--debug-prerender` build flag, or check for
-   a newer 16.3.x/16.4.x stable release.
+   Cannot read properties of null (reading 'useContext')`), still
+   UNRESOLVED as of the last redeploy attempt — this has taken multiple
+   rounds and needs a clear head next time, not more one-off guesses:
+   - **This bug never reproduces on this dev machine**, only on the deploy
+     platform, on every attempt — so nothing below could be locally
+     verified to actually fix it, only verified not to break the local
+     build. Treat any future fix attempt here the same way: honest with the
+     owner that a real redeploy is the only test that counts.
+   - Traced into Next's own built-in error component
+     (`node_modules/next/dist/.../client/components/builtin/global-error.js`
+     → `DefaultGlobalError`) — not this app's code. Confirmed: no custom
+     `global-error.js` exists in this repo, and no `createContext()` call
+     exists anywhere in `src/` — rules out the "app's own Context has no
+     default value" variant of this bug class (vercel/next.js#94667)
+     described for some other projects hitting the same symptom.
+   - **Tried, on the real deploy, confirmed NOT sufficient on their own**:
+     `experimental.cpus: 1` (ruling out build-worker parallelism —
+     vercel/next.js#86178/#95741 — as sufficient alone) and bumping
+     `next`/`eslint-config-next` to the latest stable patch (16.3.5) at the
+     time. Removed the `cpus: 1` workaround afterward since it only cost
+     build time with no benefit shown.
+   - **Currently trying**: `reactCompiler: true` removed from
+     `next.config.mjs` (commented, not deleted, with the reasoning above
+     inline) — React Compiler is the one remaining experimental,
+     removable setting most likely to interact badly with framework-
+     internal rendering. Not yet confirmed against a real redeploy at the
+     time of this note.
+   - **If this also fails**, the documented last-resort fallback the
+     community confirms does NOT have this regression is pinning back to
+     Next 15.5.6 — a bigger change, since this project's `AGENTS.md`
+     explicitly flags it was built against Next 16-specific conventions,
+     so a downgrade needs real regression testing, not just "does it
+     build." Other untried levers: Next's `--debug-prerender` build flag,
+     or a newer 16.3.x/16.4.x stable release if one lands.
 
 **Status: migration complete, mysql2 removed.** Every route reads/writes
 through `tenantDb`/`prisma`. `src/lib/db.js` and `src/lib/repo/tenant.js`
