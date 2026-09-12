@@ -161,6 +161,23 @@ the owner confirms applied, to keep it in sync. `npx prisma studio` is the
 project's day-to-day **database GUI** (browse/edit rows) — genuinely useful
 right now, independent of anything below.
 
+**Deployment gotcha, found and fixed 2026-09-12**: `@prisma/client`'s
+actual client code is *generated* (`prisma generate`, from `schema.prisma`)
+into `node_modules/@prisma/client` — a fresh `npm install` alone does not
+run it. Locally this went unnoticed because `node_modules` had already been
+generated once and kept getting reused; a deployment platform's fresh
+`npm install` doesn't have that head start, so every build failed with
+`@prisma/client did not initialize yet`. That underlying error got masked
+on the deploy log by a second, misleading symptom further into the build
+(`TypeError: Cannot read properties of null (reading 'useContext')`
+prerendering `/_global-error`) — Next.js's own internal error page, not
+project code; ignore that page if it ever resurfaces, the real error is
+always earlier in the log. **Fixed**: `package.json` now has
+`"postinstall": "prisma generate"`, so every `npm install` — this machine
+or a deploy platform's — regenerates the client automatically. Verified
+by fully deleting `node_modules` + `.next` and running `npm install && npm
+run build` with zero manual steps in between.
+
 **Status: migration complete, mysql2 removed.** Every route reads/writes
 through `tenantDb`/`prisma`. `src/lib/db.js` and `src/lib/repo/tenant.js`
 (mysql2) were deleted 2026-09-11 once the full cross-tenant raw-query audit
