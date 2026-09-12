@@ -199,19 +199,48 @@ one masking the other:**
      `next`/`eslint-config-next` to the latest stable patch (16.3.5) at the
      time. Removed the `cpus: 1` workaround afterward since it only cost
      build time with no benefit shown.
-   - **Currently trying**: `reactCompiler: true` removed from
-     `next.config.mjs` (commented, not deleted, with the reasoning above
-     inline) — React Compiler is the one remaining experimental,
-     removable setting most likely to interact badly with framework-
-     internal rendering. Not yet confirmed against a real redeploy at the
-     time of this note.
-   - **If this also fails**, the documented last-resort fallback the
-     community confirms does NOT have this regression is pinning back to
-     Next 15.5.6 — a bigger change, since this project's `AGENTS.md`
+   - **Tried and also confirmed NOT sufficient**: `reactCompiler: true`
+     removed (commented out, not deleted, in `next.config.mjs`) — still
+     crashed on a real redeploy, same digest.
+   - **Tried and also confirmed NOT sufficient**: a custom, deliberately
+     minimal `src/app/global-error.js` (no imports beyond React, no
+     hooks) to fully replace Next's built-in `DefaultGlobalError` —
+     **still crashed, identical error digest (`2519078630`) as earlier
+     attempts.** This is the most important negative result so far: it
+     proves the crash isn't in global-error component code at all (ours
+     or Next's default) — it happens in Next's rendering/prerendering
+     machinery *around* whatever component sits at that route, before
+     that component's own code runs. Left the file in place regardless
+     (harmless, and a reasonable component to own long-term either way).
+   - Also ruled out **Node.js version**: deploy platform reports Node
+     22.x vs this machine's 24.11.1 — downloaded a standalone Node
+     v22.11.0 binary and ran the build directly under it here; passed
+     identically to every other local attempt. Not the differentiator.
+   - **Currently trying**: switched the production build from Turbopack
+     (Next 16's default) to webpack — `"build": "prisma generate && next
+     build --webpack"` in `package.json`. The specific upstream GitHub
+     issues for this exact crash (vercel/next.js#86178, #95741) both
+     involve Turbopack; webpack is Next's official, fully-supported
+     fallback bundler, not a hack. Verified locally: builds clean, and
+     the resulting production server actually serves pages correctly
+     (`next start`-equivalent smoke test, HTTP 200 on `/` and `/login`)
+     — stronger verification than prior attempts, though still not proof
+     it fixes the real deploy, since the crash still doesn't reproduce
+     here under Turbopack either.
+   - Deploy platform is **Hostinger** (their own Node.js app hosting,
+     same account as the production MySQL database) — not Vercel/Netlify/
+     Render. Worth remembering: Hostinger's Node hosting is less
+     battle-tested for cutting-edge Next.js/Turbopack combinations than a
+     JS-specialist platform would be.
+   - **If webpack also fails**, remaining untried levers in rough order:
+     Next's `--debug-prerender` build flag (one report said it "avoids
+     the bug" by changing render scheduling — worth a shot even though
+     it's documented as debug-only, not for production use); a newer
+     16.3.x/16.4.x stable release if one lands; and, as the last resort,
+     pinning back to Next 15.5.6 (confirmed by the community not to have
+     this regression) — a bigger change since this project's `AGENTS.md`
      explicitly flags it was built against Next 16-specific conventions,
-     so a downgrade needs real regression testing, not just "does it
-     build." Other untried levers: Next's `--debug-prerender` build flag,
-     or a newer 16.3.x/16.4.x stable release if one lands.
+     so that would need real regression testing, not just "does it build."
 
 **Status: migration complete, mysql2 removed.** Every route reads/writes
 through `tenantDb`/`prisma`. `src/lib/db.js` and `src/lib/repo/tenant.js`
