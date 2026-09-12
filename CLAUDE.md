@@ -161,22 +161,37 @@ the owner confirms applied, to keep it in sync. `npx prisma studio` is the
 project's day-to-day **database GUI** (browse/edit rows) — genuinely useful
 right now, independent of anything below.
 
-**Deployment gotcha, found and fixed 2026-09-12**: `@prisma/client`'s
-actual client code is *generated* (`prisma generate`, from `schema.prisma`)
-into `node_modules/@prisma/client` — a fresh `npm install` alone does not
-run it. Locally this went unnoticed because `node_modules` had already been
-generated once and kept getting reused; a deployment platform's fresh
-`npm install` doesn't have that head start, so every build failed with
-`@prisma/client did not initialize yet`. That underlying error got masked
-on the deploy log by a second, misleading symptom further into the build
-(`TypeError: Cannot read properties of null (reading 'useContext')`
-prerendering `/_global-error`) — Next.js's own internal error page, not
-project code; ignore that page if it ever resurfaces, the real error is
-always earlier in the log. **Fixed**: `package.json` now has
-`"postinstall": "prisma generate"`, so every `npm install` — this machine
-or a deploy platform's — regenerates the client automatically. Verified
-by fully deleting `node_modules` + `.next` and running `npm install && npm
-run build` with zero manual steps in between.
+**Deployment gotchas found and fixed 2026-09-12 — two SEPARATE bugs, not
+one masking the other:**
+
+1. **Missing generated Prisma Client.** `@prisma/client`'s actual client
+   code is *generated* (`prisma generate`, from `schema.prisma`) into
+   `node_modules/@prisma/client` — a fresh `npm install` alone does not run
+   it. Locally this went unnoticed because `node_modules` had already been
+   generated once and kept getting reused; a deploy platform's fresh
+   `npm install` doesn't have that head start, so the build failed with
+   `@prisma/client did not initialize yet`. **Fixed twice over**, since a
+   `postinstall` script alone isn't safe against a platform that skips
+   lifecycle scripts on install: `package.json` has both
+   `"postinstall": "prisma generate"` **and** `"build": "prisma generate &&
+   next build"`. Verified against the worst case — `npm install
+   --ignore-scripts` (postinstall never runs) followed by plain
+   `npm run build` — succeeds.
+2. **Next.js 16.x internal `/_global-error` prerender crash** (`TypeError:
+   Cannot read properties of null (reading 'useContext')`) — a confirmed
+   upstream Next.js bug (vercel/next.js#86178, #95741), a race condition in
+   build-worker scheduling that reproduces even with no custom
+   `global-error` page in the project; not application code. **This bug
+   never reproduced on this machine**, only on the deploy platform, so
+   neither fix below could be locally verified to resolve it — only that
+   they don't break anything. Applied both since there's no single
+   confirmed fix yet: bumped `next`/`eslint-config-next` to the latest
+   stable patch (16.3.5), and set `experimental.cpus: 1` in
+   `next.config.mjs` (forces single-worker static generation, removing the
+   parallelism the race needs — costs some build time, not runtime
+   performance). If this resurfaces after a redeploy, it needs to be
+   chased further: try Next's `--debug-prerender` build flag, or check for
+   a newer 16.3.x/16.4.x stable release.
 
 **Status: migration complete, mysql2 removed.** Every route reads/writes
 through `tenantDb`/`prisma`. `src/lib/db.js` and `src/lib/repo/tenant.js`
