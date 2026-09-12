@@ -132,6 +132,7 @@ const OWNER_EXTRAS = [
   "visit:create",
   "formtemplate:manage",
   "branding:manage_tenant",
+  "referral:manage",
 ];
 
 const PERMISSIONS = {

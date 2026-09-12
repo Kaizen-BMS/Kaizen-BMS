@@ -7,14 +7,17 @@ import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
 import AllergyTagInput from "@/components/hms/AllergyTagInput";
 import { parseMaybeJson } from "@/components/hms/json";
+import Link from "next/link";
 
 const OPEN = new Set(["REGISTERED", "TRIAGE", "WITH_DOCTOR", "PHARMACY", "LAB", "BILLING"]);
 
-export default function RegistrationClient() {
+export default function RegistrationClient({ canManageReferrals }) {
   const [form, setForm] = useState(null);
   const [values, setValues] = useState({});
   const [allergies, setAllergies] = useState([]);
   const [abhaId, setAbhaId] = useState("");
+  const [referralSourceId, setReferralSourceId] = useState("");
+  const [referralSources, setReferralSources] = useState([]);
   const [queue, setQueue] = useState([]);
   const [q, setQ] = useState("");
   const [results, setResults] = useState(null);
@@ -50,6 +53,7 @@ export default function RegistrationClient() {
     // later), not synchronously — the lint rule false-positives here.
     /* eslint-disable react-hooks/set-state-in-effect */
     apiGet("/api/forms/PATIENT_REGISTRATION").then((d) => setForm(d.form));
+    apiGet("/api/referral-sources").then((d) => setReferralSources(d.sources));
     loadQueue().catch((e) => setMsg(e.message));
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
@@ -95,12 +99,14 @@ export default function RegistrationClient() {
         reason: core.reason || "",
         allergies,
         abhaId,
+        referralSourceId: referralSourceId || undefined,
         customFields: custom,
         openVisit: true,
       });
       setValues({});
       setAllergies([]);
       setAbhaId("");
+      setReferralSourceId("");
       setMsg("Patient registered and added to the queue.");
     } catch (err) {
       setMsg(err.message);
@@ -218,6 +224,11 @@ export default function RegistrationClient() {
                 </div>
               </div>
               <AllergyBadge allergies={p.allergies} className="mt-1.5" />
+              {p.referral_source_name && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Referred by: {p.referral_source_name} ({p.referral_source_type?.replace(/_/g, " ")})
+                </p>
+              )}
               {editingId === p.id && (
                 <div className="mt-2 space-y-2">
                   <AllergyTagInput value={editAllergies} onChange={setEditAllergies} />
@@ -264,6 +275,26 @@ export default function RegistrationClient() {
                 <span className="text-xs text-slate-400">
                   Used for India&apos;s digital health ID system — full integration coming later.
                 </span>
+              </label>
+              <label className="block space-y-1 text-sm">
+                <span className="font-medium">Referred by (optional)</span>
+                <select
+                  value={referralSourceId}
+                  onChange={(e) => setReferralSourceId(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                >
+                  <option value="">— none / walk-in —</option>
+                  {referralSources.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.type.replace(/_/g, " ")})
+                    </option>
+                  ))}
+                </select>
+                {canManageReferrals && (
+                  <Link href="/dashboard/admin/referral-sources" className="text-xs text-slate-400 underline">
+                    manage referral sources
+                  </Link>
+                )}
               </label>
             </>
           ) : (

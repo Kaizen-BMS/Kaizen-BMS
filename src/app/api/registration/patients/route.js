@@ -16,6 +16,7 @@ const createSchema = z.object({
   reason: z.string().trim().max(500).optional().default(""),
   allergies: z.array(z.string().trim().min(1).max(120)).max(30).optional(),
   abhaId: z.string().trim().max(64).optional().or(z.literal("")),
+  referralSourceId: z.coerce.number().int().positive().optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
   openVisit: z.boolean().optional().default(true),
 });
@@ -24,7 +25,7 @@ const createSchema = z.object({
 export const GET = apiRoute("patient:read", async (request) => {
   const q = new URL(request.url).searchParams.get("q")?.trim() || "";
   if (q.length < 2) return json({ patients: [] });
-  const patients = await tenantDb.patients.findMany({
+  const rows = await tenantDb.patients.findMany({
     where: { OR: [{ name: { contains: q } }, { phone: { contains: q } }] },
     select: {
       id: true,
@@ -34,11 +35,18 @@ export const GET = apiRoute("patient:read", async (request) => {
       custom_fields: true,
       allergies: true,
       abha_id: true,
+      referral_source_id: true,
+      referral_sources: { select: { name: true, type: true } },
       created_at: true,
     },
     orderBy: { created_at: "desc" },
     take: 20,
   });
+  const patients = rows.map(({ referral_sources: rs, ...rest }) => ({
+    ...rest,
+    referral_source_name: rs?.name || null,
+    referral_source_type: rs?.type || null,
+  }));
   return json({ patients });
 });
 
@@ -64,6 +72,19 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
     body.customFields,
   );
 
+  // Verify the source is this tenant's own before attaching it — the FK
+  // alone only guarantees the id exists SOMEWHERE, not that it belongs to
+  // this tenant (referral_sources has no unique-per-tenant id space).
+  let referralSourceId = null;
+  if (body.referralSourceId) {
+    const source = await tenantDb.referral_sources.findUnique({
+      where: { id: BigInt(body.referralSourceId) },
+      select: { id: true },
+    });
+    if (!source) return json({ error: "referral_source_not_found" }, 400);
+    referralSourceId = source.id;
+  }
+
   const patient = await tenantDb.patients.create({
     data: {
       name: body.name,
@@ -73,6 +94,7 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
       custom_fields: custom ? JSON.stringify(custom) : null,
       allergies: body.allergies?.length ? JSON.stringify(body.allergies) : null,
       abha_id: body.abhaId || null,
+      referral_source_id: referralSourceId,
     },
   });
 
@@ -110,6 +132,7 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
     custom_fields: custom,
     allergies: body.allergies || [],
     abha_id: body.abhaId || null,
+    referral_source_id: referralSourceId ? Number(referralSourceId) : null,
   };
   emitToTenant(session.tenantId, "patient:created", { patient: patientOut });
 

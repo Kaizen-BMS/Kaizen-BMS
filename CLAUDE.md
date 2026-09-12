@@ -650,6 +650,64 @@ taxonomy named in the product spec; a full rename pass across every emit
 site is deferred, tracked as future step 4 of the patient-journey work —
 don't invent further one-off event-name conventions in the meantime.
 
+## Referral sources — built
+
+Tracks where a patient came from — RMP/local doctors, health camps,
+insurance companies, health-card schemes — per an explicit product
+directive: "keep in mind the patient referral system by RMP, local doctors,
+camps, insurance, health cards etc." **Data capture + reporting only for
+this step — deliberately no billing/commission integration** (that's a
+real, separate scope: referring-doctor payouts, insurance/TPA claim
+tracking — flag separately if/when asked for).
+
+- **Same self-configuring philosophy as `form_templates`**: only the
+  `type` category (`RMP`/`LOCAL_DOCTOR`/`CAMP`/`INSURANCE`/`HEALTH_CARD`/
+  `OTHER`) is code-defined; the actual list of named sources is entirely
+  tenant-owned data (`referral_sources` table, migration 013) — a
+  hospital adds its own referring doctors/camps/insurers on
+  `(app)/dashboard/admin/referral-sources`, nothing pre-filled or
+  hardcoded, same "the system builds itself, not each outcome" principle.
+- **Attached per-PATIENT** (`patients.referral_source_id`, nullable FK),
+  set once at registration, editable later — not per-visit (explicit
+  choice: simpler, and a patient's original referral doesn't usually
+  change across follow-up visits).
+- Never hard-deleted — `active: false` retires a source from the
+  registration dropdown without breaking any patient record that already
+  references it (`ON DELETE SET NULL` if a source ever is removed).
+- Read access (`GET /api/referral-sources`, for the dropdown) is gated on
+  `patient:create` — anyone who can register a patient can see the list.
+  Managing the list itself (`POST`/`PATCH`) is `referral:manage`
+  (`HOSPITAL_ADMIN` wildcard + `OWNER_*` via `OWNER_EXTRAS` — same group
+  as `formtemplate:manage`, under the existing HOSPITAL_ADMIN-only
+  `dashboard/admin` layout gate).
+- **Explicit cross-tenant check on attach**, not just reliance on the FK:
+  `registration/patients` (create) and `.../[id]` (edit) both verify the
+  given `referralSourceId` resolves under `tenantDb` (i.e. belongs to the
+  caller's own tenant) before writing it — the DB-level FK alone only
+  guarantees the id exists *somewhere*, not that it's this tenant's row.
+
+## Dashboard overview — improved
+
+`(app)/dashboard` (the landing page after login) went from a near-empty
+placeholder to real at-a-glance stat cards, module-aware — a card only
+appears if that module is active for the tenant. Server component, raw
+`prisma` throughout (no request/AsyncLocalStorage context here, same
+reasoning as `dashboard/layout.js`), every query explicitly
+`tenant_id`-scoped.
+
+- **Every tenant**: patients registered today, open visits today, patients
+  referred today (a `referral_sources` reporting payoff, not just data
+  capture).
+- **PHARMACY active**: low-stock medicine count (same threshold rule as
+  the Pharmacy inventory screen), prescriptions pending dispense.
+- **LAB active**: lab orders pending (ordered/in-progress).
+- **IPD active**: beds occupied / total.
+- **BILLING active**: open bills (OPEN/PARTIALLY_PAID).
+- **SUPER_ADMIN**: platform-wide counts (total tenants, active tenants,
+  staff accounts across all tenants) instead of the old static "next
+  build step" placeholder text, which was stale — Super Admin has been
+  built since.
+
 ## Patient safety & queue display
 
 - **Allergies** (`patients.allergies` JSON): a chip/tag input, never a

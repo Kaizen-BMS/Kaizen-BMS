@@ -87,6 +87,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "prescription_items",
   "prescriptions",
   "print_branding",
+  "referral_sources",
   "tenant_modules",
   "visits",
 ]);

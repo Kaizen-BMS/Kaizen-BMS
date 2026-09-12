@@ -208,25 +208,28 @@ model nursing_notes {
 }
 
 model patients {
-  id            BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id     BigInt           @db.UnsignedBigInt
-  name          String
-  age           Int?             @db.UnsignedSmallInt
-  gender        patients_gender?
-  phone         String?          @db.VarChar(32)
-  custom_fields String?          @db.LongText
-  allergies     String?          @db.LongText
-  abha_id       String?          @db.VarChar(64)
-  created_at    DateTime         @default(now())
-  bills         bills[]
-  consultations consultations[]
-  follow_ups    follow_ups[]
-  lab_orders    lab_orders[]
-  tenants       tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_patients_tenant")
-  visits        visits[]
+  id                 BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id          BigInt            @db.UnsignedBigInt
+  name               String
+  age                Int?              @db.UnsignedSmallInt
+  gender             patients_gender?
+  phone              String?           @db.VarChar(32)
+  custom_fields      String?           @db.LongText
+  allergies          String?           @db.LongText
+  abha_id            String?           @db.VarChar(64)
+  referral_source_id BigInt?           @db.UnsignedBigInt
+  created_at         DateTime          @default(now())
+  bills              bills[]
+  consultations      consultations[]
+  follow_ups         follow_ups[]
+  lab_orders         lab_orders[]
+  referral_sources   referral_sources? @relation(fields: [referral_source_id], references: [id], onUpdate: Restrict, map: "fk_patients_referral_source")
+  tenants            tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_patients_tenant")
+  visits             visits[]
 
   @@index([tenant_id], map: "idx_patients_hospital")
   @@index([tenant_id, created_at], map: "idx_patients_hospital_created")
+  @@index([referral_source_id], map: "idx_patients_referral_source")
 }
 
 model pharmacy_stock {
@@ -394,6 +397,7 @@ model tenants {
   prescription_items       prescription_items[]
   prescriptions            prescriptions[]
   print_branding           print_branding[]
+  referral_sources         referral_sources[]
   tenant_modules           tenant_modules[]
   users                    users[]
   visits                   visits[]
@@ -515,6 +519,22 @@ model refunds {
   @@index([authorized_by], map: "fk_refunds_authorized_by")
   @@index([payment_id], map: "fk_refunds_payment")
   @@index([bill_id], map: "idx_refunds_bill")
+}
+
+model referral_sources {
+  id            BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id     BigInt                @db.UnsignedBigInt
+  name          String
+  type          referral_sources_type
+  contact_phone String?               @db.VarChar(64)
+  notes         String?               @db.VarChar(500)
+  active        Boolean               @default(true)
+  created_at    DateTime              @default(now())
+  patients      patients[]
+  tenants       tenants               @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_referral_sources_tenant")
+
+  @@index([tenant_id], map: "idx_referral_sources_tenant")
+  @@index([tenant_id, active], map: "idx_referral_sources_tenant_active")
 }
 
 enum beds_ward_type {
@@ -659,4 +679,13 @@ enum bills_status {
   PAID
   PARTIALLY_PAID
   REFUNDED
+}
+
+enum referral_sources_type {
+  RMP
+  LOCAL_DOCTOR
+  CAMP
+  INSURANCE
+  HEALTH_CARD
+  OTHER
 }
