@@ -178,9 +178,36 @@ one masking the other:**
    --ignore-scripts` (postinstall never runs) followed by plain
    `npm run build` — succeeds.
 2. **Next.js 16.x internal `/_global-error` prerender crash** (`TypeError:
-   Cannot read properties of null (reading 'useContext')`), still
-   UNRESOLVED as of the last redeploy attempt — this has taken multiple
-   rounds and needs a clear head next time, not more one-off guesses:
+   Cannot read properties of null (reading 'useContext')`) — **root cause
+   found and fixed.** Real root cause (see below, found after several
+   dead-end attempts — history kept so the same ones aren't retried):
+   **Hostinger's build does a production-only install that skips
+   `devDependencies` entirely** (confirmed locally: `npm install
+   --omit=dev` here installs 137 packages vs 447 for a full install), and
+   `@tailwindcss/postcss` + `tailwindcss` — required by `postcss.config.mjs`,
+   which every `next build` runs — were sitting in `devDependencies`.
+   **Fix**: moved `@tailwindcss/postcss`, `tailwindcss`, and
+   `babel-plugin-react-compiler` into real `dependencies` — anything
+   `next build` itself needs, not just local dev tooling, must live there
+   on this platform. `eslint`/`eslint-config-next`/`mysqldump` correctly
+   stay in `devDependencies` (never touched by `next build`).
+   **Verified properly this time**: reproduced the actual failure mode
+   locally for the first time in this whole saga (`rm -rf node_modules
+   .next && npm install --omit=dev && npm run build`), confirmed it fails
+   the same way without the fix and passes with it, then smoke-tested the
+   resulting production server (`NODE_ENV=production node server.js`) —
+   HTTP 200 on `/` and `/login`.
+   **Working theory, not proven**: Turbopack likely handled the missing
+   `@tailwindcss/postcss` more silently (partial/corrupted CSS handling
+   that only surfaced later, specifically while rendering the internal
+   `/_global-error` fallback path) where webpack fails loudly and
+   immediately with a clear "missing module" error — which is *how this
+   got found*: switching to webpack (see below) didn't fix the original
+   symptom, it surfaced a clearer one. Since webpack is now confirmed
+   working end-to-end, it stayed; nothing has re-confirmed whether
+   Turbopack alone (with the dependency fix, no bundler change) would
+   also have worked. Prior attempts, before this was found, for the
+   record:
    - **This bug never reproduces on this dev machine**, only on the deploy
      platform, on every attempt — so nothing below could be locally
      verified to actually fix it, only verified not to break the local
@@ -232,15 +259,14 @@ one masking the other:**
      Render. Worth remembering: Hostinger's Node hosting is less
      battle-tested for cutting-edge Next.js/Turbopack combinations than a
      JS-specialist platform would be.
-   - **If webpack also fails**, remaining untried levers in rough order:
-     Next's `--debug-prerender` build flag (one report said it "avoids
-     the bug" by changing render scheduling — worth a shot even though
-     it's documented as debug-only, not for production use); a newer
-     16.3.x/16.4.x stable release if one lands; and, as the last resort,
-     pinning back to Next 15.5.6 (confirmed by the community not to have
-     this regression) — a bigger change since this project's `AGENTS.md`
-     explicitly flags it was built against Next 16-specific conventions,
-     so that would need real regression testing, not just "does it build."
+   - **Untried levers, if a `devDependencies`-shaped bug like this one
+     ever resurfaces**: check `npm install --omit=dev` locally FIRST,
+     before guessing at bundler/version/config changes — this is what
+     should have been checked from the very first failure, and would have
+     found the real cause in one step instead of five. Also on file if
+     needed later: Next's `--debug-prerender` build flag, a newer
+     16.3.x/16.4.x stable release, or pinning back to Next 15.5.6 (bigger
+     change, `AGENTS.md` flags Next-16-specific conventions in use here).
 
 **Status: migration complete, mysql2 removed.** Every route reads/writes
 through `tenantDb`/`prisma`. `src/lib/db.js` and `src/lib/repo/tenant.js`

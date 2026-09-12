@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
+    "@tailwindcss/postcss": "^4",
+    "babel-plugin-react-compiler": "1.0.0",
     "bcryptjs": "^3.0.3",
     "framer-motion": "^13.2.0",
     "jsonwebtoken": "^9.0.3",
@@ -23,15 +25,13 @@
     "react-dom": "19.2.8",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
+    "tailwindcss": "^4",
     "zod": "^4.6.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
-    "mysqldump": "^3.2.0",
-    "tailwindcss": "^4"
+    "mysqldump": "^3.2.0"
   },
   "overrides": {
     "mysql2": "$mysql2"
