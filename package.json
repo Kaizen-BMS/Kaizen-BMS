@@ -17,7 +17,7 @@
     "framer-motion": "^13.2.0",
     "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.24.4",
-    "next": "16.3.4",
+    "next": "16.3.5",
     "prisma": "6.19.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -29,7 +29,7 @@
     "@tailwindcss/postcss": "^4",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.3.5",
     "mysqldump": "^3.2.0",
     "tailwindcss": "^4"
   },
