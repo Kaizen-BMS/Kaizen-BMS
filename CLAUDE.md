@@ -605,9 +605,42 @@ out of scope until a later phase.
 
 The HMS product uses **shadcn/ui + Tailwind** in a plain, fast, functional
 dashboard style — optimised for data-entry speed under time pressure, not
-visual flair. The marketing site's black/off-white/cyan editorial system is
-scoped to `(company)` only and must never appear in the product.
+visual flair. **Colors only** now match the marketing site's palette
+(explicit owner directive, 2026-09-13 — supersedes the earlier "must never
+appear in the product" rule for colors specifically); the *layout
+language* stays deliberately different — no serif headline fonts, no
+thin-border editorial rows, still real bordered cards/tables for data-entry
+speed. Don't reintroduce the marketing site's editorial layout into the
+product; that was explicitly scoped out when this was decided.
 
+- **Palette + dark/light mode** (`(app)/app.css`): off-white bg (`#FAFAF7`)
+  / near-black ink (`#080808`) in light, `#121212` bg / `#F5F5F2` ink in
+  dark — identical hex values to `(company)/kaizen.css`. The mechanism:
+  Tailwind v4 compiles `bg-slate-900`, `border-slate-200`, `bg-white`, etc.
+  to `background-color: var(--color-slate-900)` (real, live CSS custom
+  properties — verified against the compiled build output, not assumed),
+  so redefining `--color-slate-*`/`--color-white` inside a `.hms-shell`
+  wrapper class (applied once, in `(app)/layout.js`) retinted every
+  already-built screen's already-written Tailwind classes for free — no
+  component file needed a class-by-class rewrite for this. Dark mode
+  follows the exact two-path pattern `kaizen.css` already used: an
+  explicit `data-theme` attribute (set by `ThemeToggle.jsx` in the topbar,
+  persisted to `localStorage` as `hms-theme`) always wins; with no choice
+  made yet, `@media (prefers-color-scheme: dark)` decides. Both are scoped
+  under `.hms-shell`, never `:root` — the marketing site's own theme
+  system (`.kbms-site`) is completely untouched by any of this.
+- **One deliberate exception, carried over from the marketing site's own
+  precedent**: primary buttons and active-tab pills
+  (`bg-[var(--hms-btn-bg)]` + `text-white`, ~37 call sites converted from
+  literal `bg-slate-900`) use a **stable, non-flipping** near-black token,
+  not the retinted (and therefore theme-flipping) `slate-900`. Reasoning:
+  `slate-900` has to flip to a LIGHT color in dark mode so plain
+  `text-slate-900` headings/labels stay readable — but a button styled
+  `bg-slate-900 text-white` would then go light-bg-white-text and become
+  unreadable. This mirrors the marketing site's own "deliberately-
+  permanent near-black blocks" (the final CTA, the tech-flow panel, the
+  footer) — same reasoning, same fix shape, applied to the product's
+  buttons instead.
 - Sidebar nav scoped to the user's role + active modules + tenant type.
 - Every list screen is a real data table: sortable, searchable, paginated.
 - Forms use the dynamic `form_templates` + `custom_fields` pattern.

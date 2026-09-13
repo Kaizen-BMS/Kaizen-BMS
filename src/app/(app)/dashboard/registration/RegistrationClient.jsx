@@ -194,7 +194,7 @@ export default function RegistrationClient({ canManageReferrals }) {
               placeholder="name or phone"
               className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
             />
-            <button className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white">
+            <button className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm text-white">
               Find
             </button>
           </div>
@@ -235,7 +235,7 @@ export default function RegistrationClient({ canManageReferrals }) {
                   <div className="flex gap-2">
                     <button
                       onClick={() => saveAllergies(p.id)}
-                      className="rounded-md bg-slate-900 px-2 py-1 text-xs text-white"
+                      className="rounded-md bg-[var(--hms-btn-bg)] px-2 py-1 text-xs text-white"
                     >
                       Save
                     </button>
@@ -302,7 +302,7 @@ export default function RegistrationClient({ canManageReferrals }) {
           )}
           <button
             disabled={busy || !form}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             Register &amp; add to queue
           </button>
@@ -327,7 +327,7 @@ export default function RegistrationClient({ canManageReferrals }) {
               <div>
                 <p className="font-medium">
                   {v.token_number != null && (
-                    <span className="mr-1.5 rounded bg-slate-900 px-1.5 py-0.5 text-xs font-semibold text-white">
+                    <span className="mr-1.5 rounded bg-[var(--hms-btn-bg)] px-1.5 py-0.5 text-xs font-semibold text-white">
                       #{v.token_number}
                     </span>
                   )}

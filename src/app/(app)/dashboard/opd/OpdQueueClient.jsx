@@ -86,7 +86,7 @@ export default function OpdQueueClient() {
         <button
           onClick={callNext}
           disabled={busy || waiting === 0}
-          className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
           Call next {waiting > 0 ? `(${waiting} waiting)` : ""}
         </button>
@@ -108,7 +108,7 @@ export default function OpdQueueClient() {
             <div>
               <p className="font-medium">
                 {v.token_number != null && (
-                  <span className="mr-1.5 rounded bg-slate-900 px-1.5 py-0.5 text-xs font-semibold text-white">
+                  <span className="mr-1.5 rounded bg-[var(--hms-btn-bg)] px-1.5 py-0.5 text-xs font-semibold text-white">
                     #{v.token_number}
                   </span>
                 )}

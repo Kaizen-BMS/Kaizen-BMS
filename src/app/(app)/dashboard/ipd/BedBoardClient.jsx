@@ -185,7 +185,7 @@ function AdmitModal({ bed, onClose, onError }) {
               placeholder="name or phone"
               className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
             />
-            <button onClick={search} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs text-white">
+            <button onClick={search} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs text-white">
               Find
             </button>
           </div>
@@ -241,7 +241,7 @@ function AdmitModal({ bed, onClose, onError }) {
         <button
           onClick={() => admit(null)}
           disabled={busy || !newPatient.name || !newPatient.phone}
-          className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="w-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           Admit new patient
         </button>
@@ -307,7 +307,7 @@ function SummaryPopover({ bed, canDischarge, onClose, onError }) {
             <button
               onClick={discharge}
               disabled={busy}
-              className="mt-2 w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="mt-2 w-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               Discharge
             </button>
@@ -321,7 +321,7 @@ function SummaryPopover({ bed, canDischarge, onClose, onError }) {
 function Modal({ title, onClose, children }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hms-btn-bg)]/30 p-4"
       onMouseDown={onClose}
     >
       <div

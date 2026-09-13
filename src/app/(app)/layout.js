@@ -18,7 +18,7 @@ export const metadata = {
  */
 export default function AppLayout({ children }) {
   return (
-    <div className="min-h-full" style={{ background: "var(--hms-bg)", color: "var(--hms-ink)" }}>
+    <div className="hms-shell min-h-full">
       {children}
     </div>
   );

@@ -47,7 +47,7 @@ export default function CommandPalette({ navItems, onClose, onNavigate }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 p-4 pt-[12vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--hms-btn-bg)]/30 p-4 pt-[12vh]"
       onMouseDown={onClose}
     >
       <div

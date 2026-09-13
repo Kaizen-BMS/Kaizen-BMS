@@ -123,7 +123,7 @@ export default function AdmissionDetailClient({ admissionId, canAddNote }) {
           />
           <button
             disabled={busy}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
           >
             Add note
           </button>

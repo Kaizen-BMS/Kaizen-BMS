@@ -93,7 +93,7 @@ export default function BillingClient({ permissions }) {
             onChange={(e) => setNewVisitId(e.target.value)}
             className="ml-auto w-28 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
           />
-          <button className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white">Create</button>
+          <button className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-white">Create</button>
         </form>
       )}
 
@@ -240,7 +240,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
                     <button
                       onClick={() => savePrice(it.id)}
                       disabled={priceEdits[it.id] === undefined || priceEdits[it.id] === ""}
-                      className="rounded bg-slate-900 px-2 py-0.5 text-white disabled:opacity-50"
+                      className="rounded bg-[var(--hms-btn-bg)] px-2 py-0.5 text-white disabled:opacity-50"
                     >
                       save
                     </button>
@@ -273,7 +273,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
             <option value="CARD">Card</option>
             <option value="UPI">UPI</option>
           </select>
-          <button className="rounded bg-slate-900 px-3 py-1 text-xs font-medium text-white">Record payment</button>
+          <button className="rounded bg-[var(--hms-btn-bg)] px-3 py-1 text-xs font-medium text-white">Record payment</button>
         </form>
       )}
 

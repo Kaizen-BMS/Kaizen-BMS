@@ -114,7 +114,7 @@ export default async function DashboardHome() {
           <StatCard label="Active tenants" value={counts.activeTenants} href="/dashboard/platform/tenants" />
           <StatCard label="Staff accounts (all tenants)" value={counts.users} />
         </div>
-        <Link href="/dashboard/platform/tenants/new" className="inline-block rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white">
+        <Link href="/dashboard/platform/tenants/new" className="inline-block rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-white">
           + Create tenant
         </Link>
       </div>

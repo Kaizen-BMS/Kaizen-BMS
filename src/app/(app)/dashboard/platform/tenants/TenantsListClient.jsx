@@ -23,7 +23,7 @@ export default function TenantsListClient() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Tenants</h1>
-        <Link href="/dashboard/platform/tenants/new" className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white">
+        <Link href="/dashboard/platform/tenants/new" className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-white">
           + Create tenant
         </Link>
       </div>

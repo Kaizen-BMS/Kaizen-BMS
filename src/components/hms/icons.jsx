@@ -47,6 +47,8 @@ const P = {
   user: "M10 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM4 17c0-3 2.7-5 6-5s6 2 6 5",
   panelLeft:
     "M4 4h12v12H4zM8 4v12",
+  sun: "M10 6.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7ZM10 2v2M10 16v2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M2 10h2M16 10h2M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4",
+  moon: "M16.5 12.6A6.8 6.8 0 0 1 7.4 3.5a7 7 0 1 0 9.1 9.1Z",
 };
 
 export default function Icon({ name, className = "", size = 18 }) {

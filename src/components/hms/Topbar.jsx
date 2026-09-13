@@ -6,6 +6,7 @@ import Icon from "./icons";
 import { apiGet } from "./api";
 import CommandPalette from "./CommandPalette";
 import NotificationBell from "./NotificationBell";
+import ThemeToggle from "./ThemeToggle";
 
 export default function Topbar({ user, navItems, onSidebarToggle }) {
   const router = useRouter();
@@ -45,6 +46,8 @@ export default function Topbar({ user, navItems, onSidebarToggle }) {
         <Icon name="command" size={13} />
         <span>K</span>
       </button>
+
+      <ThemeToggle />
 
       <NotificationBell />
 
