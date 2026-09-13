@@ -78,7 +78,7 @@ export default function DashboardShell({ user, groups, children }) {
           className="flex items-center gap-2 border-b px-3"
           style={{ height: "var(--hms-topbar-h)", borderColor: "var(--hms-border)" }}
         >
-          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[var(--hms-accent)] text-xs font-bold text-white">
+          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[var(--hms-accent)] text-xs font-bold text-[var(--hms-btn-fg)]">
             K
           </div>
           {!collapsed && (
@@ -153,7 +153,7 @@ function NavItem({ item, active, collapsed, badge }) {
         <span
           className={`grid min-w-[18px] place-items-center rounded-full px-1 text-[11px] font-semibold ${
             collapsed
-              ? "absolute right-1 top-1 h-4 min-w-[16px] bg-[var(--hms-accent)] text-white"
+              ? "absolute right-1 top-1 h-4 min-w-[16px] bg-[var(--hms-accent)] text-[var(--hms-btn-fg)]"
               : "bg-[var(--hms-accent-soft)] text-[var(--hms-accent)]"
           }`}
         >

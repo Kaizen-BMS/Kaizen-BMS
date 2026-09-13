@@ -22,7 +22,7 @@ export default function PharmacyClient({ permissions }) {
               key={key}
               onClick={() => setTab(key)}
               className={`rounded-md px-3 py-1.5 ${
-                tab === key ? "bg-[var(--hms-btn-bg)] text-white" : "bg-slate-100 text-slate-600"
+                tab === key ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"
               }`}
             >
               {label}
@@ -131,7 +131,7 @@ function QueueTab({ canDispense, onError }) {
                     canDispense && (
                       <button
                         onClick={() => dispense(it.id)}
-                        className="shrink-0 rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-white"
+                        className="shrink-0 rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)]"
                       >
                         Dispense {outstanding}
                       </button>
@@ -280,7 +280,7 @@ function InventoryTab({ canStockIn, canAdjust, onError }) {
           />
           <button
             disabled={busy}
-            className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
           >
             Add
           </button>
@@ -350,7 +350,7 @@ function InventoryTab({ canStockIn, canAdjust, onError }) {
                             <button
                               onClick={() => submitAdjustment(b.id)}
                               disabled={busy || !adjustForm.delta || !adjustForm.reason}
-                              className="rounded bg-[var(--hms-btn-bg)] px-2 py-0.5 text-white disabled:opacity-50"
+                              className="rounded bg-[var(--hms-btn-bg)] px-2 py-0.5 text-[var(--hms-btn-fg)] disabled:opacity-50"
                             >
                               save
                             </button>

@@ -78,7 +78,7 @@ export default function NotificationBell() {
       >
         <Icon name="bell" size={18} />
         {unread > 0 && (
-          <span className="absolute right-0.5 top-0.5 grid h-4 min-w-[16px] place-items-center rounded-full bg-[var(--hms-danger)] px-0.5 text-[10px] font-semibold text-white">
+          <span className="absolute right-0.5 top-0.5 grid h-4 min-w-[16px] place-items-center rounded-full bg-[var(--hms-danger)] px-0.5 text-[10px] font-semibold text-[var(--hms-btn-fg)]">
             {unread > 9 ? "9+" : unread}
           </span>
         )}

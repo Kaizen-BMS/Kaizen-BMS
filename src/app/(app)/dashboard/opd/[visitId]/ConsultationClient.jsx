@@ -193,7 +193,7 @@ export default function ConsultationClient({ visitId }) {
           )}
           <button
             disabled={busy || !form}
-            className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
           >
             Save consultation
           </button>
@@ -312,7 +312,7 @@ export default function ConsultationClient({ visitId }) {
                   onClick={savePrescription}
                   disabled={busy || blockedByAllergy}
                   title={blockedByAllergy ? "Acknowledge the allergy warning first" : undefined}
-                  className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs text-white disabled:opacity-50"
+                  className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50"
                 >
                   Send to pharmacy
                 </button>
@@ -364,7 +364,7 @@ export default function ConsultationClient({ visitId }) {
                 <button
                   onClick={saveLabOrder}
                   disabled={busy}
-                  className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs text-white disabled:opacity-50"
+                  className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50"
                 >
                   Send to lab
                 </button>

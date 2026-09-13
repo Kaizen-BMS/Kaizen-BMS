@@ -37,7 +37,9 @@ export default function BedBoardClient({ permissions }) {
   const [msg, setMsg] = useState("");
   const [admitBed, setAdmitBed] = useState(null); // bed being admitted onto
   const [summaryBed, setSummaryBed] = useState(null); // occupied bed clicked
+  const [maintenanceBed, setMaintenanceBed] = useState(null); // bed being set to/cleared from maintenance
   const [showManage, setShowManage] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [flashIds, setFlashIds] = useState(new Set());
 
   function flash(id) {
@@ -82,6 +84,14 @@ export default function BedBoardClient({ permissions }) {
     }
   }
 
+  async function clearMaintenance(bedId) {
+    try {
+      await apiSend(`/api/ipd/beds/${bedId}`, "PATCH", { status: "VACANT" });
+    } catch (err) {
+      setMsg(err.message);
+    }
+  }
+
   const wards = ["GENERAL", "PRIVATE", "ICU"].map((w) => ({
     ward: w,
     beds: beds.filter((b) => b.ward_type === w),
@@ -115,17 +125,27 @@ export default function BedBoardClient({ permissions }) {
             )}
           </p>
         </div>
-        {canManageBeds && (
+        <div className="flex gap-2">
           <button
-            onClick={() => setShowManage((s) => !s)}
+            onClick={() => setShowReport((s) => !s)}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
           >
-            {showManage ? "Close" : "+ Add / manage beds"}
+            {showReport ? "Hide occupancy report" : "Occupancy report"}
           </button>
-        )}
+          {canManageBeds && (
+            <button
+              onClick={() => setShowManage((s) => !s)}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+            >
+              {showManage ? "Close" : "+ Add / manage beds"}
+            </button>
+          )}
+        </div>
       </div>
 
       {msg && <p className="text-sm text-red-600">{msg}</p>}
+
+      {showReport && <OccupancyReport />}
 
       {showManage && canManageBeds && (
         <AddBedForm onAdded={() => { load(); }} onError={setMsg} />
@@ -179,6 +199,12 @@ export default function BedBoardClient({ permissions }) {
                   {b.status === "OCCUPIED" && (
                     <p className="mt-1 truncate text-xs">{b.patient_name}</p>
                   )}
+                  {b.status === "MAINTENANCE" && b.maintenance_reason && (
+                    <p className="mt-1 truncate text-xs" title={b.maintenance_reason}>
+                      {b.maintenance_reason}
+                      {b.maintenance_until && ` · till ${new Date(b.maintenance_until).toLocaleDateString()}`}
+                    </p>
+                  )}
                   {Number(b.daily_rate) > 0 && b.status !== "OCCUPIED" && (
                     <p className="mt-1 text-xs opacity-70">₹{Number(b.daily_rate)}/day</p>
                   )}
@@ -188,6 +214,28 @@ export default function BedBoardClient({ permissions }) {
                       className="mt-1.5 rounded border border-amber-400 bg-white px-1.5 py-0.5 text-xs font-medium hover:bg-amber-50"
                     >
                       ✓ Mark ready
+                    </button>
+                  )}
+                  {b.status === "VACANT" && canManageBeds && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMaintenanceBed(b);
+                      }}
+                      className="mt-1.5 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs font-medium hover:bg-slate-50"
+                    >
+                      Set maintenance
+                    </button>
+                  )}
+                  {b.status === "MAINTENANCE" && canManageBeds && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearMaintenance(b.id);
+                      }}
+                      className="mt-1.5 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs font-medium hover:bg-slate-50"
+                    >
+                      Clear maintenance
                     </button>
                   )}
                 </button>
@@ -203,10 +251,14 @@ export default function BedBoardClient({ permissions }) {
       {summaryBed && (
         <SummaryPopover
           bed={summaryBed}
+          beds={beds}
           canDischarge={canDischarge}
           onClose={() => setSummaryBed(null)}
           onError={setMsg}
         />
+      )}
+      {maintenanceBed && (
+        <MaintenanceModal bed={maintenanceBed} onClose={() => setMaintenanceBed(null)} onError={setMsg} />
       )}
     </div>
   );
@@ -266,7 +318,7 @@ function AddBedForm({ onAdded, onError }) {
       />
       <button
         disabled={busy}
-        className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
       >
         Add bed
       </button>
@@ -326,7 +378,7 @@ function AdmitModal({ bed, onClose, onError }) {
               placeholder="name or phone"
               className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
             />
-            <button onClick={search} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs text-white">
+            <button onClick={search} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs text-[var(--hms-btn-fg)]">
               Find
             </button>
           </div>
@@ -382,7 +434,7 @@ function AdmitModal({ bed, onClose, onError }) {
         <button
           onClick={() => admit(null)}
           disabled={busy || !newPatient.name || !newPatient.phone}
-          className="w-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="w-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
         >
           Admit new patient
         </button>
@@ -391,10 +443,15 @@ function AdmitModal({ bed, onClose, onError }) {
   );
 }
 
-function SummaryPopover({ bed, canDischarge, onClose, onError }) {
+function SummaryPopover({ bed, beds, canDischarge, onClose, onError }) {
   const [dischargeType, setDischargeType] = useState("ROUTINE");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [toBedId, setToBedId] = useState("");
+  const [transferReason, setTransferReason] = useState("");
+
+  const vacantBeds = (beds || []).filter((b) => b.status === "VACANT");
 
   async function discharge() {
     setBusy(true);
@@ -402,6 +459,22 @@ function SummaryPopover({ bed, canDischarge, onClose, onError }) {
       await apiSend(`/api/ipd/admissions/${bed.admission_id}`, "PATCH", {
         dischargeType,
         dischargeNotes: notes,
+      });
+      onClose();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function transfer() {
+    if (!toBedId || !transferReason.trim()) return;
+    setBusy(true);
+    try {
+      await apiSend(`/api/ipd/admissions/${bed.admission_id}/transfer`, "POST", {
+        toBedId,
+        reason: transferReason.trim(),
       });
       onClose();
     } catch (err) {
@@ -424,6 +497,48 @@ function SummaryPopover({ bed, canDischarge, onClose, onError }) {
         >
           View full admission record →
         </Link>
+
+        {/* Transfer and discharge are both admission-lifecycle decisions —
+            same permission (admission:update) gates both. */}
+        {canDischarge && (
+          <div className="border-t border-slate-200 pt-3">
+            <button
+              onClick={() => setShowTransfer((s) => !s)}
+              className="text-xs font-medium text-slate-600 underline"
+            >
+              {showTransfer ? "Cancel transfer" : "Transfer to another bed"}
+            </button>
+            {showTransfer && (
+              <div className="mt-2 space-y-2">
+                <select
+                  value={toBedId}
+                  onChange={(e) => setToBedId(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                >
+                  <option value="">Select a vacant bed…</option>
+                  {vacantBeds.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {WARD_LABEL[b.ward_type]} · {b.bed_number}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={transferReason}
+                  onChange={(e) => setTransferReason(e.target.value)}
+                  placeholder="reason for transfer"
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                />
+                <button
+                  onClick={transfer}
+                  disabled={busy || !toBedId || !transferReason.trim()}
+                  className="w-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+                >
+                  Confirm transfer
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {canDischarge && (
           <div className="border-t border-slate-200 pt-3">
@@ -448,7 +563,7 @@ function SummaryPopover({ bed, canDischarge, onClose, onError }) {
             <button
               onClick={discharge}
               disabled={busy}
-              className="mt-2 w-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="mt-2 w-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
             >
               Discharge
             </button>
@@ -456,6 +571,109 @@ function SummaryPopover({ bed, canDischarge, onClose, onError }) {
         )}
       </div>
     </Modal>
+  );
+}
+
+function MaintenanceModal({ bed, onClose, onError }) {
+  const [reason, setReason] = useState("");
+  const [until, setUntil] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!reason.trim()) return;
+    setBusy(true);
+    try {
+      await apiSend(`/api/ipd/beds/${bed.id}`, "PATCH", {
+        status: "MAINTENANCE",
+        maintenanceReason: reason.trim(),
+        ...(until ? { maintenanceUntil: until } : {}),
+      });
+      onClose();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={`Set ${bed.bed_number} to maintenance`} onClose={onClose}>
+      <div className="space-y-2 text-sm">
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="reason (e.g. AC repair)"
+          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+        />
+        <label className="block space-y-1">
+          <span className="text-xs text-slate-500">Expected back in service (optional)</span>
+          <input
+            type="date"
+            value={until}
+            onChange={(e) => setUntil(e.target.value)}
+            className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+          />
+        </label>
+        <button
+          onClick={submit}
+          disabled={busy || !reason.trim()}
+          className="w-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+        >
+          Set to maintenance
+        </button>
+        <p className="text-xs text-slate-400">
+          Excludes this bed from the available pool until it's cleared back to vacant.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+function OccupancyReport() {
+  const [wards, setWards] = useState(null);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    apiGet("/api/ipd/reports/occupancy")
+      .then((d) => setWards(d.wards))
+      .catch((e) => setMsg(e.message));
+  }, []);
+
+  if (msg) return <p className="text-sm text-red-600">{msg}</p>;
+  if (!wards) return <p className="text-sm text-slate-400">Loading report…</p>;
+  if (wards.length === 0) return <p className="text-sm text-slate-400">No beds set up yet.</p>;
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+            <th className="px-3 py-2">Ward</th>
+            <th className="px-3 py-2">Occupancy</th>
+            <th className="px-3 py-2">Vacant</th>
+            <th className="px-3 py-2">Occupied</th>
+            <th className="px-3 py-2">Cleaning</th>
+            <th className="px-3 py-2">Maintenance</th>
+            <th className="px-3 py-2">Avg. length of stay</th>
+          </tr>
+        </thead>
+        <tbody>
+          {wards.map((w) => (
+            <tr key={w.wardType} className="border-b border-slate-100 last:border-0">
+              <td className="px-3 py-2 font-medium">{WARD_LABEL[w.wardType] || w.wardType}</td>
+              <td className="px-3 py-2">{w.occupancyPct}% <span className="text-slate-400">({w.occupied}/{w.total})</span></td>
+              <td className="px-3 py-2">{w.vacant}</td>
+              <td className="px-3 py-2">{w.occupied}</td>
+              <td className="px-3 py-2">{w.cleaning}</td>
+              <td className="px-3 py-2">{w.maintenance}</td>
+              <td className="px-3 py-2">
+                {w.avgLengthOfStayDays != null ? `${w.avgLengthOfStayDays}d (${w.dischargedCount} discharged)` : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

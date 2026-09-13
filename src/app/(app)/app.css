@@ -27,6 +27,15 @@
  * `bg-[var(--hms-btn-bg)]`, a token that never flips — the same
  * "deliberately-permanent near-black" treatment the marketing site's own
  * CTA/footer/tech-panel blocks already use, for the same reason.
+ *
+ * A second, later conflict: those same call sites' `text-white` broke in
+ * dark mode too, because `--color-white` (below) is redefined as a DARK
+ * surface tone for dark mode (so `bg-white` cards correctly become dark
+ * cards) — but that makes `text-white` resolve to near-black as well,
+ * making button labels invisible against `--hms-btn-bg`. Fixed the same
+ * way: every `text-white` call site pairing with a permanently-dark
+ * background now uses `text-[var(--hms-btn-fg)]`, a literal, non-flipping
+ * white token (see its definition below).
  */
 
 .hms-shell {
@@ -51,6 +60,14 @@
   /* stable, theme-independent — see file header for why buttons don't flip */
   --hms-btn-bg: #080808;
   --hms-btn-bg-hover: #262626;
+  /* Literal white for text/icons on a permanently-dark surface (buttons,
+     badges, pills). Tailwind's `text-white` utility resolves to
+     `--color-white`, which below is redefined to a DARK surface tone for
+     dark mode (so `bg-white` cards correctly become dark cards) — that
+     same variable can't also mean literal white, so anything that needs
+     real white text uses this token instead of the `text-white` class.
+     Same fix shape as `--hms-btn-bg` for the analogous slate-900 conflict. */
+  --hms-btn-fg: #FFFFFF;
 
   /* Tailwind's own color variables, retinted so every existing bg-, border-
      and text- utility class already used across every screen matches this

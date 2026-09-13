@@ -119,7 +119,7 @@ export default function BrandingClient() {
           <Field label="Footer text" value={tenantForm.footerText} onChange={(v) => setTenantForm((s) => ({ ...s, footerText: v }))} />
           <button
             disabled={busy}
-            className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
           >
             Save
           </button>
@@ -155,7 +155,7 @@ export default function BrandingClient() {
           <Field label="Qualifications" value={ownForm.qualifications} onChange={(v) => setOwnForm((s) => ({ ...s, qualifications: v }))} placeholder="MBBS, MD (Medicine)" />
           <button
             disabled={busy}
-            className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
           >
             Save
           </button>

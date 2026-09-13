@@ -138,7 +138,7 @@ function LoginForm() {
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--hms-btn-bg-hover)] disabled:opacity-50"
+          className="w-full rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] hover:bg-[var(--hms-btn-bg-hover)] disabled:opacity-50"
         >
           {busy ? "Signing in…" : "Sign in"}
         </button>

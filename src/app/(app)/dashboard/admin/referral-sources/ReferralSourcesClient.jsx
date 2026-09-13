@@ -103,7 +103,7 @@ export default function ReferralSourcesClient() {
           onChange={(e) => setForm((s) => ({ ...s, contactPhone: e.target.value }))}
           className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
         />
-        <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+        <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
           Add
         </button>
       </form>

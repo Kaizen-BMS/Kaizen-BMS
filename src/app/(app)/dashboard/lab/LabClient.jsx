@@ -145,7 +145,7 @@ export default function LabClient({ permissions }) {
                   <button
                     onClick={() => collect(o.id)}
                     disabled={busy}
-                    className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                   >
                     Mark collected
                   </button>
@@ -154,7 +154,7 @@ export default function LabClient({ permissions }) {
                   <button
                     onClick={() => receive(o.id)}
                     disabled={busy}
-                    className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                   >
                     Mark received
                   </button>
@@ -163,7 +163,7 @@ export default function LabClient({ permissions }) {
                   <button
                     onClick={() => startResult(o)}
                     disabled={busy}
-                    className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                   >
                     Enter results
                   </button>
@@ -219,7 +219,7 @@ export default function LabClient({ permissions }) {
                     <button
                       onClick={submitResults}
                       disabled={busy}
-                      className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                     >
                       Finalize report
                     </button>

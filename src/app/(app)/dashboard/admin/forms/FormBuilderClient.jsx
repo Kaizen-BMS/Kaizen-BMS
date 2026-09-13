@@ -77,7 +77,7 @@ export default function FormBuilderClient() {
             key={t}
             onClick={() => setTab(t)}
             className={`rounded-md px-3 py-1.5 ${
-              t === tab ? "bg-[var(--hms-btn-bg)] text-white" : "bg-slate-100"
+              t === tab ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100"
             }`}
           >
             {t.replace(/_/g, " ").toLowerCase()}
@@ -173,7 +173,7 @@ export default function FormBuilderClient() {
       <button
         onClick={save}
         disabled={busy}
-        className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
       >
         Save {tab.replace(/_/g, " ").toLowerCase()} form
       </button>
