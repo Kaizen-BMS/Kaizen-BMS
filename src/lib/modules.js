@@ -3,7 +3,7 @@
 const { prisma } = require("./prismaClient");
 const { can } = require("./rbac");
 
-const MODULE_NAMES = ["PHARMACY", "DOCTOR_OPD", "LAB", "BILLING", "IPD"];
+const MODULE_NAMES = ["PHARMACY", "DOCTOR_OPD", "LAB", "BILLING", "IPD", "APPOINTMENTS"];
 
 // The action that decides whether a role belongs in a module's Socket.io
 // sub-room. A role joins `tenant:<id>:<module>` only if it can perform
@@ -14,6 +14,7 @@ const MODULE_ROOM_ACTION = {
   LAB: "lab:read",
   BILLING: "bill:create",
   IPD: "bed:read",
+  APPOINTMENTS: "appointment:read",
 };
 
 // Which rentable module(s) an action needs — the tenant must have AT LEAST
@@ -51,6 +52,12 @@ const ACTION_MODULE = {
   "admission:update": ["IPD"],
   "nursingnote:create": ["IPD"],
   "nursingnote:read": ["IPD"],
+
+  "doctorslot:manage": ["APPOINTMENTS"],
+  "appointment:create": ["APPOINTMENTS"],
+  "appointment:read": ["APPOINTMENTS"],
+  "appointment:update": ["APPOINTMENTS"],
+  "feedback:read": ["APPOINTMENTS"],
 };
 
 /** Module names an action may be satisfied by (empty = core, no gate). */

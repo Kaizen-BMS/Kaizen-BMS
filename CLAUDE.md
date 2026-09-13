@@ -631,16 +631,36 @@ product; that was explicitly scoped out when this was decided.
   system (`.kbms-site`) is completely untouched by any of this.
 - **One deliberate exception, carried over from the marketing site's own
   precedent**: primary buttons and active-tab pills
-  (`bg-[var(--hms-btn-bg)]` + `text-white`, ~37 call sites converted from
-  literal `bg-slate-900`) use a **stable, non-flipping** near-black token,
-  not the retinted (and therefore theme-flipping) `slate-900`. Reasoning:
-  `slate-900` has to flip to a LIGHT color in dark mode so plain
-  `text-slate-900` headings/labels stay readable — but a button styled
-  `bg-slate-900 text-white` would then go light-bg-white-text and become
-  unreadable. This mirrors the marketing site's own "deliberately-
-  permanent near-black blocks" (the final CTA, the tech-flow panel, the
-  footer) — same reasoning, same fix shape, applied to the product's
-  buttons instead.
+  (`bg-[var(--hms-btn-bg)]` + `text-[var(--hms-btn-fg)]`, ~37 call sites
+  converted from literal `bg-slate-900`) use **stable, non-flipping**
+  near-black/white tokens, not the retinted (and therefore theme-flipping)
+  `slate-900`/`white`. Reasoning: `slate-900` has to flip to a LIGHT color
+  in dark mode so plain `text-slate-900` headings/labels stay readable —
+  but a button styled `bg-slate-900 text-white` would then go
+  light-bg-white-text and become unreadable. This mirrors the marketing
+  site's own "deliberately-permanent near-black blocks" (the final CTA,
+  the tech-flow panel, the footer) — same reasoning, same fix shape,
+  applied to the product's buttons instead.
+- **Bug found and fixed 2026-09-13**: the button-background fix above only
+  covered half the conflict. `text-white` resolves to `--color-white`,
+  which dark mode redefines to a DARK surface tone (`#191917`, so `bg-white`
+  cards correctly become dark cards) — but that also makes `text-white`
+  render as near-black, invisible against a permanently-dark button
+  background (`--hms-btn-bg`) or badge (`--hms-accent`, `--hms-danger`).
+  Reported by the owner as the Sign In button's label and the Print
+  button's label both being unreadable in dark mode. Root cause was
+  systemic, not a login-page-specific bug — every one of the ~37
+  `text-white` call sites across the whole product had the same defect.
+  Fixed the same way as the button-background conflict: added
+  `--hms-btn-fg: #FFFFFF` (never flips) and swapped every `text-white`
+  call site to `text-[var(--hms-btn-fg)]`. **Lesson for any future retint
+  work**: a shared Tailwind color variable (`--color-white`, `--color-
+  slate-900`, …) can only be redefined for ONE semantic use (surface OR
+  text/foreground) at a time — the moment a component needs the variable's
+  meaning to differ by which utility references it (`bg-*` vs `text-*`),
+  it needs its own stable, non-flipping token instead, checked for both
+  directions (bg conflicts AND text conflicts) before calling a retint
+  done.
 - Sidebar nav scoped to the user's role + active modules + tenant type.
 - Every list screen is a real data table: sortable, searchable, paginated.
 - Forms use the dynamic `form_templates` + `custom_fields` pattern.
@@ -667,7 +687,43 @@ Admitting sets the bed OCCUPIED and the visit ADMITTED; discharging sets the
 bed CLEANING (a manual "mark ready" action — `bed:manage` — moves it back to
 VACANT; no full housekeeping workflow) and the visit DISCHARGED. Nursing
 notes carry free text + a flexible `vitals` JSON (bp/pulse/temp/spo2) rather
-than one column per vital sign.
+than one column per vital sign. The Bed Board (`BedBoardClient.jsx`) was
+rebuilt 2026-09-13 after owner feedback that the original was confusing: it
+now leads with a ward occupancy summary and an explicit status-color legend,
+has a real "+ Add / manage beds" form (the API always supported adding a
+bed and setting its `daily_rate`; there was previously no UI for either),
+and moved admit/discharge into proper modals instead of inline widgets.
+
+- **Ward/bed transfer** (`POST /api/ipd/admissions/[id]/transfer`, action
+  `admission:update` — same clinical-decision weight, and the same
+  permission, as discharge; NOT `bed:manage`'s day-to-day housekeeping
+  grain): moves an active admission to a different vacant bed. The old bed
+  goes CLEANING, the new bed goes OCCUPIED, `admissions.bed_id` is updated
+  to the new bed (so "current bed" stays a plain lookup), and `bed_transfers`
+  (migration 015) keeps the append-only audit trail (`from_bed_id`,
+  `to_bed_id`, `reason`, `transferred_by`, `transferred_at`) — never edited,
+  mirroring how `pharmacy_stock_movements` and `bed_transfers` are both
+  "the log IS the audit trail," not a side effect of one. Rejects onto an
+  already-discharged admission, the same bed, or a non-vacant target bed.
+- **Bed maintenance**: `beds.status = MAINTENANCE` already existed
+  (004_ipd.sql) but carried no reason — migration 015 added
+  `maintenance_reason` (required by the API whenever a bed is set to
+  MAINTENANCE) and an optional `maintenance_until` date. Both are cleared
+  automatically the moment status moves off MAINTENANCE. Gated on
+  `bed:manage`, same as "mark ready" — day-to-day ward housekeeping, not a
+  clinical decision.
+- **Occupancy reporting** (`GET /api/ipd/reports/occupancy`, action
+  `bed:read`): per-ward bed-status counts, occupancy % (`occupied/total`),
+  and average length of stay for discharged admissions. LOS is grouped by
+  each admission's CURRENT bed (i.e. after any transfer) — a deliberate
+  simplification; a mid-stay transfer attributes the whole stay to the ward
+  the patient ended up in, not split proportionally across both. Feeds a
+  toggleable panel on the Bed Board screen itself for now, ahead of a
+  planned dedicated Reports & Analytics dashboard.
+- **Deliberately not built** (explicit scope cut, matching the owner's own
+  instruction): no housekeeping-staff-assignment workflow — the existing
+  "mark ready" action on a CLEANING bed is enough; a full task-assignment
+  system for that wasn't asked for and would be scope creep.
 
 ## Event taxonomy — the module connection mechanism
 
@@ -682,6 +738,241 @@ Next" announcement) is the first event following the ADT/ORM/ORU-style
 taxonomy named in the product spec; a full rename pass across every emit
 site is deferred, tracked as future step 4 of the patient-journey work —
 don't invent further one-off event-name conventions in the meantime.
+
+## Attendance — built
+
+Staff self check-in/check-out, receptionist-proxy attendance (with a photo)
+for employees who have no system login, and an intra-shift "stepped out"
+break with a reason. Core feature — not module-gated (no `tenant_modules`
+entry), `tenantTypes: ["HOSPITAL"]` only (a solo tenant has no staff
+hierarchy to track). Migration 014.
+
+- **Two kinds of people can have attendance**: a `users` row (self-service)
+  or a `staff_members` row — a lightweight, tenant-owned directory (same
+  "the system builds itself" philosophy as `referral_sources`: nothing
+  pre-filled, a hospital adds its own sweepers/ward-staff/etc.,
+  `staffmember:manage` to add/edit/deactivate, never hard-deleted).
+- **`attendance_logs`** models "which person" as `(subject_type, subject_id)`
+  — `USER` or `STAFF_MEMBER` — rather than two nullable FK columns: a real FK
+  can't point at "users OR staff_members" conditionally, and two nullable FK
+  columns can't be uniquely constrained together in MySQL (NULL is never
+  equal to NULL in a unique index, so duplicate check-ins would slip
+  through). One row per `(tenant_id, subject_type, subject_id, work_date)`,
+  enforced by a genuine DB unique key. "Today" is decided by the DB server's
+  `CURDATE()` (`src/lib/attendance.js`'s `serverToday()`), same convention as
+  the OPD queue token's daily reset — never the JS process's clock.
+- **`attendance_breaks`**: an intra-shift "stepped out" period
+  (`out_at`/`in_at`, `in_at IS NULL` means still out), with a required
+  `reason` and a `category` — `PERSONAL` or `HOSPITAL_WORK`. Worked minutes
+  are always derived at read time (`computeWorkedMinutes`), never stored:
+  elapsed check-in→check-out minus `PERSONAL` break time; `HOSPITAL_WORK`
+  breaks are NOT deducted (the person is still on hospital business, just
+  physically elsewhere). Checking out is blocked while a break is still
+  open (`close_break_first`) — you can't clock out from an outing you never
+  clocked back in from.
+- **No file/blob storage exists in this project** — a proxy check-in/
+  check-out's photo is required (it's the only identity check available for
+  someone with no login of their own) and is captured client-side via
+  `<input type="file" capture="environment">`, resized to ~480px and
+  compressed to a JPEG data URL in-browser (`AttendanceClient.jsx`'s
+  `compressPhoto()`), then stored directly in a `MEDIUMTEXT` column —
+  deliberately not a reason to stand up upload/S3 infrastructure for this
+  one feature.
+- **RBAC**: `attendance:self` (check in/out, start/end own break) — every
+  staff role (`RECEPTIONIST`/`DOCTOR`/`NURSE`/`PHARMACIST`/`LAB_TECH`/
+  `BILLING_STAFF`) plus `HOSPITAL_ADMIN`'s wildcard; deliberately NOT given
+  to `OWNER_*` (solo tenants aren't hospitals with staff to track — the
+  `tenantTypes` nav/page gate already excludes them, this is belt-and-
+  braces). `attendance:proxy` (mark a no-login staff member, photo
+  required) and `staffmember:read` (see the roster to mark against) —
+  `RECEPTIONIST` + `HOSPITAL_ADMIN`. `staffmember:manage` (add/edit/
+  deactivate the roster) — `HOSPITAL_ADMIN` only.
+- **Verified 2026-09-13** against the real demo tenant (`Demo Hospital`,
+  id 1) via curl, not just code review: self check-in → double check-in
+  rejected (409 `already_checked_in`) → break start → check-out blocked
+  while on a break (409 `close_break_first`) → double break-start rejected
+  (409 `already_out`) → break end → check-out succeeds. Proxy flow: check-in
+  without a photo rejected (400, zod) → check-in with a photo succeeds →
+  double check-in rejected (409) → `HOSPITAL_WORK` break → proxy check-out
+  blocked while on that break (409) → break end → check-out succeeds.
+  Cross-tenant/nonexistent `staffMemberId` → 404, not a leak. RBAC: no
+  cookie → 401; receptionist attempting `staffmember:manage` (create a
+  staff member) → 403; receptionist's own `staffmember:read` → 200.
+- **Deliberately not built in this pass** (flagged separately, tracked as
+  future work): a historical/reporting view (attendance % over a date
+  range, leave tracking) — that's the "Reports" half of the planned Staff
+  Management module and would duplicate scope; today's screen only shows
+  the current day.
+
+## Appointment Scheduling — base system built (Patient Portal below is done too)
+
+New rentable module `APPOINTMENTS` (migration 016). Built from an owner-
+supplied external spec modeled on Apollo/KIMS's real apps — field names
+were translated to this project's own convention (BigInt-unsigned ids,
+snake_case columns) rather than the spec's Int/camelCase sketch, per the
+Prisma section's rule that schema is introspected, never hand-authored to
+match an external draft verbatim. **Steps 1-3 and 4-5 of the 6-step build
+order are done (base scheduling + Patient Portal read-only access, see
+below); step 6 (the patient-facing privacy-restricted calendar + booking +
+cancellation + feedback submission) is the one piece not built yet.**
+
+- **`doctor_slots`**: a doctor's recurring WEEKLY availability template
+  (`day_of_week` 0=Sunday..6=Saturday, `start_time`/`end_time`, `slot_minutes`
+  default 15) — not actual booked instances. A doctor manages only their
+  own (`doctorslot:manage`, self-scoped, same "manage_own" shape as
+  branding) via a "Manage my availability" panel on the calendar screen.
+- **`appointments`**: real booked instances. **Double-booking prevention is
+  NOT a manual `FOR UPDATE` lock** like Pharmacy's FEFO dispense — that
+  pattern locks an EXISTING row to serialize depletion; here, before the
+  first booking, there is no row yet to lock, so a plain
+  check-then-insert always has a phantom-read race window no amount of
+  application-level locking closes. The correct mechanism for "prevent two
+  people booking the same brand-new slot" is a real unique constraint that
+  makes the second concurrent INSERT fail atomically at the storage engine
+  — `uq_appointments_doctor_active_slot` on `(tenant_id, doctor_user_id,
+  active_slot_time)`, where `active_slot_time` is a **generated column**
+  (`CASE WHEN status = 'CANCELLED' THEN NULL ELSE slot_time END`). MySQL/
+  MariaDB unique indexes never treat two NULLs as duplicates, so: a clean
+  CANCELLED frees the slot for a real rebooking (`active_slot_time` goes
+  NULL), while BOOKED/CONFIRMED/COMPLETED/NO_SHOW all continue to occupy
+  it — matching the product rule that a no-show is recorded but does NOT
+  reopen the slot. The API (`POST /api/appointments`) attempts the insert
+  inside a transaction and translates a Prisma `P2002` violation to a clean
+  409 `slot_taken`.
+- **Verified under genuine concurrency, 2026-09-13**: 10 truly simultaneous
+  `POST /api/appointments` requests at the exact same doctor+slot_time —
+  exactly 1 returned 201, the other 9 returned 409 `slot_taken`, and the
+  database confirmed exactly one row exists for that slot (not code review
+  — a real race fired via 10 backgrounded curl processes). Also verified:
+  cancelling reopens a slot for a genuine rebooking; a no-show'd slot
+  rejects a rebooking attempt (`slot_taken`); an already-finalized
+  appointment rejects a further status change (409 `already_finalized`);
+  a slot_time not aligned to the doctor's actual template (wrong minute
+  offset) is rejected server-side (400) even though the UI would never
+  generate one — never trust a bare client-supplied datetime.
+- **No timezone conversion anywhere** (`src/lib/appointments.js`) — every
+  `slot_time`/booking moment uses plain local `Date` arithmetic, the exact
+  same "naive wall clock, whatever timezone the app/DB server share"
+  convention already used for every other timestamp in this project
+  (`visits.created_at`, `admissions.admitted_at`, etc. — none of them do
+  timezone conversion either). Introducing UTC-strict handling only for
+  Appointments would be a one-off inconsistency, not a real improvement,
+  for a single-country deployment. `doctor_slots.start_time`/`end_time`
+  (`TIME` columns, no date) are the one place UTC IS used, but only as an
+  arbitrary, self-consistent anchor (Prisma round-trips `TIME` through
+  1970-01-01 UTC) — unrelated to any real timezone.
+- **Staff calendar UI** (`(app)/dashboard/appointments`): Month/Week/Day
+  toggle, Today/prev/next navigation, a status-color legend, click an empty
+  cell to book (patient search-or-create + reason, reusing the same
+  find-or-create pattern as the IPD admit modal), click a booked cell for
+  details + status actions (Confirm/Complete/No-show/Cancel). Rendered as a
+  genuine time-grid table (rows = each distinct slot start-time, columns =
+  days in Week view or doctors in Day view) rather than pixel-positioned
+  floating blocks — matches this product's stated "plain, fast, functional,
+  not visual flair" philosophy, and is far more robust to get right without
+  a live browser to pixel-check. **Multi-doctor side-by-side is a Day-view
+  feature** (matching Google Calendar's own convention for comparing several
+  calendars at once); Week/Month view always show one doctor at a time.
+  Drag-to-reschedule is explicitly out of scope for this pass (per the
+  original spec) — reschedule is cancel-then-rebook using the existing
+  primitives, not a dedicated endpoint.
+- **One naming deviation from the pasted spec, deliberate**: events are
+  `appointment:booked`/`appointment:cancelled` (colon), not
+  `appointment.booked`/`.cancelled` (dot) as the spec literally said.
+  CLAUDE.md's event-taxonomy section already flags `visit.called` as "the
+  first" dot-style event and explicitly warns against inventing further
+  one-off conventions in the meantime — so the colon form was used to stay
+  consistent with the dominant, already-documented taxonomy instead.
+- **RBAC**: `appointment:create`/`appointment:read`/`appointment:update` —
+  `RECEPTIONIST` and `DOCTOR` (+ `HOSPITAL_ADMIN` wildcard).
+  `doctorslot:manage` — `DOCTOR` only, self-scoped (a 403 if a doctor tries
+  to edit another doctor's template via a guessed id). `feedback:read` is
+  wired into module gating but has no route yet (Patient Portal work).
+- **Also discovered while building this**: the live database is actually
+  **MariaDB 11.8**, not MySQL as CLAUDE.md has called it throughout (still
+  wire-compatible enough that nothing else needed to change) — confirmed
+  via `SELECT VERSION()` while checking generated-column/CHECK-constraint
+  support before writing migration 016. Both features work correctly on
+  it (verified: the migration applied cleanly, the generated column
+  computes correctly under real concurrency).
+
+## Patient Portal — auth + read-only screens built, self-service booking not yet
+
+Patients authenticate separately from staff — phone+OTP, not the staff
+role/password system (`patients.otp_code_hash`/`otp_expires_at`/
+`otp_requested_at`/`otp_attempts`, migration 016). **Per-tenant login**, an
+explicit owner decision over a unified cross-tenant identity spanning every
+Kaizen hospital a phone number has visited (asked via AskUserQuestion given
+the spec's wording leaned the other way) — the latter would have needed a
+new non-tenant-scoped identity layer and created a real cross-tenant
+data-leak vector (two unrelated patients at two different hospitals sharing
+one phone number), conflicting with this project's core tenant-isolation
+guarantee. **What's built: OTP auth, the separate session type, and every
+read-only screen (appointments, prescriptions, lab reports, discharge
+summaries, active medications, bill status). What's NOT built yet: the
+patient-facing calendar, self-service booking/cancellation, and feedback
+submission** (build-order step 6) — `feedback`'s schema exists (migration
+016) but has no API yet.
+
+- **A genuinely separate session, verified two-way**: `src/lib/patientAuth.js`
+  signs a JWT shaped `{ typ: "patient", tid, phone }` — no `uid`/`role`, so
+  staff's `verifySession()` rejects it outright (it requires both); the
+  reverse holds too (`verifyPatientSession` requires `typ === "patient"`).
+  Different cookie name (`kaizen_patient_session` vs `kaizen_session`),
+  30-day TTL vs staff's 8-hour shift session (a consumer portal shouldn't
+  force a fresh OTP every 8 hours). `proxy.js` gained a dedicated branch for
+  `/patient/:path*` and `/api/patient/*` — verifies the patient cookie, not
+  the staff one, and never runs staff RBAC. **Verified live, not just by
+  code review**: a patient session hitting a staff API → 401; hitting the
+  staff dashboard page → redirected to `/login`; a staff session hitting a
+  patient API → 401; hitting the patient dashboard page → redirected away.
+- **Scoped to (tenantId, phone), not one patientId** — `patients.phone` was
+  never unique (family members sharing a household number, duplicate
+  front-desk registrations are both normal), so a session covers every
+  `patients` row at that tenant matching the phone. `GET /api/patient/
+  profiles` lists them; the dashboard shows a picker when there's more than
+  one. Every other patient route accepts an optional `?patientId=`,
+  re-verified against the session's own phone before use
+  (`src/lib/patientPortal.js`'s `resolvePatientIdFilter` — a 403
+  `not_your_profile` if it doesn't belong to this session, never trusted
+  bare) — **verified live**: a session tried another real patient's id and
+  got 403; its own id succeeded.
+- **OTP mechanics**: 6-digit code, bcrypt-hashed, 5-minute expiry, 30-second
+  resend cooldown, 5 verify attempts before requiring a fresh code, single-
+  use (cleared on success). No SMS provider is chosen yet — stubbed as a
+  `console.log` rather than blocking this feature on a vendor decision.
+  Request-OTP returns the **identical response** whether or not the phone
+  is registered — same no-enumeration principle as staff login.
+- **Read screens are module-aware per the product rule** ("a patient
+  shouldn't see a Lab Reports section for a tenant that never had Lab
+  active"): each route checks `isModuleActive` for its own module
+  (APPOINTMENTS/DOCTOR_OPD/LAB/IPD/BILLING) and returns `{moduleActive:
+  false}` rather than an error, so the dashboard can just hide that tab.
+  Bills show status + balance only, always `payAtHospital: true` when a
+  balance is outstanding — no online payment (needs a real payment gateway,
+  a business decision, not wired up silently here). "Active medications" is
+  honestly just the most recent prescription's items — there's no
+  structured expiry/duration anywhere in this schema (dosage is freeform
+  text like "1-0-1 x 5 days") to compute a real still-taking-it distinction
+  from.
+- **Verified against real historical data, not fixtures**: logged in as an
+  actual previously-admitted/discharged/billed test patient and confirmed
+  their discharge summary and receipt balance matched exactly what earlier
+  IPD/Billing testing had produced for them.
+- **URL canonicalization, not a security boundary**: `/patient/
+  <tenantSlug>/dashboard` re-derives the tenant from the verified session,
+  never the URL segment, and redirects to the session's real tenant's slug
+  if they don't match — every actual query is already scoped by session,
+  so a mismatched slug was only ever a confusing display bug, never a data
+  leak, but it's still handled correctly rather than left showing the wrong
+  hospital's name.
+- Files: `src/lib/patientAuth.js`, `patientAuthConstants.js`,
+  `patientSession.js`, `patientApiRoute.js`, `patientPortal.js`;
+  `src/app/api/patient-auth/*`, `src/app/api/patient/*`; UI at
+  `src/app/(patient)/patient/[tenantSlug]/{login,dashboard}` — its own
+  route group, plain Tailwind (no `.hms-shell` retint, no dark mode) since
+  this is a lightweight mobile-first consumer surface, not the staff
+  product.
 
 ## Referral sources — built
 

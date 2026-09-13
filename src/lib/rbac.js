@@ -36,6 +36,12 @@ const RECEPTIONIST = [
   "followup:create",
   "followup:read",
   "formtemplate:read",
+  "attendance:self",
+  "attendance:proxy",
+  "staffmember:read",
+  "appointment:create",
+  "appointment:read",
+  "appointment:update",
 ];
 
 const DOCTOR = [
@@ -63,6 +69,14 @@ const DOCTOR = [
   "admission:read",
   "admission:update",
   "nursingnote:read",
+  "attendance:self",
+  // A doctor manages their own weekly availability template and their own
+  // appointment calendar — not another doctor's (enforced in the API by
+  // scoping doctorslot:manage writes to the caller's own doctor_user_id).
+  "doctorslot:manage",
+  "appointment:create",
+  "appointment:read",
+  "appointment:update",
 ];
 
 // Ward/bed housekeeping and nursing notes are realistically nurse-run, not
@@ -78,6 +92,7 @@ const NURSE = [
   "nursingnote:read",
   "formtemplate:read",
   "branding:read",
+  "attendance:self",
 ];
 
 const PHARMACIST = [
@@ -92,6 +107,7 @@ const PHARMACIST = [
   "bill:read",
   "formtemplate:read",
   "branding:read",
+  "attendance:self",
 ];
 
 const LAB_TECH = [
@@ -105,6 +121,7 @@ const LAB_TECH = [
   "formtemplate:read",
   "branding:read",
   "branding:manage_own",
+  "attendance:self",
 ];
 
 const BILLING_STAFF = [
@@ -122,6 +139,7 @@ const BILLING_STAFF = [
   "followup:read",
   "formtemplate:read",
   "branding:read",
+  "attendance:self",
 ];
 
 // A solo owner also runs the account: manages their own forms and branding,

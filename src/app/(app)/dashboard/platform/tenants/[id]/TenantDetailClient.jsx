@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 
-const ALL_MODULES = ["DOCTOR_OPD", "PHARMACY", "LAB", "IPD", "BILLING"];
+const ALL_MODULES = ["DOCTOR_OPD", "PHARMACY", "LAB", "IPD", "BILLING", "APPOINTMENTS"];
 
 export default function TenantDetailClient({ tenantId }) {
   const [tenant, setTenant] = useState(null);
@@ -60,7 +60,7 @@ export default function TenantDetailClient({ tenantId }) {
         <button
           onClick={toggleActive}
           disabled={busy}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 ${
+          className={`rounded-md px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50 ${
             tenant.active ? "bg-red-700" : "bg-green-700"
           }`}
         >
@@ -81,7 +81,7 @@ export default function TenantDetailClient({ tenantId }) {
               disabled={busy}
               onClick={() => toggleModule(m, !activeSet.has(m))}
               className={`rounded-full px-3 py-1 text-xs disabled:opacity-50 ${
-                activeSet.has(m) ? "bg-green-700 text-white" : "bg-slate-100 text-slate-500"
+                activeSet.has(m) ? "bg-green-700 text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-500"
               }`}
             >
               {m} {activeSet.has(m) ? "· rented" : "· off"}

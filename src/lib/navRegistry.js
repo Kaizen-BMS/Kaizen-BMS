@@ -40,9 +40,10 @@ const NAV = [
   { key: "radiology", label: "Radiology", section: "CLINICAL", icon: "radiology", action: null, modules: ["RADIOLOGY"], status: "soon" },
 
   // ── Operations ──
+  { key: "attendance", label: "Attendance", section: "OPERATIONS", route: "/dashboard/attendance", icon: "attendance", action: "attendance:self", tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "registration", label: "Registration", section: "OPERATIONS", route: "/dashboard/registration", icon: "registration", action: "visit:create", tenantTypes: ["HOSPITAL", "DOCTOR_SOLO"], status: "live" },
   { key: "billing", label: "Billing", section: "OPERATIONS", route: "/dashboard/billing", icon: "billing", action: "bill:create", modules: ["BILLING"], status: "live" },
-  { key: "appointments", label: "Appointments", section: "OPERATIONS", icon: "appointments", action: null, modules: ["APPOINTMENTS"], status: "soon" },
+  { key: "appointments", label: "Appointments", section: "OPERATIONS", route: "/dashboard/appointments", icon: "appointments", action: "appointment:read", modules: ["APPOINTMENTS"], status: "live" },
   { key: "reports", label: "Reports & Analytics", section: "OPERATIONS", icon: "reports", action: "reports:view", status: "soon" },
 
   // ── Administration (admin / owner only) ──

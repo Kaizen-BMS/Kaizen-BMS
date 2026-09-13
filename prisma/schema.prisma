@@ -21,6 +21,7 @@ model admissions {
   beds            beds                       @relation(fields: [bed_id], references: [id], onUpdate: Restrict, map: "fk_admissions_bed")
   tenants         tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_admissions_tenant")
   visits          visits                     @relation(fields: [visit_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_admissions_visit")
+  bed_transfers   bed_transfers[]
   consent_forms   consent_forms[]
   nursing_notes   nursing_notes[]
 
@@ -32,15 +33,19 @@ model admissions {
 }
 
 model beds {
-  id         BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id  BigInt         @db.UnsignedBigInt
-  ward_type  beds_ward_type
-  bed_number String         @db.VarChar(50)
-  daily_rate Decimal        @default(0.00) @db.Decimal(10, 2)
-  status     beds_status    @default(VACANT)
-  created_at DateTime       @default(now())
-  admissions admissions[]
-  tenants    tenants        @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_beds_tenant")
+  id                                            BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                                     BigInt          @db.UnsignedBigInt
+  ward_type                                     beds_ward_type
+  bed_number                                    String          @db.VarChar(50)
+  daily_rate                                    Decimal         @default(0.00) @db.Decimal(10, 2)
+  status                                        beds_status     @default(VACANT)
+  maintenance_reason                            String?         @db.VarChar(255)
+  maintenance_until                             DateTime?       @db.Date
+  created_at                                    DateTime        @default(now())
+  admissions                                    admissions[]
+  bed_transfers_bed_transfers_from_bed_idTobeds bed_transfers[] @relation("bed_transfers_from_bed_idTobeds")
+  bed_transfers_bed_transfers_to_bed_idTobeds   bed_transfers[] @relation("bed_transfers_to_bed_idTobeds")
+  tenants                                       tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_beds_tenant")
 
   @@unique([tenant_id, ward_type, bed_number], map: "uq_beds_tenant_ward_number")
   @@index([tenant_id], map: "idx_beds_tenant")
@@ -214,13 +219,19 @@ model patients {
   age                Int?              @db.UnsignedSmallInt
   gender             patients_gender?
   phone              String?           @db.VarChar(32)
+  otp_code_hash      String?           @db.VarChar(255)
+  otp_expires_at     DateTime?
+  otp_requested_at   DateTime?
+  otp_attempts       Int               @default(0) @db.UnsignedTinyInt
   custom_fields      String?           @db.LongText
   allergies          String?           @db.LongText
   abha_id            String?           @db.VarChar(64)
   referral_source_id BigInt?           @db.UnsignedBigInt
   created_at         DateTime          @default(now())
+  appointments       appointments[]
   bills              bills[]
   consultations      consultations[]
+  feedback           feedback[]
   follow_ups         follow_ups[]
   lab_orders         lab_orders[]
   referral_sources   referral_sources? @relation(fields: [referral_source_id], references: [id], onUpdate: Restrict, map: "fk_patients_referral_source")
@@ -381,10 +392,16 @@ model tenants {
   slug                     String                     @unique(map: "uq_hospitals_slug")
   created_at               DateTime                   @default(now())
   admissions               admissions[]
+  appointments             appointments[]
+  attendance_breaks        attendance_breaks[]
+  attendance_logs          attendance_logs[]
+  bed_transfers            bed_transfers[]
   beds                     beds[]
   bills                    bills[]
   consent_forms            consent_forms[]
   consultations            consultations[]
+  doctor_slots             doctor_slots[]
+  feedback                 feedback[]
   follow_ups               follow_ups[]
   form_templates           form_templates[]
   lab_orders               lab_orders[]
@@ -398,6 +415,7 @@ model tenants {
   prescriptions            prescriptions[]
   print_branding           print_branding[]
   referral_sources         referral_sources[]
+  staff_members            staff_members[]
   tenant_modules           tenant_modules[]
   users                    users[]
   visits                   visits[]
@@ -412,10 +430,14 @@ model users {
   role                     users_role
   created_at               DateTime                   @default(now())
   admissions               admissions[]
+  appointments             appointments[]
+  attendance_logs          attendance_logs[]
+  bed_transfers            bed_transfers[]
   bills                    bills[]
   consent_forms            consent_forms[]
   consultations            consultations[]
   discounts                discounts[]
+  doctor_slots             doctor_slots[]
   nursing_notes            nursing_notes[]
   payments                 payments[]
   pharmacy_stock_movements pharmacy_stock_movements[]
@@ -446,6 +468,7 @@ model visits {
   admissions     admissions[]
   bills          bills[]
   consultations  consultations[]
+  feedback       feedback[]
   follow_ups     follow_ups[]
   lab_orders     lab_orders[]
   prescriptions  prescriptions[]
@@ -537,6 +560,138 @@ model referral_sources {
   @@index([tenant_id, active], map: "idx_referral_sources_tenant_active")
 }
 
+model attendance_breaks {
+  id                BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id         BigInt                     @db.UnsignedBigInt
+  attendance_log_id BigInt                     @db.UnsignedBigInt
+  out_at            DateTime
+  in_at             DateTime?
+  category          attendance_breaks_category
+  reason            String                     @db.VarChar(255)
+  created_at        DateTime                   @default(now())
+  attendance_logs   attendance_logs            @relation(fields: [attendance_log_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_attendance_breaks_log")
+  tenants           tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_attendance_breaks_tenant")
+
+  @@index([attendance_log_id], map: "idx_attendance_breaks_log")
+  @@index([tenant_id], map: "idx_attendance_breaks_tenant")
+}
+
+model attendance_logs {
+  id                  BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id           BigInt                       @db.UnsignedBigInt
+  subject_type        attendance_logs_subject_type
+  subject_id          BigInt                       @db.UnsignedBigInt
+  work_date           DateTime                     @db.Date
+  check_in_at         DateTime?
+  check_in_photo_url  String?                      @db.MediumText
+  check_out_at        DateTime?
+  check_out_photo_url String?                      @db.MediumText
+  marked_by           BigInt                       @db.UnsignedBigInt
+  created_at          DateTime                     @default(now())
+  attendance_breaks   attendance_breaks[]
+  users               users                        @relation(fields: [marked_by], references: [id], onUpdate: Restrict, map: "fk_attendance_logs_marked_by")
+  tenants             tenants                      @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_attendance_logs_tenant")
+
+  @@unique([tenant_id, subject_type, subject_id, work_date], map: "uq_attendance_logs_subject_day")
+  @@index([marked_by], map: "fk_attendance_logs_marked_by")
+  @@index([tenant_id, work_date], map: "idx_attendance_logs_tenant_date")
+}
+
+model staff_members {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id   BigInt   @db.UnsignedBigInt
+  name        String
+  designation String?  @db.VarChar(100)
+  phone       String?  @db.VarChar(32)
+  active      Boolean  @default(true)
+  created_at  DateTime @default(now())
+  tenants     tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_staff_members_tenant")
+
+  @@index([tenant_id], map: "idx_staff_members_tenant")
+  @@index([tenant_id, active], map: "idx_staff_members_tenant_active")
+}
+
+model bed_transfers {
+  id                                   BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                            BigInt     @db.UnsignedBigInt
+  admission_id                         BigInt     @db.UnsignedBigInt
+  from_bed_id                          BigInt     @db.UnsignedBigInt
+  to_bed_id                            BigInt     @db.UnsignedBigInt
+  reason                               String     @db.VarChar(255)
+  transferred_by                       BigInt     @db.UnsignedBigInt
+  transferred_at                       DateTime   @default(now())
+  admissions                           admissions @relation(fields: [admission_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bed_transfers_admission")
+  users                                users      @relation(fields: [transferred_by], references: [id], onUpdate: Restrict, map: "fk_bed_transfers_by")
+  beds_bed_transfers_from_bed_idTobeds beds       @relation("bed_transfers_from_bed_idTobeds", fields: [from_bed_id], references: [id], onUpdate: Restrict, map: "fk_bed_transfers_from_bed")
+  tenants                              tenants    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bed_transfers_tenant")
+  beds_bed_transfers_to_bed_idTobeds   beds       @relation("bed_transfers_to_bed_idTobeds", fields: [to_bed_id], references: [id], onUpdate: Restrict, map: "fk_bed_transfers_to_bed")
+
+  @@index([transferred_by], map: "fk_bed_transfers_by")
+  @@index([from_bed_id], map: "fk_bed_transfers_from_bed")
+  @@index([to_bed_id], map: "fk_bed_transfers_to_bed")
+  @@index([admission_id], map: "idx_bed_transfers_admission")
+  @@index([tenant_id], map: "idx_bed_transfers_tenant")
+}
+
+model appointments {
+  id               BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id        BigInt                 @db.UnsignedBigInt
+  patient_id       BigInt                 @db.UnsignedBigInt
+  doctor_user_id   BigInt                 @db.UnsignedBigInt
+  slot_time        DateTime               @db.DateTime(0)
+  status           appointments_status    @default(BOOKED)
+  booked_by        appointments_booked_by
+  reason           String?                @db.VarChar(500)
+  active_slot_time DateTime?              @db.DateTime(0)
+  created_at       DateTime               @default(now())
+  users            users                  @relation(fields: [doctor_user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_appointments_doctor")
+  patients         patients               @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_appointments_patient")
+  tenants          tenants                @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_appointments_tenant")
+
+  @@unique([tenant_id, doctor_user_id, active_slot_time], map: "uq_appointments_doctor_active_slot")
+  @@index([doctor_user_id], map: "fk_appointments_doctor")
+  @@index([patient_id], map: "fk_appointments_patient")
+  @@index([tenant_id, doctor_user_id, slot_time], map: "idx_appointments_doctor_time")
+  @@index([tenant_id, patient_id], map: "idx_appointments_patient")
+  @@index([tenant_id], map: "idx_appointments_tenant")
+}
+
+model doctor_slots {
+  id             BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id      BigInt   @db.UnsignedBigInt
+  doctor_user_id BigInt   @db.UnsignedBigInt
+  day_of_week    Int      @db.UnsignedTinyInt
+  start_time     DateTime @db.Time(0)
+  end_time       DateTime @db.Time(0)
+  slot_minutes   Int      @default(15) @db.UnsignedSmallInt
+  active         Boolean  @default(true)
+  created_at     DateTime @default(now())
+  users          users    @relation(fields: [doctor_user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_doctor_slots_doctor")
+  tenants        tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_doctor_slots_tenant")
+
+  @@index([doctor_user_id], map: "fk_doctor_slots_doctor")
+  @@index([tenant_id, doctor_user_id, day_of_week], map: "idx_doctor_slots_doctor_day")
+  @@index([tenant_id], map: "idx_doctor_slots_tenant")
+}
+
+model feedback {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id  BigInt   @db.UnsignedBigInt
+  visit_id   BigInt   @db.UnsignedBigInt
+  patient_id BigInt   @db.UnsignedBigInt
+  rating     Int      @db.UnsignedTinyInt
+  comment    String?  @db.VarChar(2000)
+  created_at DateTime @default(now())
+  patients   patients @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_feedback_patient")
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_feedback_tenant")
+  visits     visits   @relation(fields: [visit_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_feedback_visit")
+
+  @@unique([tenant_id, visit_id], map: "uq_feedback_visit")
+  @@index([patient_id], map: "fk_feedback_patient")
+  @@index([visit_id], map: "fk_feedback_visit")
+  @@index([tenant_id], map: "idx_feedback_tenant")
+}
+
 enum beds_ward_type {
   GENERAL
   PRIVATE
@@ -560,14 +715,6 @@ enum tenants_type {
   DOCTOR_SOLO
   PHARMACY_SOLO
   LAB_SOLO
-}
-
-enum tenant_modules_module_name {
-  PHARMACY
-  DOCTOR_OPD
-  LAB
-  BILLING
-  IPD
 }
 
 enum pharmacy_stock_movements_type {
@@ -688,4 +835,36 @@ enum referral_sources_type {
   INSURANCE
   HEALTH_CARD
   OTHER
+}
+
+enum attendance_logs_subject_type {
+  USER
+  STAFF_MEMBER
+}
+
+enum attendance_breaks_category {
+  PERSONAL
+  HOSPITAL_WORK
+}
+
+enum tenant_modules_module_name {
+  PHARMACY
+  DOCTOR_OPD
+  LAB
+  BILLING
+  IPD
+  APPOINTMENTS
+}
+
+enum appointments_status {
+  BOOKED
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum appointments_booked_by {
+  staff
+  patient
 }

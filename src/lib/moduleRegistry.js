@@ -49,8 +49,8 @@ const MODULE_REGISTRY = [
   {
     key: "APPOINTMENTS",
     label: "Appointments",
-    description: "Planned — not built yet, cannot be rented to a tenant.",
-    rentable: false,
+    description: "Doctor calendar (Month/Week/Day), booking, patient self-service portal.",
+    rentable: true,
   },
 ];
 

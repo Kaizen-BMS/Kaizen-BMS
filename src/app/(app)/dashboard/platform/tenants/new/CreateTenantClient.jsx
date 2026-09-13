@@ -10,7 +10,7 @@ const TYPES = [
   { value: "PHARMACY_SOLO", label: "Solo Pharmacist Pack (Pharmacy)" },
   { value: "LAB_SOLO", label: "Solo Lab Pack (Lab)" },
 ];
-const HOSPITAL_MODULES = ["DOCTOR_OPD", "PHARMACY", "LAB", "IPD", "BILLING"];
+const HOSPITAL_MODULES = ["DOCTOR_OPD", "PHARMACY", "LAB", "IPD", "BILLING", "APPOINTMENTS"];
 
 export default function CreateTenantClient() {
   const [form, setForm] = useState({ name: "", slug: "", type: "HOSPITAL", modules: [], ownerName: "", ownerEmail: "" });
@@ -90,7 +90,7 @@ export default function CreateTenantClient() {
                   key={m}
                   onClick={() => toggleModule(m)}
                   className={`rounded-full px-3 py-1 text-xs ${
-                    form.modules.includes(m) ? "bg-[var(--hms-btn-bg)] text-white" : "bg-slate-100 text-slate-600"
+                    form.modules.includes(m) ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"
                   }`}
                 >
                   {m}
@@ -101,7 +101,7 @@ export default function CreateTenantClient() {
         )}
         <Field label="Owner name" value={form.ownerName} onChange={(v) => setForm((s) => ({ ...s, ownerName: v }))} required />
         <Field label="Owner email" type="email" value={form.ownerEmail} onChange={(v) => setForm((s) => ({ ...s, ownerEmail: v }))} required />
-        <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+        <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
           {busy ? "Creating…" : "Create tenant"}
         </button>
       </form>

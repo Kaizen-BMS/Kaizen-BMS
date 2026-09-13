@@ -71,10 +71,16 @@ if (process.env.NODE_ENV !== "production") g.__kaizenPrisma = prisma;
 // project-internal table.)
 const TENANT_SCOPED_MODELS = new Set([
   "admissions",
+  "appointments",
+  "attendance_breaks",
+  "attendance_logs",
+  "bed_transfers",
   "beds",
   "bills",
   "consent_forms",
   "consultations",
+  "doctor_slots",
+  "feedback",
   "follow_ups",
   "form_templates",
   "lab_orders",
@@ -88,6 +94,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "prescriptions",
   "print_branding",
   "referral_sources",
+  "staff_members",
   "tenant_modules",
   "visits",
 ]);
