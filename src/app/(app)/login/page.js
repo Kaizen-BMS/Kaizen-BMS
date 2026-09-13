@@ -1,14 +1,17 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import Icon from "@/components/hms/icons";
 
 const ERRORS = {
   invalid_credentials: "Wrong email or password.",
   invalid_input: "Please check the form and try again.",
   too_many_attempts: "Too many attempts. Wait 15 minutes and try again.",
   unauthorized: "Session expired. Please sign in again.",
+  tenant_suspended: "This hospital's account is currently suspended. Contact Kaizen support.",
 };
 
 function LoginForm() {
@@ -18,6 +21,7 @@ function LoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [tenantSlug, setTenantSlug] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,17 +54,31 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-4">
+    <div className="relative flex min-h-screen flex-col items-center justify-center gap-4 overflow-hidden px-4">
+      <div className="hms-login-bg" aria-hidden="true">
+        <div className="hms-login-blob" />
+        <div className="hms-login-blob" />
+      </div>
+
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-5 rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
+        className="relative z-10 w-full max-w-sm space-y-5 rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
       >
-        <div className="space-y-1">
-          <Link href="/" className="text-xs text-slate-400 hover:text-slate-600">
-            ← Kaizen BMS
+        <div className="space-y-2 text-center">
+          <Link href="/" className="inline-flex items-center justify-center gap-2" aria-label="Kaizen BMS home">
+            <Image
+              src="/images/KaizenBMS infinity logo.png"
+              alt=""
+              width={168}
+              height={88}
+              priority
+              className="h-10 w-auto"
+            />
           </Link>
-          <h1 className="text-xl font-semibold">Kaizen HMS</h1>
-          <p className="text-sm text-slate-500">Staff sign in</p>
+          <div>
+            <h1 className="text-xl font-semibold">Kaizen HMS</h1>
+            <p className="text-sm text-slate-500">Staff sign in</p>
+          </div>
         </div>
 
         {error && (
@@ -83,14 +101,24 @@ function LoginForm() {
 
         <label className="block space-y-1">
           <span className="text-sm font-medium">Password</span>
-          <input
-            type="password"
-            required
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 pr-9 text-sm outline-none focus:border-slate-900"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((s) => !s)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              className="absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400 hover:text-slate-700"
+            >
+              <Icon name={showPassword ? "eyeOff" : "eye"} size={16} />
+            </button>
+          </div>
         </label>
 
         <label className="block space-y-1">
@@ -120,7 +148,7 @@ function LoginForm() {
         </p>
       </form>
 
-      <p className="text-xs text-slate-500">
+      <p className="relative z-10 text-xs text-slate-500">
         Want Kaizen HMS for your hospital?{" "}
         <Link
           href="/services/hospital-management#contact"

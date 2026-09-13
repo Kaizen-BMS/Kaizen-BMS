@@ -6,12 +6,24 @@ import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 
 const WARD_LABEL = { GENERAL: "General Ward", PRIVATE: "Private Rooms", ICU: "ICU" };
+const STATUS_LABEL = {
+  VACANT: "Vacant — ready for a new patient",
+  OCCUPIED: "Occupied",
+  CLEANING: "Being cleaned after discharge",
+  MAINTENANCE: "Out of service",
+};
 const STATUS_STYLE = {
   VACANT: "bg-green-50 border-green-300 text-green-800",
   OCCUPIED: "bg-red-50 border-red-300 text-red-800",
   CLEANING: "bg-amber-50 border-amber-300 text-amber-800",
   MAINTENANCE: "bg-slate-100 border-slate-300 text-slate-500",
 };
+const LEGEND = [
+  ["VACANT", "Vacant — click to admit a patient"],
+  ["OCCUPIED", "Occupied — click to view / discharge"],
+  ["CLEANING", "Being cleaned after discharge"],
+  ["MAINTENANCE", "Out of service"],
+];
 
 function upsertBed(list, bed) {
   return list.some((b) => b.id === bed.id)
@@ -25,6 +37,7 @@ export default function BedBoardClient({ permissions }) {
   const [msg, setMsg] = useState("");
   const [admitBed, setAdmitBed] = useState(null); // bed being admitted onto
   const [summaryBed, setSummaryBed] = useState(null); // occupied bed clicked
+  const [showManage, setShowManage] = useState(false);
   const [flashIds, setFlashIds] = useState(new Set());
 
   function flash(id) {
@@ -60,17 +73,81 @@ export default function BedBoardClient({ permissions }) {
     load,
   );
 
+  async function markReady(bedId, e) {
+    e.stopPropagation();
+    try {
+      await apiSend(`/api/ipd/beds/${bedId}`, "PATCH", { status: "VACANT" });
+    } catch (err) {
+      setMsg(err.message);
+    }
+  }
+
   const wards = ["GENERAL", "PRIVATE", "ICU"].map((w) => ({
     ward: w,
     beds: beds.filter((b) => b.ward_type === w),
   })).filter((g) => g.beds.length > 0);
 
+  const counts = beds.reduce((acc, b) => {
+    acc[b.status] = (acc[b.status] || 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">IPD / Beds</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">IPD / Beds</h1>
+          <p className="text-sm text-slate-500">
+            {beds.length} beds total
+            {beds.length > 0 && (
+              <>
+                {" · "}
+                <span className="text-green-700">{counts.VACANT || 0} vacant</span>
+                {" · "}
+                <span className="text-red-700">{counts.OCCUPIED || 0} occupied</span>
+                {counts.CLEANING > 0 && (
+                  <>
+                    {" · "}
+                    <span className="text-amber-700">{counts.CLEANING} being cleaned</span>
+                  </>
+                )}
+              </>
+            )}
+          </p>
+        </div>
+        {canManageBeds && (
+          <button
+            onClick={() => setShowManage((s) => !s)}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+          >
+            {showManage ? "Close" : "+ Add / manage beds"}
+          </button>
+        )}
+      </div>
+
       {msg && <p className="text-sm text-red-600">{msg}</p>}
+
+      {showManage && canManageBeds && (
+        <AddBedForm onAdded={() => { load(); }} onError={setMsg} />
+      )}
+
+      {/* Legend — what the colors mean, up front, not left for staff to guess */}
+      {beds.length > 0 && (
+        <div className="flex flex-wrap gap-x-5 gap-y-1.5 rounded-lg border border-slate-200 bg-white p-3 text-xs">
+          {LEGEND.map(([status, label]) => (
+            <span key={status} className="flex items-center gap-1.5">
+              <span className={`inline-block h-2.5 w-2.5 rounded-full border ${STATUS_STYLE[status]}`} />
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
+
       {beds.length === 0 && !msg && (
-        <p className="text-sm text-slate-400">No beds set up yet.</p>
+        <p className="text-sm text-slate-400">
+          No beds set up yet.{" "}
+          {canManageBeds ? "Click “+ Add / manage beds” above to add your first one." : "Ask your hospital admin to add beds."}
+        </p>
       )}
 
       {wards.map((g) => (
@@ -92,27 +169,26 @@ export default function BedBoardClient({ permissions }) {
                         ? setSummaryBed(b)
                         : null
                   }
+                  title={STATUS_LABEL[b.status]}
                   className={`rounded-lg border-2 p-3 text-left text-sm transition ${STATUS_STYLE[b.status]} ${
                     flashIds.has(b.id) ? "hms-flash" : ""
                   } ${clickable ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
                 >
                   <p className="font-semibold">{b.bed_number}</p>
-                  <p className="text-xs">{b.status}</p>
+                  <p className="text-xs">{b.status.charAt(0) + b.status.slice(1).toLowerCase()}</p>
                   {b.status === "OCCUPIED" && (
                     <p className="mt-1 truncate text-xs">{b.patient_name}</p>
                   )}
+                  {Number(b.daily_rate) > 0 && b.status !== "OCCUPIED" && (
+                    <p className="mt-1 text-xs opacity-70">₹{Number(b.daily_rate)}/day</p>
+                  )}
                   {b.status === "CLEANING" && canManageBeds && (
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        apiSend(`/api/ipd/beds/${b.id}`, "PATCH", { status: "VACANT" }).catch(
-                          (err) => setMsg(err.message),
-                        );
-                      }}
-                      className="mt-1 inline-block underline"
+                    <button
+                      onClick={(e) => markReady(b.id, e)}
+                      className="mt-1.5 rounded border border-amber-400 bg-white px-1.5 py-0.5 text-xs font-medium hover:bg-amber-50"
                     >
-                      mark ready
-                    </span>
+                      ✓ Mark ready
+                    </button>
                   )}
                 </button>
               );
@@ -133,6 +209,71 @@ export default function BedBoardClient({ permissions }) {
         />
       )}
     </div>
+  );
+}
+
+function AddBedForm({ onAdded, onError }) {
+  const [form, setForm] = useState({ wardType: "GENERAL", bedNumber: "", dailyRate: "" });
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await apiSend("/api/ipd/beds", "POST", {
+        wardType: form.wardType,
+        bedNumber: form.bedNumber,
+        dailyRate: form.dailyRate ? Number(form.dailyRate) : 0,
+      });
+      setForm({ wardType: form.wardType, bedNumber: "", dailyRate: "" });
+      onAdded();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-4"
+    >
+      <p className="col-span-2 text-sm font-semibold sm:col-span-4">Add a bed</p>
+      <select
+        value={form.wardType}
+        onChange={(e) => setForm((s) => ({ ...s, wardType: e.target.value }))}
+        className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+      >
+        <option value="GENERAL">General Ward</option>
+        <option value="PRIVATE">Private Rooms</option>
+        <option value="ICU">ICU</option>
+      </select>
+      <input
+        placeholder="bed number (e.g. G-104)"
+        required
+        value={form.bedNumber}
+        onChange={(e) => setForm((s) => ({ ...s, bedNumber: e.target.value }))}
+        className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+      />
+      <input
+        placeholder="daily rate ₹ (optional)"
+        type="number"
+        min="0"
+        value={form.dailyRate}
+        onChange={(e) => setForm((s) => ({ ...s, dailyRate: e.target.value }))}
+        className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+      />
+      <button
+        disabled={busy}
+        className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+      >
+        Add bed
+      </button>
+      <p className="col-span-2 text-xs text-slate-400 sm:col-span-4">
+        Daily rate is used to calculate the room charge automatically when a patient is discharged.
+      </p>
+    </form>
   );
 }
 

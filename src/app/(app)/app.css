@@ -163,6 +163,44 @@
   border-radius: var(--hms-radius-sm);
 }
 
+/* Login page — calm floating glow shapes behind the form card, same
+   restrained motion language as (company)/kaizen.css's kbms-float
+   (slow, subtle, never distracting from the actual sign-in task). */
+.hms-login-bg {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+}
+.hms-login-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  opacity: 0.35;
+  animation: hms-login-float 16s ease-in-out infinite;
+}
+.hms-login-blob:nth-child(1) {
+  top: -10%;
+  left: -8%;
+  width: 420px;
+  height: 420px;
+  background: var(--hms-accent);
+}
+.hms-login-blob:nth-child(2) {
+  bottom: -15%;
+  right: -10%;
+  width: 480px;
+  height: 480px;
+  background: var(--hms-border-strong);
+  animation-duration: 20s;
+  animation-delay: -6s;
+}
+@keyframes hms-login-float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -22px, 0) scale(1.04); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .hms-flash, .hms-skeleton { animation: none; }
+  .hms-flash, .hms-skeleton, .hms-login-blob { animation: none; }
 }
