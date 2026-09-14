@@ -1049,18 +1049,50 @@ system (migration 017), both depending on it being fully built first.
   get a token number from — with no `manualToken` supplied, unchanged
   auto-increment behavior; with one supplied, it requires
   `visit:override_token` (`RECEPTIONIST` + `HOSPITAL_ADMIN` wildcard) and a
-  non-empty `reason`, checks the number isn't already taken today, and logs
-  to `token_overrides` (`reason` + `overridden_by` — same accountable,
-  never-silent audit shape as Billing's discounts). **Deliberately not
-  wrapped in a locking transaction**: a manual override is a human-paced,
-  low-frequency front-desk action, not a programmatic hot path, so it
-  intentionally matches the concurrency rigor already accepted for the
-  pre-existing auto-increment COUNT+1 path (which has the same unlocked
-  race in principle) rather than being held to a higher bar than the rest
-  of that code. **Verified live**: a role without `visit:override_token`
-  → 403; an override without a reason → 400; a successful override; a
-  same-day duplicate token number → 409 `token_already_taken`; the audit
-  row correctly recorded.
+  non-empty `reason`, and logs to `token_overrides` (`reason` +
+  `overridden_by` — same accountable, never-silent audit shape as Billing's
+  discounts).
+- **The override's uniqueness is a real DB constraint, not just an
+  app-level check** (migration 018, added after review — the first version
+  of this shipped with only the pre-check, reasoning it could match the
+  pre-existing unlocked auto-increment path's rigor; that reasoning didn't
+  hold once pointed out: an override is specifically for priority/emergency
+  situations, which is exactly when two receptionists on different
+  terminals are most likely to race for the same "obviously correct"
+  number, and a silent duplicate at that exact moment is the worst possible
+  time for it to happen). `visits` gained a generated `visit_date DATE
+  GENERATED ALWAYS AS (DATE(created_at)) STORED` column (`created_at` is a
+  DATETIME, so "same day" can't be expressed directly in a UNIQUE key
+  without materializing it first — same technique as `appointments.
+  active_slot_time`) plus `uq_visits_tenant_date_token (tenant_id,
+  visit_date, token_number)`. `NULL` `token_number` (DIRECT_ADMISSION/
+  EMERGENCY visits never get a walk-in token) never collides with itself,
+  by the same NULL-≠-NULL unique-index behavior used elsewhere — only
+  visits that actually have a token are constrained. The app-level
+  pre-check stays as the fast path (a clean message without round-tripping
+  through a failed INSERT); `createVisitWithToken()` is what turns an
+  actual constraint violation on the INSERT into the same 409 — the real
+  guarantee under a genuine race, not the pre-check alone.
+- **A second real bug found while verifying the fix above**: the first
+  concurrency test (10 simultaneous override attempts at one token number)
+  passed correctly — exactly 1 success, 9 clean 409s — but checking the
+  database after showed **9 orphaned `patients` rows with no visit**.
+  `registration/patients` created the patient and the visit as two
+  separate, non-transactional writes; once the new DB constraint made
+  visit-creation failure a realistic outcome (previously near-impossible
+  against the unprotected auto-increment path), a lost race left a
+  brand-new patient record behind with nothing attached to it. Fixed by
+  wrapping patient creation + token resolution + visit creation in one
+  `tenantDb.$transaction()` when `openVisit` is true — re-ran the same
+  10-way race afterward and confirmed exactly 1 patient row and 1 visit
+  row exist, not 10 patients and 1 visit.
+- **Verified live**: a role without `visit:override_token` → 403; an
+  override without a reason → 400; a successful override with its audit
+  row correctly recorded; **10 truly simultaneous override requests at the
+  same token number — exactly 1 succeeded, 9 got a clean 409, and the
+  database confirmed exactly one matching row exists** (same style of test
+  as Pharmacy's FEFO concurrency test and Appointment double-booking's,
+  fired via backgrounded curl processes, not assumed from the code).
 - **Doctor-initiated follow-up scheduling**: a "Schedule follow-up" button
   on the consultation screen (visible only once a consultation is recorded,
   and only to the `DOCTOR` role — `ConsultationClient.jsx` receives

@@ -4,7 +4,7 @@ import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { requireTenantId } from "@/lib/requestContext";
 import { emitToTenant } from "@/lib/realtime";
-import { resolveTokenNumber, logTokenOverride } from "@/lib/tokenOverride";
+import { resolveTokenNumber, createVisitWithToken, logTokenOverride } from "@/lib/tokenOverride";
 
 export const dynamic = "force-dynamic";
 
@@ -59,8 +59,9 @@ export const POST = apiRoute("visit:create", async (request, { session }) => {
     overrideReason: body.overrideReason,
   });
 
-  const created = await tenantDb.visits.create({
-    data: {
+  const created = await createVisitWithToken(
+    tenantDb,
+    {
       patient_id: patient.id,
       status: "REGISTERED",
       entry_type: "OPD",
@@ -68,8 +69,8 @@ export const POST = apiRoute("visit:create", async (request, { session }) => {
       reason: body.reason || null,
       registered_by: BigInt(session.userId),
     },
-    include: { patients: { select: { name: true, age: true, phone: true, allergies: true } } },
-  });
+    { patients: { select: { name: true, age: true, phone: true, allergies: true } } },
+  );
 
   if (overridden) {
     await logTokenOverride(tenantDb, {

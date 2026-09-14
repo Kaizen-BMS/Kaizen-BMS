@@ -465,6 +465,7 @@ model visits {
   registered_by   BigInt?           @db.UnsignedBigInt
   follow_up_date  DateTime?         @db.Date
   created_at      DateTime          @default(now())
+  visit_date      DateTime?         @db.Date
   updated_at      DateTime          @default(now())
   discharged_at   DateTime?
   admissions      admissions[]
@@ -479,6 +480,7 @@ model visits {
   users           users?            @relation(fields: [registered_by], references: [id], onUpdate: Restrict, map: "fk_visits_registered_by")
   tenants         tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_tenant")
 
+  @@unique([tenant_id, visit_date, token_number], map: "uq_visits_tenant_date_token")
   @@index([registered_by], map: "fk_visits_registered_by")
   @@index([tenant_id], map: "idx_visits_hospital")
   @@index([tenant_id, created_at], map: "idx_visits_hospital_created")

@@ -5,7 +5,7 @@ import { tenantDb } from "@/lib/prismaClient";
 import { requireTenantId } from "@/lib/requestContext";
 import { validateCustomFields } from "@/lib/forms";
 import { emitToTenant } from "@/lib/realtime";
-import { resolveTokenNumber, logTokenOverride } from "@/lib/tokenOverride";
+import { resolveTokenNumber, createVisitWithToken, logTokenOverride } from "@/lib/tokenOverride";
 
 export const dynamic = "force-dynamic";
 
@@ -90,50 +90,60 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
     referralSourceId = source.id;
   }
 
-  const patient = await tenantDb.patients.create({
-    data: {
-      name: body.name,
-      age: body.age,
-      gender: body.gender || null,
-      phone: body.phone,
-      custom_fields: custom ? JSON.stringify(custom) : null,
-      allergies: body.allergies?.length ? JSON.stringify(body.allergies) : null,
-      abha_id: body.abhaId || null,
-      referral_source_id: referralSourceId,
-    },
-  });
+  const patientData = {
+    name: body.name,
+    age: body.age,
+    gender: body.gender || null,
+    phone: body.phone,
+    custom_fields: custom ? JSON.stringify(custom) : null,
+    allergies: body.allergies?.length ? JSON.stringify(body.allergies) : null,
+    abha_id: body.abhaId || null,
+    referral_source_id: referralSourceId,
+  };
 
+  let patient;
   let visit = null;
+
   if (body.openVisit) {
+    // A losing token-override race now fails the visit-creation step for
+    // real (migration 018's DB constraint) — patient creation and visit
+    // creation must be one transaction, or a lost race leaves a brand-new
+    // patient record orphaned with no visit. Found by actually testing the
+    // override concurrency case, not assumed.
     const tid = requireTenantId();
-    const { tokenNumber, overridden } = await resolveTokenNumber(tenantDb, tid, session.role, {
-      manualToken: body.manualToken,
-      overrideReason: body.overrideReason,
-    });
-
-    const created = await tenantDb.visits.create({
-      data: {
-        patient_id: patient.id,
-        status: "REGISTERED",
-        entry_type: "OPD",
-        token_number: tokenNumber,
-        reason: body.reason || null,
-        registered_by: BigInt(session.userId),
-      },
-      include: { patients: true },
-    });
-
-    if (overridden) {
-      await logTokenOverride(tenantDb, {
-        visitId: created.id,
-        tokenNumber,
-        reason: body.overrideReason,
-        overriddenBy: BigInt(session.userId),
+    const result = await tenantDb.$transaction(async (tx) => {
+      const p = await tx.patients.create({ data: patientData });
+      const { tokenNumber, overridden } = await resolveTokenNumber(tx, tid, session.role, {
+        manualToken: body.manualToken,
+        overrideReason: body.overrideReason,
       });
-    }
-
-    visit = flattenVisit(created);
+      const created = await createVisitWithToken(
+        tx,
+        {
+          patient_id: p.id,
+          status: "REGISTERED",
+          entry_type: "OPD",
+          token_number: tokenNumber,
+          reason: body.reason || null,
+          registered_by: BigInt(session.userId),
+        },
+        { patients: true },
+      );
+      if (overridden) {
+        await logTokenOverride(tx, {
+          visitId: created.id,
+          tokenNumber,
+          reason: body.overrideReason,
+          overriddenBy: BigInt(session.userId),
+        });
+      }
+      return { patient: p, visitRow: created };
+    });
+    patient = result.patient;
+    visit = flattenVisit(result.visitRow);
     emitToTenant(session.tenantId, "visit:created", { visit });
+  } else {
+    patient = await tenantDb.patients.create({ data: patientData });
   }
 
   const patientOut = {
