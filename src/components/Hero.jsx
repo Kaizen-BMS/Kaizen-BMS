@@ -8,8 +8,11 @@ export default function Hero() {
   return (
     <section id="home" className="relative overflow-hidden pt-24 md:pt-28">
       {/* animated orbital field — fills the right side, clear of the (now
-          smaller) headline which sits in the left 8/12 at lg */}
-      <div className="pointer-events-none absolute -right-16 -top-6 h-52 w-52 opacity-70 sm:h-64 sm:w-64 md:-right-8 md:-top-4 md:h-96 md:w-96 md:opacity-90 lg:right-[-6%] lg:top-[-40px] lg:h-[560px] lg:w-[560px] lg:opacity-100">
+          smaller) headline which sits in the left 8/12 at lg. Centered
+          vertically on the section (top-1/2 + -translate-y-1/2) instead of
+          pinned to the top, and pulled in from the edge instead of
+          bleeding off-screen. */}
+      <div className="pointer-events-none absolute -right-16 top-1/2 h-52 w-52 -translate-y-1/2 opacity-70 sm:h-64 sm:w-64 md:-right-8 md:h-96 md:w-96 md:opacity-90 lg:right-[4%] lg:h-[560px] lg:w-[560px] lg:opacity-100">
         <OrbitalGraphic className="h-full w-full" />
       </div>
 

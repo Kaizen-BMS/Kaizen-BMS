@@ -46,7 +46,7 @@ export default function Header() {
     setServicesOpen(true);
   }
   function scheduleCloseServices() {
-    closeTimer.current = setTimeout(() => setServicesOpen(false), 150);
+    closeTimer.current = setTimeout(() => setServicesOpen(false), 2000);
   }
 
   return (
