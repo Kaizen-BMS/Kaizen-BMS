@@ -939,50 +939,65 @@ calendar, self-service booking/cancellation, and feedback submission.
   use (cleared on success). No SMS provider is chosen yet, so delivery is
   by **email** (Gmail SMTP via nodemailer, `src/lib/mailer.js`), added
   2026-09-14 — replaces the earlier `console.log` stub. Request-OTP
-  returns the **identical response** whether or not the phone is
-  registered *and has an email on file* — same no-enumeration principle as
-  staff login, with one deliberate, product-directed exception below.
+  returns the **byte-for-byte identical response** for all three possible
+  states — unregistered phone, registered with no email on any matching
+  patient, and registered with an email — **no exceptions**, same
+  no-enumeration principle as staff login.
+- **A "no email on file" distinct response was tried first and reverted
+  the same day** — worth remembering as a concrete example of how an
+  enumeration leak can look like reasonable UX in isolation: the first
+  version returned a distinct 422 `no_email_on_file` so a real patient
+  without an email wouldn't be left confused. That message itself was the
+  bug — anyone could learn "this phone has an account" just by seeing
+  which response came back, defeating the whole point of the generic
+  response. **Fixed**: a registered phone with no email on any matching
+  patient now falls through to the exact same generic response as an
+  unregistered one — verified with a real curl comparison, identical
+  status (200), identical body bytes, identical `Content-Type`. The UX
+  need is solved a different way instead: a static, always-visible help
+  line under the phone field on the login screen itself ("Don't have an
+  account, or haven't added your email yet? Visit the front desk.") —
+  shown unconditionally, never a function of what any lookup found, so it
+  cannot itself become a signal.
 - **`patients.email` (migration 020) is optional, not required** —
   `patients` had NO email column at all until this; adding it as required
   would have broken every walk-in front-desk registration flow overnight
   for a field that didn't previously exist. A patient with no email on
-  file simply can't use OTP login yet, and the failure is explicit, not
-  silent: `POST /api/patient-auth/request-otp` returns a distinct 422
-  `no_email_on_file` (client copy: "please ask the front desk to add one
-  to your record") when every patient sharing that phone number has no
-  email — this is a deliberate exception to the no-enumeration rule above,
-  the one case where revealing "this phone has an account" was judged
-  worth it over a patient stuck with no explanation. Every other case
-  (unregistered phone, or registered-with-email) stays indistinguishable.
-  Front desk adds an email to an existing patient via
-  `PATCH /api/registration/patients/[id]` (`email` field, alongside the
-  existing allergies/ABHA/referral-source edits) — no re-registration
-  needed. New registrations capture it as an optional core field
-  (`forms.js` `PATIENT_REGISTRATION`, order 4, `required: false`).
-- **A failed send is its own distinct error, not folded into the generic
-  response**: `email_send_failed` (502) — unlike the registered/
-  unregistered distinction, this doesn't leak anything about WHO has an
-  account (it only ever fires for a phone that already has a known email),
-  so there was no enumeration reason to hide it, and hiding it would leave
-  a patient waiting for a code that will never arrive. **The OTP is only
-  persisted (hash/expiry/cooldown) AFTER `sendOtpEmail()` succeeds** — a
-  failed send never starts the 30-second resend cooldown for a code the
-  patient never received. Credentials (`EMAIL_USER`/`EMAIL_APP_PASSWORD`,
-  `.env`, a real Gmail **App Password** — Gmail rejects plain-password SMTP
-  auth entirely, requires 2-Step Verification on that account first) are
-  never hardcoded and never logged — a send failure logs only the error
-  message, never anything that touched the credential values. **Verified
-  live before credentials existed**: registered a patient with no email →
-  422 `no_email_on_file`; registered one with an email → attempted a real
-  send, got a clean 502 `email_send_failed` (credentials genuinely weren't
-  configured yet at that point) with the exact "not configured" reason
-  logged, confirmed nothing was persisted (an immediate retry failed the
-  identical way, not `too_soon`), and confirmed adding an email to an
-  EXISTING historical patient via the PATCH route immediately made their
-  phone number attempt a real send too. **The real-send-arrives-in-a-real-
-  inbox verification is still pending** — deliberately deferred until the
-  owner adds real Gmail App Password credentials to `.env` themselves (not
-  shared in chat); do that verification then, not before.
+  file simply can't use OTP login yet — handled via the static help line
+  above, never a distinguishable API response. Front desk adds an email
+  to an existing patient via `PATCH /api/registration/patients/[id]`
+  (`email` field, alongside the existing allergies/ABHA/referral-source
+  edits) — no re-registration needed. New registrations capture it as an
+  optional core field (`forms.js` `PATIENT_REGISTRATION`, order 4,
+  `required: false`).
+- **A genuine send failure is still its own distinct error**:
+  `email_send_failed` (502) — this is NOT an enumeration leak the way
+  `no_email_on_file` was, because it only ever fires for a phone that
+  ALREADY has a known email (an attacker enumerating random phone numbers
+  essentially never reaches this path; it's an infrastructure-failure
+  signal, not a registration-status signal), so hiding it behind the
+  generic response would only cost a real patient a clear explanation for
+  no benefit. **The OTP is only persisted (hash/expiry/cooldown) AFTER
+  `sendOtpEmail()` succeeds** — a failed send never starts the 30-second
+  resend cooldown for a code the patient never received. Credentials
+  (`EMAIL_USER`/`EMAIL_APP_PASSWORD`, `.env`, a real Gmail **App
+  Password** — Gmail rejects plain-password SMTP auth entirely, requires
+  2-Step Verification on that account first) are never hardcoded and
+  never logged — a send failure logs only the error message, never
+  anything that touched the credential values.
+- **Verified live before real credentials existed**: registered a patient
+  with no email and compared its request-otp response against a genuinely
+  unregistered phone — identical status, identical body, identical
+  relevant headers; registered one with an email → attempted a real send,
+  got a clean 502 `email_send_failed` (credentials genuinely weren't
+  configured yet) with the exact "not configured" reason logged, confirmed
+  nothing was persisted (an immediate retry failed the identical way, not
+  `too_soon`), and confirmed adding an email to an EXISTING historical
+  patient via the PATCH route immediately made their phone number attempt
+  a real send too. **The real-send-arrives-in-a-real-inbox verification is
+  still pending** — deliberately deferred until the owner adds real Gmail
+  App Password credentials to `.env` themselves (not shared in chat); do
+  that verification then, not before.
 - **Read screens are module-aware per the product rule** ("a patient
   shouldn't see a Lab Reports section for a tenant that never had Lab
   active"): each route checks `isModuleActive` for its own module

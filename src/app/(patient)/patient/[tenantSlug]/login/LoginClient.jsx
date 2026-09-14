@@ -3,14 +3,19 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+// Deliberately no "no email on file" entry here — that response doesn't
+// exist anymore (see request-otp/route.js's comment): it would let a
+// visitor learn "this phone has an account" just by which message came
+// back, reintroducing the exact enumeration this whole response shape
+// exists to prevent. The equivalent guidance is the static help line
+// below the phone field instead — always shown, never a function of what
+// the lookup found.
 const ERRORS = {
   invalid_input: "Please check the form and try again.",
   tenant_not_found: "We couldn't find this hospital's patient portal.",
   too_soon: "Please wait before requesting another code.",
   invalid_or_expired_code: "That code is wrong or has expired.",
   too_many_attempts: "Too many attempts. Request a new code.",
-  no_email_on_file:
-    "No email on file for this number yet — please ask the front desk to add one to your record, then try again.",
   email_send_failed: "We couldn't send the code right now. Please try again in a moment.",
 };
 
@@ -90,18 +95,27 @@ function LoginForm({ tenantSlug }) {
         )}
 
         {step === "phone" ? (
-          <label className="block space-y-1">
-            <span className="text-sm font-medium">Phone number</span>
-            <input
-              type="tel"
-              required
-              autoFocus
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="the number registered with this hospital"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
-            />
-          </label>
+          <>
+            <label className="block space-y-1">
+              <span className="text-sm font-medium">Phone number</span>
+              <input
+                type="tel"
+                required
+                autoFocus
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="the number registered with this hospital"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+              />
+            </label>
+            {/* Always shown, regardless of what's typed or what any lookup
+                would find — never conditional on a response, so it can't
+                itself become a signal about whether a number is
+                registered. */}
+            <p className="text-center text-xs text-slate-400">
+              Don&apos;t have an account, or haven&apos;t added your email yet? Visit the front desk.
+            </p>
+          </>
         ) : (
           <>
             <label className="block space-y-1">

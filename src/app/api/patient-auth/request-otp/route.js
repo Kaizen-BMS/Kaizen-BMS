@@ -37,20 +37,18 @@ export async function POST(request) {
     orderBy: { id: "asc" },
   });
 
-  if (patients.length > 0) {
-    // Deliberately DOES break the no-enumeration rule for this one case,
-    // on purpose, per explicit product direction: a phone that's
-    // registered but has no email on file gets a distinct, clear message
-    // ("no email on file, please provide one to log in") rather than the
-    // generic response — the alternative (silent failure) is worse than
-    // the narrow leak of "this phone has an account." Every other case
-    // (not registered at all, or registered with email) stays
-    // indistinguishable, same as before.
-    const withEmail = patients.filter((p) => p.email);
-    if (withEmail.length === 0) {
-      return NextResponse.json({ error: "no_email_on_file" }, { status: 422 });
-    }
-
+  // A registered phone with no email on any matching patient falls all the
+  // way through to the identical generic response below, same as an
+  // unregistered phone — a distinct "no email on file" message was tried
+  // first and reverted: it let anyone learn "this phone has an account"
+  // just by seeing which message came back, which is exactly the
+  // enumeration this response is supposed to prevent. The UX concern (a
+  // real patient with no email shouldn't be left confused) is solved a
+  // different way instead — a static, always-visible help line on the
+  // login screen itself ("front desk" pointer), not a response that
+  // varies by lookup result. See LoginClient.jsx.
+  const withEmail = patients.filter((p) => p.email);
+  if (withEmail.length > 0) {
     const lastRequested = patients
       .map((p) => p.otp_requested_at)
       .filter(Boolean)
