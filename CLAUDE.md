@@ -1109,6 +1109,64 @@ system (migration 017), both depending on it being fully built first.
   `GET /api/appointments/calendar` (staff) and `GET /api/patient/
   appointments` (that same patient's own portal session).
 
+## Staff Management — built
+
+`(app)/dashboard/staff`, migration 019. Staff directory, duty roster,
+leave requests, and staff-focused reports for staff WITH a login
+(`users`) — distinct from `staff_members` (migration 014), the no-login
+employee directory used only for Attendance proxy check-in. Core feature,
+not module-gated, `tenantTypes: ["HOSPITAL"]` only (a solo tenant has no
+staff hierarchy). One coherent tabbed page — Directory / Duty Roster /
+Leave Requests / **Attendance** (the exact same already-built
+`AttendanceClient` component, imported and reused, not rebuilt) / Reports
+— per the explicit instruction that this shouldn't be two disconnected
+screens.
+
+- **`staff_profiles`**: supplementary join-date/phone/designation data for
+  a `users` row, one-to-one (`@unique` on `user_id`). Most staff won't have
+  one until an admin fills it in — the directory GET left-joins it, never
+  requires it to exist.
+- **`duty_shifts`**: a concrete shift assignment for one user on one date
+  (not a recurring template like `doctor_slots`) — `staff:manage`
+  (`HOSPITAL_ADMIN`) assigns/removes them; every staff role can just view
+  the roster (`staffroster:read`) for shift-coordination awareness.
+- **`leave_requests`**: `status` PENDING/APPROVED/REJECTED, `approved_by`
+  + `decided_at` set together on decision. **The reason field is a real
+  privacy boundary, enforced in the API response itself, not the UI**:
+  `GET /api/staff/leave-requests` strips `reason` to `null` for every row
+  that isn't the caller's own and isn't visible to someone with
+  `staff:manage` — dates and status stay visible to everyone (so a
+  colleague can see who's out and when, for scheduling), but the reason
+  text never leaves the server for anyone else. **Verified live**: a
+  receptionist viewing a doctor's leave request saw `"reason":null`; the
+  doctor themself and the admin both saw the real text; approving an
+  already-decided request → 409 `already_decided`.
+- **`staffroster:read` + `leaverequest:create`** are granted to every staff
+  role (not `OWNER_*` — a solo tenant has no staff hierarchy) — this is
+  self-service: see the roster, see who's on leave when, submit your own
+  leave request. `staff:manage` (assign shifts, approve/reject leave, edit
+  the directory, view reports) is `HOSPITAL_ADMIN` only. **The same RBAC-
+  inheritance quirk already present for `attendance:self`** applies here
+  too: because `STAFF_SELF_SERVICE` is spread into the `DOCTOR`/
+  `PHARMACIST`/`LAB_TECH` arrays, `OWNER_DOCTOR`/`OWNER_PHARMACIST`/
+  `OWNER_LAB_TECH` technically inherit these two actions — belt-and-braces
+  closed the same way Attendance's page already does: `page.js` explicitly
+  redirects unless `tenant.type === "HOSPITAL"`, so a solo owner can never
+  actually reach the page regardless of what the raw permission check
+  would allow.
+- **Reports** (staff-focused, distinct from a future hospital-wide Reports
+  & Analytics dashboard): attendance % per staff over a date range
+  (`attendance_logs`, reused from the Attendance system, never duplicated),
+  and a roster coverage view flagging shifts with zero doctors scheduled
+  (`GROUP BY shift_date, start_time, end_time HAVING SUM(role='DOCTOR')=0`
+  — verified live: assigning only a nurse to a fresh shift slot correctly
+  flagged it). **"Leave taken" is reported, "vs. remaining" deliberately is
+  not** — there is no leave-quota/entitlement concept anywhere in this
+  schema or spec, so a "remaining" number would have to be invented from
+  nothing; the report says so explicitly in the UI rather than fabricating
+  a policy that was never decided, same honesty precedent as Patient
+  Portal's "active medications."
+
 ## Referral sources — built
 
 Tracks where a patient came from — RMP/local doctors, health camps,

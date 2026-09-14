@@ -47,7 +47,7 @@ const NAV = [
   { key: "reports", label: "Reports & Analytics", section: "OPERATIONS", icon: "reports", action: "reports:view", status: "soon" },
 
   // ── Administration (admin / owner only) ──
-  { key: "staff", label: "Staff Management", section: "ADMINISTRATION", icon: "staff", action: "staff:manage", tenantTypes: ["HOSPITAL"], adminOnly: true, status: "soon" },
+  { key: "staff", label: "Staff Management", section: "ADMINISTRATION", route: "/dashboard/staff", icon: "staff", action: "staffroster:read", tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "forms", label: "Form Builder", section: "ADMINISTRATION", route: "/dashboard/admin/forms", icon: "forms", action: "formtemplate:manage", adminOnly: true, status: "live" },
   { key: "referralSources", label: "Referral Sources", section: "ADMINISTRATION", route: "/dashboard/admin/referral-sources", icon: "referral", action: "referral:manage", adminOnly: true, status: "live" },
   { key: "branding", label: "Branding", section: "ADMINISTRATION", route: "/dashboard/branding", icon: "branding", action: "branding:read", adminOnly: false, status: "live" },

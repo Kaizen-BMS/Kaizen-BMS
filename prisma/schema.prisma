@@ -401,10 +401,12 @@ model tenants {
   consent_forms            consent_forms[]
   consultations            consultations[]
   doctor_slots             doctor_slots[]
+  duty_shifts              duty_shifts[]
   feedback                 feedback[]
   follow_ups               follow_ups[]
   form_templates           form_templates[]
   lab_orders               lab_orders[]
+  leave_requests           leave_requests[]
   nursing_notes            nursing_notes[]
   patients                 patients[]
   pharmacy_stock           pharmacy_stock[]
@@ -416,6 +418,7 @@ model tenants {
   print_branding           print_branding[]
   referral_sources         referral_sources[]
   staff_members            staff_members[]
+  staff_profiles           staff_profiles[]
   tenant_modules           tenant_modules[]
   token_overrides          token_overrides[]
   users                    users[]
@@ -423,31 +426,36 @@ model tenants {
 }
 
 model users {
-  id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id                BigInt?                    @db.UnsignedBigInt
-  name                     String
-  email                    String
-  password_hash            String                     @db.VarChar(255)
-  role                     users_role
-  created_at               DateTime                   @default(now())
-  admissions               admissions[]
-  appointments             appointments[]
-  attendance_logs          attendance_logs[]
-  bed_transfers            bed_transfers[]
-  bills                    bills[]
-  consent_forms            consent_forms[]
-  consultations            consultations[]
-  discounts                discounts[]
-  doctor_slots             doctor_slots[]
-  nursing_notes            nursing_notes[]
-  payments                 payments[]
-  pharmacy_stock_movements pharmacy_stock_movements[]
-  prescription_item_acks   prescription_item_acks[]
-  print_branding           print_branding[]
-  refunds                  refunds[]
-  token_overrides          token_overrides[]
-  tenants                  tenants?                   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_users_tenant")
-  visits                   visits[]
+  id                                               BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                                        BigInt?                    @db.UnsignedBigInt
+  name                                             String
+  email                                            String
+  password_hash                                    String                     @db.VarChar(255)
+  role                                             users_role
+  created_at                                       DateTime                   @default(now())
+  admissions                                       admissions[]
+  appointments                                     appointments[]
+  attendance_logs                                  attendance_logs[]
+  bed_transfers                                    bed_transfers[]
+  bills                                            bills[]
+  consent_forms                                    consent_forms[]
+  consultations                                    consultations[]
+  discounts                                        discounts[]
+  doctor_slots                                     doctor_slots[]
+  duty_shifts_duty_shifts_created_byTousers        duty_shifts[]              @relation("duty_shifts_created_byTousers")
+  duty_shifts_duty_shifts_user_idTousers           duty_shifts[]              @relation("duty_shifts_user_idTousers")
+  leave_requests_leave_requests_approved_byTousers leave_requests[]           @relation("leave_requests_approved_byTousers")
+  leave_requests_leave_requests_user_idTousers     leave_requests[]           @relation("leave_requests_user_idTousers")
+  nursing_notes                                    nursing_notes[]
+  payments                                         payments[]
+  pharmacy_stock_movements                         pharmacy_stock_movements[]
+  prescription_item_acks                           prescription_item_acks[]
+  print_branding                                   print_branding[]
+  refunds                                          refunds[]
+  staff_profiles                                   staff_profiles?
+  token_overrides                                  token_overrides[]
+  tenants                                          tenants?                   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_users_tenant")
+  visits                                           visits[]
 
   @@unique([tenant_id, email], map: "uq_users_hospital_email")
   @@index([tenant_id], map: "idx_users_hospital")
@@ -714,6 +722,62 @@ model token_overrides {
   @@index([visit_id], map: "idx_token_overrides_visit")
 }
 
+model duty_shifts {
+  id                                  BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                           BigInt   @db.UnsignedBigInt
+  user_id                             BigInt   @db.UnsignedBigInt
+  shift_date                          DateTime @db.Date
+  start_time                          DateTime @db.Time(0)
+  end_time                            DateTime @db.Time(0)
+  created_by                          BigInt?  @db.UnsignedBigInt
+  created_at                          DateTime @default(now())
+  users_duty_shifts_created_byTousers users?   @relation("duty_shifts_created_byTousers", fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_duty_shifts_created_by")
+  tenants                             tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_duty_shifts_tenant")
+  users_duty_shifts_user_idTousers    users    @relation("duty_shifts_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_duty_shifts_user")
+
+  @@index([created_by], map: "fk_duty_shifts_created_by")
+  @@index([tenant_id], map: "idx_duty_shifts_tenant")
+  @@index([tenant_id, shift_date], map: "idx_duty_shifts_tenant_date")
+  @@index([user_id], map: "idx_duty_shifts_user")
+}
+
+model leave_requests {
+  id                                      BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                               BigInt                @db.UnsignedBigInt
+  user_id                                 BigInt                @db.UnsignedBigInt
+  from_date                               DateTime              @db.Date
+  to_date                                 DateTime              @db.Date
+  reason                                  String                @db.VarChar(500)
+  status                                  leave_requests_status @default(PENDING)
+  approved_by                             BigInt?               @db.UnsignedBigInt
+  created_at                              DateTime              @default(now())
+  decided_at                              DateTime?
+  users_leave_requests_approved_byTousers users?                @relation("leave_requests_approved_byTousers", fields: [approved_by], references: [id], onUpdate: Restrict, map: "fk_leave_requests_approved_by")
+  tenants                                 tenants               @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_leave_requests_tenant")
+  users_leave_requests_user_idTousers     users                 @relation("leave_requests_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_leave_requests_user")
+
+  @@index([approved_by], map: "fk_leave_requests_approved_by")
+  @@index([user_id], map: "fk_leave_requests_user")
+  @@index([tenant_id], map: "idx_leave_requests_tenant")
+  @@index([tenant_id, status], map: "idx_leave_requests_tenant_status")
+  @@index([tenant_id, user_id], map: "idx_leave_requests_tenant_user")
+}
+
+model staff_profiles {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id   BigInt    @db.UnsignedBigInt
+  user_id     BigInt    @unique(map: "uq_staff_profiles_user") @db.UnsignedBigInt
+  join_date   DateTime? @db.Date
+  phone       String?   @db.VarChar(32)
+  designation String?   @db.VarChar(100)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @default(now())
+  tenants     tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_staff_profiles_tenant")
+  users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_staff_profiles_user")
+
+  @@index([tenant_id], map: "idx_staff_profiles_tenant")
+}
+
 enum beds_ward_type {
   GENERAL
   PRIVATE
@@ -889,4 +953,10 @@ enum appointments_status {
 enum appointments_booked_by {
   staff
   patient
+}
+
+enum leave_requests_status {
+  PENDING
+  APPROVED
+  REJECTED
 }

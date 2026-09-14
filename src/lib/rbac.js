@@ -26,6 +26,14 @@ const ROLES = [
   "OWNER_LAB_TECH",
 ];
 
+// Staff Management self-service: every staff role (not OWNER_* — a solo
+// tenant has no staff hierarchy, same exclusion as attendance:self) can see
+// the duty roster and who's on leave when, and submit their own leave
+// request. staffroster:read does NOT imply seeing a colleague's leave
+// REASON — that's a privacy boundary enforced in the API by ownership,
+// never by the RBAC action alone (see CLAUDE.md "Staff Management").
+const STAFF_SELF_SERVICE = ["staffroster:read", "leaverequest:create"];
+
 const RECEPTIONIST = [
   "patient:create",
   "patient:read",
@@ -46,6 +54,7 @@ const RECEPTIONIST = [
   // numbering mistake) — accountable, not silent: see visit:override_token
   // in registration/patients and registration/visits.
   "visit:override_token",
+  ...STAFF_SELF_SERVICE,
 ];
 
 const DOCTOR = [
@@ -81,6 +90,7 @@ const DOCTOR = [
   "appointment:create",
   "appointment:read",
   "appointment:update",
+  ...STAFF_SELF_SERVICE,
 ];
 
 // Ward/bed housekeeping and nursing notes are realistically nurse-run, not
@@ -97,6 +107,7 @@ const NURSE = [
   "formtemplate:read",
   "branding:read",
   "attendance:self",
+  ...STAFF_SELF_SERVICE,
 ];
 
 const PHARMACIST = [
@@ -112,6 +123,7 @@ const PHARMACIST = [
   "formtemplate:read",
   "branding:read",
   "attendance:self",
+  ...STAFF_SELF_SERVICE,
 ];
 
 const LAB_TECH = [
@@ -126,6 +138,7 @@ const LAB_TECH = [
   "branding:read",
   "branding:manage_own",
   "attendance:self",
+  ...STAFF_SELF_SERVICE,
 ];
 
 const BILLING_STAFF = [
@@ -144,6 +157,7 @@ const BILLING_STAFF = [
   "formtemplate:read",
   "branding:read",
   "attendance:self",
+  ...STAFF_SELF_SERVICE,
 ];
 
 // A solo owner also runs the account: manages their own forms and branding,
