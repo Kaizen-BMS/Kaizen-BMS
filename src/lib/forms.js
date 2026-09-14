@@ -47,7 +47,12 @@ const CORE_FIELDS = {
       options: ["MALE", "FEMALE", "OTHER"],
     },
     { fieldName: "phone", label: "Phone", type: "phone", required: true, core: true, order: 3 },
-    { fieldName: "reason", label: "Reason for visit", type: "textarea", required: false, core: true, order: 4 },
+    // Optional, not required — most patients won't have one yet (this
+    // column didn't exist until email-OTP patient login was built). A
+    // patient with no email on file just can't use email login yet; see
+    // CLAUDE.md "Patient Portal — email OTP".
+    { fieldName: "email", label: "Email (optional — for online login)", type: "text", required: false, core: true, order: 4 },
+    { fieldName: "reason", label: "Reason for visit", type: "textarea", required: false, core: true, order: 5 },
   ],
   CONSULTATION: [
     { fieldName: "notes", label: "Clinical notes", type: "textarea", required: false, core: true, order: 0 },

@@ -936,10 +936,53 @@ calendar, self-service booking/cancellation, and feedback submission.
   got 403; its own id succeeded.
 - **OTP mechanics**: 6-digit code, bcrypt-hashed, 5-minute expiry, 30-second
   resend cooldown, 5 verify attempts before requiring a fresh code, single-
-  use (cleared on success). No SMS provider is chosen yet — stubbed as a
-  `console.log` rather than blocking this feature on a vendor decision.
-  Request-OTP returns the **identical response** whether or not the phone
-  is registered — same no-enumeration principle as staff login.
+  use (cleared on success). No SMS provider is chosen yet, so delivery is
+  by **email** (Gmail SMTP via nodemailer, `src/lib/mailer.js`), added
+  2026-09-14 — replaces the earlier `console.log` stub. Request-OTP
+  returns the **identical response** whether or not the phone is
+  registered *and has an email on file* — same no-enumeration principle as
+  staff login, with one deliberate, product-directed exception below.
+- **`patients.email` (migration 020) is optional, not required** —
+  `patients` had NO email column at all until this; adding it as required
+  would have broken every walk-in front-desk registration flow overnight
+  for a field that didn't previously exist. A patient with no email on
+  file simply can't use OTP login yet, and the failure is explicit, not
+  silent: `POST /api/patient-auth/request-otp` returns a distinct 422
+  `no_email_on_file` (client copy: "please ask the front desk to add one
+  to your record") when every patient sharing that phone number has no
+  email — this is a deliberate exception to the no-enumeration rule above,
+  the one case where revealing "this phone has an account" was judged
+  worth it over a patient stuck with no explanation. Every other case
+  (unregistered phone, or registered-with-email) stays indistinguishable.
+  Front desk adds an email to an existing patient via
+  `PATCH /api/registration/patients/[id]` (`email` field, alongside the
+  existing allergies/ABHA/referral-source edits) — no re-registration
+  needed. New registrations capture it as an optional core field
+  (`forms.js` `PATIENT_REGISTRATION`, order 4, `required: false`).
+- **A failed send is its own distinct error, not folded into the generic
+  response**: `email_send_failed` (502) — unlike the registered/
+  unregistered distinction, this doesn't leak anything about WHO has an
+  account (it only ever fires for a phone that already has a known email),
+  so there was no enumeration reason to hide it, and hiding it would leave
+  a patient waiting for a code that will never arrive. **The OTP is only
+  persisted (hash/expiry/cooldown) AFTER `sendOtpEmail()` succeeds** — a
+  failed send never starts the 30-second resend cooldown for a code the
+  patient never received. Credentials (`EMAIL_USER`/`EMAIL_APP_PASSWORD`,
+  `.env`, a real Gmail **App Password** — Gmail rejects plain-password SMTP
+  auth entirely, requires 2-Step Verification on that account first) are
+  never hardcoded and never logged — a send failure logs only the error
+  message, never anything that touched the credential values. **Verified
+  live before credentials existed**: registered a patient with no email →
+  422 `no_email_on_file`; registered one with an email → attempted a real
+  send, got a clean 502 `email_send_failed` (credentials genuinely weren't
+  configured yet at that point) with the exact "not configured" reason
+  logged, confirmed nothing was persisted (an immediate retry failed the
+  identical way, not `too_soon`), and confirmed adding an email to an
+  EXISTING historical patient via the PATCH route immediately made their
+  phone number attempt a real send too. **The real-send-arrives-in-a-real-
+  inbox verification is still pending** — deliberately deferred until the
+  owner adds real Gmail App Password credentials to `.env` themselves (not
+  shared in chat); do that verification then, not before.
 - **Read screens are module-aware per the product rule** ("a patient
   shouldn't see a Lab Reports section for a tenant that never had Lab
   active"): each route checks `isModuleActive` for its own module

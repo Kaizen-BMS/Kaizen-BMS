@@ -10,11 +10,16 @@ const patchSchema = z.object({
   allergies: z.array(z.string().trim().min(1).max(120)).max(30).optional(),
   abhaId: z.string().trim().max(64).optional().or(z.literal("")),
   referralSourceId: z.coerce.number().int().positive().nullable().optional(),
+  // Most existing patients registered before email-OTP login was built and
+  // have none on file — this is how front desk adds one after the fact
+  // for a patient who wants online portal access, without re-registering
+  // them. See CLAUDE.md "Patient Portal — email OTP".
+  email: z.string().trim().toLowerCase().email().max(191).optional().or(z.literal("")),
 });
 
-// Edit a returning patient's allergy list / ABHA ID / referral source from
-// the registration screen. Deliberately narrow — the rest of the patient
-// record isn't editable from here.
+// Edit a returning patient's allergy list / ABHA ID / referral source /
+// email from the registration screen. Deliberately narrow beyond that —
+// the rest of the patient record isn't editable from here.
 export const PATCH = apiRoute("patient:update", async (request, ctx) => {
   const { id } = await ctx.params;
   const patientId = BigInt(id);
@@ -31,6 +36,7 @@ export const PATCH = apiRoute("patient:update", async (request, ctx) => {
     patch.allergies = body.allergies.length ? JSON.stringify(body.allergies) : null;
   }
   if (body.abhaId !== undefined) patch.abha_id = body.abhaId || null;
+  if (body.email !== undefined) patch.email = body.email || null;
   if (body.referralSourceId !== undefined) {
     if (body.referralSourceId === null) {
       patch.referral_source_id = null;
@@ -53,6 +59,7 @@ export const PATCH = apiRoute("patient:update", async (request, ctx) => {
       name: true,
       age: true,
       phone: true,
+      email: true,
       allergies: true,
       abha_id: true,
       referral_source_id: true,

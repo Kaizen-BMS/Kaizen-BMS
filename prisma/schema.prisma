@@ -219,6 +219,7 @@ model patients {
   age                Int?              @db.UnsignedSmallInt
   gender             patients_gender?
   phone              String?           @db.VarChar(32)
+  email              String?
   otp_code_hash      String?           @db.VarChar(255)
   otp_expires_at     DateTime?
   otp_requested_at   DateTime?

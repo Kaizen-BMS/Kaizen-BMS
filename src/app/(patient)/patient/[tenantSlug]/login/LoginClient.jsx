@@ -9,6 +9,9 @@ const ERRORS = {
   too_soon: "Please wait before requesting another code.",
   invalid_or_expired_code: "That code is wrong or has expired.",
   too_many_attempts: "Too many attempts. Request a new code.",
+  no_email_on_file:
+    "No email on file for this number yet — please ask the front desk to add one to your record, then try again.",
+  email_send_failed: "We couldn't send the code right now. Please try again in a moment.",
 };
 
 function LoginForm({ tenantSlug }) {
@@ -110,7 +113,7 @@ function LoginForm({ tenantSlug }) {
                 autoFocus
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="sent to your phone"
+                placeholder="sent to your email"
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-center text-lg tracking-widest outline-none focus:border-slate-900"
               />
             </label>

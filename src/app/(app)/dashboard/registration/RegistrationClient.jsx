@@ -23,6 +23,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
   const [results, setResults] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editAllergies, setEditAllergies] = useState([]);
+  const [editEmail, setEditEmail] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [flashIds, setFlashIds] = useState(new Set());
@@ -102,6 +103,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
         age: core.age,
         gender: core.gender || "",
         phone: core.phone,
+        email: core.email || "",
         reason: core.reason || "",
         allergies,
         abhaId,
@@ -175,14 +177,18 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
   function startEditAllergies(p) {
     setEditingId(p.id);
     setEditAllergies(parseMaybeJson(p.allergies) || []);
+    setEditEmail(p.email || "");
   }
 
   async function saveAllergies(id) {
     try {
       const { patient } = await apiSend(`/api/registration/patients/${id}`, "PATCH", {
         allergies: editAllergies,
+        email: editEmail,
       });
-      setResults((rs) => rs?.map((p) => (p.id === id ? { ...p, allergies: patient.allergies } : p)));
+      setResults((rs) =>
+        rs?.map((p) => (p.id === id ? { ...p, allergies: patient.allergies, email: patient.email } : p)),
+      );
       setEditingId(null);
     } catch (err) {
       setMsg(err.message);
@@ -230,7 +236,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
                     onClick={() => startEditAllergies(p)}
                     className="text-xs text-slate-400 hover:text-slate-700"
                   >
-                    edit allergies
+                    edit allergies / email
                   </button>
                   <button
                     onClick={() => newVisit(p.id)}
@@ -250,6 +256,9 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
                 </div>
               </div>
               <AllergyBadge allergies={p.allergies} className="mt-1.5" />
+              <p className="mt-1 text-xs text-slate-400">
+                {p.email ? `Email: ${p.email}` : "No email on file — can't use online login yet"}
+              </p>
               {p.referral_source_name && (
                 <p className="mt-1 text-xs text-slate-400">
                   Referred by: {p.referral_source_name} ({p.referral_source_type?.replace(/_/g, " ")})
@@ -284,6 +293,13 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
               )}
               {editingId === p.id && (
                 <div className="mt-2 space-y-2">
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="email (optional — for online login)"
+                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  />
                   <AllergyTagInput value={editAllergies} onChange={setEditAllergies} />
                   <div className="flex gap-2">
                     <button
