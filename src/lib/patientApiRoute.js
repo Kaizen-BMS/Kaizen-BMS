@@ -37,7 +37,13 @@ function patientApiRoute(handler) {
         try {
           return await handler(request, { ...routeCtx, session, tenant });
         } catch (err) {
-          if (err instanceof HttpError) return json({ error: err.message }, err.status);
+          // Duck-typed, not `instanceof HttpError` — parseBody() (validate.js)
+          // throws the STAFF apiRoute.js's HttpError class regardless of
+          // caller, which is a different class from this file's own
+          // HttpError; instanceof would miss it and fall through to a raw
+          // 500 instead of the intended 400. Every clean thrown error here
+          // carries a numeric `.status`, so that's the real contract.
+          if (err && typeof err.status === "number") return json({ error: err.message }, err.status);
           console.error("Patient API route error:", err);
           return json({ error: "internal_error" }, 500);
         }

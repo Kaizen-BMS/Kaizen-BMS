@@ -89,6 +89,60 @@ function slotTimeIsValid(slots, doctorUserId, slotTime) {
 // active_slot_time column: only CANCELLED frees it).
 const SLOT_HOLDING_STATUSES = ["BOOKED", "CONFIRMED", "COMPLETED", "NO_SHOW"];
 
+/**
+ * Book a slot — the ONE shared implementation of double-booking prevention
+ * (see migration 016's comment on `active_slot_time` for why this is a
+ * unique-constraint insert race, not a FOR UPDATE lock like FEFO). Used by
+ * both the staff booking route and the patient portal's, so there is only
+ * ever one place this logic can drift.
+ *
+ * Returns a result object rather than throwing: staff routes (apiRoute.js)
+ * and patient routes (patientApiRoute.js) each define their OWN HttpError
+ * class, so a thrown error type from here could only ever be caught
+ * correctly by one of them. Callers translate `{ ok: false, status, error }`
+ * into their own HttpError/`json()` response.
+ */
+async function bookAppointment(tenantDb, { doctorUserId, slotTime, patientId, newPatient, reason, bookedBy }) {
+  const slots = await tenantDb.doctor_slots.findMany({ where: { doctor_user_id: doctorUserId, active: true } });
+  if (!slotTimeIsValid(slots, doctorUserId, slotTime)) {
+    return { ok: false, status: 400, error: "slot_not_available" };
+  }
+
+  try {
+    const appointmentId = await tenantDb.$transaction(async (tx) => {
+      let pid = patientId || null;
+      if (!pid) {
+        const p = await tx.patients.create({
+          data: { name: newPatient.name, age: newPatient.age ?? null, phone: newPatient.phone },
+        });
+        pid = p.id;
+      } else {
+        const existing = await tx.patients.findUnique({ where: { id: pid } });
+        if (!existing) {
+          const e = new Error("patient_not_found");
+          e.httpStatus = 404;
+          throw e;
+        }
+      }
+      const appt = await tx.appointments.create({
+        data: {
+          patient_id: pid,
+          doctor_user_id: doctorUserId,
+          slot_time: slotTime,
+          booked_by: bookedBy,
+          reason: reason || null,
+        },
+      });
+      return appt.id;
+    });
+    return { ok: true, appointmentId };
+  } catch (err) {
+    if (err?.httpStatus === 404) return { ok: false, status: 404, error: err.message };
+    if (err?.code === "P2002") return { ok: false, status: 409, error: "slot_taken" };
+    throw err;
+  }
+}
+
 module.exports = {
   hhmmToTimeValue,
   timeValueToMinutes,
@@ -97,4 +151,5 @@ module.exports = {
   projectSlotInstances,
   slotTimeIsValid,
   SLOT_HOLDING_STATUSES,
+  bookAppointment,
 };

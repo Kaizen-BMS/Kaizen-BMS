@@ -25,17 +25,23 @@ export default async function PatientDashboardPage({ params }) {
   if (!tenant || !tenant.active) redirect(`/patient/${tenantSlug}/login`);
   if (tenant.slug !== tenantSlug) redirect(`/patient/${tenant.slug}/dashboard`);
 
+  // The callback MUST be an async function that itself awaits the Prisma
+  // call — a bare `() => tenantDb.x.findMany()` (or an async function that
+  // returns a promise chain without awaiting it) risks losing the
+  // AsyncLocalStorage tenant context crossing Prisma's native query-engine
+  // boundary (see CLAUDE.md's Prisma section) — awaiting explicitly here
+  // rather than relying on Promise.all's own timing.
   const [profiles, activeModules] = await runWithContext(
     { userId: null, tenantId: session.tenantId, role: "PATIENT", tenantType: tenant.type },
-    async () =>
-      Promise.all([
-        tenantDb.patients.findMany({
-          where: { phone: session.phone },
-          select: { id: true, name: true, age: true, gender: true },
-          orderBy: { id: "asc" },
-        }),
-        getActiveModules(session.tenantId),
-      ]),
+    async () => {
+      const profiles = await tenantDb.patients.findMany({
+        where: { phone: session.phone },
+        select: { id: true, name: true, age: true, gender: true },
+        orderBy: { id: "asc" },
+      });
+      const activeModules = await getActiveModules(session.tenantId);
+      return [profiles, activeModules];
+    },
   );
 
   return (

@@ -2,9 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 async function apiGet(url) {
   const res = await fetch(url, { headers: { accept: "application/json" } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+async function apiPost(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
@@ -17,6 +28,7 @@ const TABS = [
   { key: "lab-reports", label: "Lab Reports", module: "LAB" },
   { key: "discharge-summaries", label: "Discharge Summaries", module: "IPD" },
   { key: "bills", label: "Bills", module: "BILLING" },
+  { key: "feedback", label: "Feedback", module: "APPOINTMENTS" },
 ];
 
 function fmtDateTime(iso) {
@@ -84,12 +96,13 @@ export default function DashboardClient({ tenantSlug, tenantName, profiles, acti
             ))}
           </div>
 
-          {tab === "appointments" && <AppointmentsTab profileId={profileId} />}
+          {tab === "appointments" && <AppointmentsTab profileId={profileId} tenantSlug={tenantSlug} />}
           {tab === "medications" && <MedicationsTab profileId={profileId} />}
           {tab === "prescriptions" && <PrescriptionsTab profileId={profileId} />}
           {tab === "lab-reports" && <LabReportsTab profileId={profileId} />}
           {tab === "discharge-summaries" && <DischargeSummariesTab profileId={profileId} />}
           {tab === "bills" && <BillsTab profileId={profileId} />}
+          {tab === "feedback" && <FeedbackTab profileId={profileId} />}
         </>
       )}
     </div>
@@ -99,6 +112,8 @@ export default function DashboardClient({ tenantSlug, tenantName, profiles, acti
 function useTabData(endpoint, profileId, key) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refetch = () => setRefreshKey((k) => k + 1);
 
   useEffect(() => {
     setData(null);
@@ -107,12 +122,12 @@ function useTabData(endpoint, profileId, key) {
     apiGet(`/api/patient/${endpoint}${qs}`)
       .then(setData)
       .catch((e) => setError(e.message));
-  }, [endpoint, profileId]);
+  }, [endpoint, profileId, refreshKey]);
 
-  if (error) return { error, items: null };
-  if (!data) return { loading: true, items: null };
-  if (data.moduleActive === false) return { inactive: true, items: null };
-  return { items: data[key] };
+  if (error) return { error, items: null, refetch };
+  if (!data) return { loading: true, items: null, refetch };
+  if (data.moduleActive === false) return { inactive: true, items: null, refetch };
+  return { items: data[key], refetch };
 }
 
 function Card({ children }) {
@@ -134,8 +149,39 @@ const STATUS_LABEL = {
   NO_SHOW: "No-show",
 };
 
-function AppointmentsTab({ profileId }) {
+function AppointmentsTab({ profileId, tenantSlug }) {
   const state = useTabData("appointments", profileId, "appointments");
+  const [busyId, setBusyId] = useState(null);
+  const [err, setErr] = useState("");
+
+  async function cancel(id) {
+    setBusyId(id);
+    setErr("");
+    try {
+      await apiPost(`/api/patient/appointments/${id}/cancel`, {});
+      state.refetch();
+    } catch (e) {
+      setErr(e.message === "already_finalized" ? "That appointment can no longer be cancelled." : e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Link
+        href={`/patient/${tenantSlug}/book`}
+        className="inline-block rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
+      >
+        + Book an appointment
+      </Link>
+      {err && <p className="text-sm text-red-600">{err}</p>}
+      <AppointmentsList state={state} busyId={busyId} onCancel={cancel} />
+    </div>
+  );
+}
+
+function AppointmentsList({ state, busyId, onCancel }) {
   const fallback = <TabState state={state} emptyLabel="No appointments yet." />;
   if (fallback) return fallback;
   const now = Date.now();
@@ -152,6 +198,15 @@ function AppointmentsTab({ profileId }) {
               <p className="font-medium">{fmtDateTime(a.slotTime)}</p>
               <p className="text-slate-500">Dr. {a.doctorName} · {STATUS_LABEL[a.status]}</p>
               {a.reason && <p className="text-slate-400">{a.reason}</p>}
+              {(a.status === "BOOKED" || a.status === "CONFIRMED") && (
+                <button
+                  onClick={() => onCancel(a.id)}
+                  disabled={busyId === a.id}
+                  className="mt-1.5 text-xs text-red-600 underline disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              )}
             </Card>
           ))}
         </div>
@@ -247,6 +302,83 @@ function DischargeSummariesTab({ profileId }) {
           {d.dischargeNotes && <p className="mt-1 text-slate-600">{d.dischargeNotes}</p>}
         </Card>
       ))}
+    </div>
+  );
+}
+
+function FeedbackTab({ profileId }) {
+  const state = useTabData("visits", profileId, "visits");
+  const [ratings, setRatings] = useState({});
+  const [comments, setComments] = useState({});
+  const [busyId, setBusyId] = useState(null);
+  const [err, setErr] = useState("");
+  const [doneIds, setDoneIds] = useState(new Set());
+
+  const fallback = <TabState state={state} emptyLabel="No completed visits yet." />;
+  if (fallback) return fallback;
+
+  async function submit(visitId) {
+    const rating = ratings[visitId] || 5;
+    setBusyId(visitId);
+    setErr("");
+    try {
+      await apiPost("/api/patient/feedback", {
+        patientId: profileId,
+        visitId,
+        rating,
+        comment: comments[visitId] || "",
+      });
+      setDoneIds((s) => new Set(s).add(visitId));
+    } catch (e) {
+      setErr(e.message === "already_submitted" ? "Feedback was already submitted for this visit." : "Could not submit feedback.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {err && <p className="text-sm text-red-600">{err}</p>}
+      {state.items.map((v) => {
+        const submitted = v.hasFeedback || doneIds.has(v.id);
+        return (
+          <Card key={v.id}>
+            <p className="font-medium">{fmtDate(v.dischargedAt)} · {v.entryType}</p>
+            {submitted ? (
+              <p className="mt-1 text-green-700">Feedback submitted — thank you.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setRatings((r) => ({ ...r, [v.id]: n }))}
+                      className={`h-7 w-7 rounded-full border text-xs ${
+                        (ratings[v.id] || 5) >= n ? "border-amber-400 bg-amber-50" : "border-slate-200"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  value={comments[v.id] || ""}
+                  onChange={(e) => setComments((c) => ({ ...c, [v.id]: e.target.value }))}
+                  placeholder="comment (optional)"
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                />
+                <button
+                  onClick={() => submit(v.id)}
+                  disabled={busyId === v.id}
+                  className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  Submit feedback
+                </button>
+              </div>
+            )}
+          </Card>
+        );
+      })}
     </div>
   );
 }

@@ -811,10 +811,10 @@ supplied external spec modeled on Apollo/KIMS's real apps — field names
 were translated to this project's own convention (BigInt-unsigned ids,
 snake_case columns) rather than the spec's Int/camelCase sketch, per the
 Prisma section's rule that schema is introspected, never hand-authored to
-match an external draft verbatim. **Steps 1-3 and 4-5 of the 6-step build
-order are done (base scheduling + Patient Portal read-only access, see
-below); step 6 (the patient-facing privacy-restricted calendar + booking +
-cancellation + feedback submission) is the one piece not built yet.**
+match an external draft verbatim. **All 6 steps of the build order are
+done** — base scheduling, Patient Portal read-only access, and the
+patient-facing privacy-restricted calendar + booking + cancellation +
+feedback submission (see "Patient Portal" below for the last three).
 
 - **`doctor_slots`**: a doctor's recurring WEEKLY availability template
   (`day_of_week` 0=Sunday..6=Saturday, `start_time`/`end_time`, `slot_minutes`
@@ -896,7 +896,7 @@ cancellation + feedback submission) is the one piece not built yet.**
   it (verified: the migration applied cleanly, the generated column
   computes correctly under real concurrency).
 
-## Patient Portal — auth + read-only screens built, self-service booking not yet
+## Patient Portal — fully built (auth, read screens, booking, feedback)
 
 Patients authenticate separately from staff — phone+OTP, not the staff
 role/password system (`patients.otp_code_hash`/`otp_expires_at`/
@@ -907,12 +907,9 @@ the spec's wording leaned the other way) — the latter would have needed a
 new non-tenant-scoped identity layer and created a real cross-tenant
 data-leak vector (two unrelated patients at two different hospitals sharing
 one phone number), conflicting with this project's core tenant-isolation
-guarantee. **What's built: OTP auth, the separate session type, and every
-read-only screen (appointments, prescriptions, lab reports, discharge
-summaries, active medications, bill status). What's NOT built yet: the
-patient-facing calendar, self-service booking/cancellation, and feedback
-submission** (build-order step 6) — `feedback`'s schema exists (migration
-016) but has no API yet.
+guarantee. **All 6 build-order steps are done**: OTP auth, the separate
+session type, every read-only screen, the privacy-restricted patient
+calendar, self-service booking/cancellation, and feedback submission.
 
 - **A genuinely separate session, verified two-way**: `src/lib/patientAuth.js`
   signs a JWT shaped `{ typ: "patient", tid, phone }` — no `uid`/`role`, so
@@ -966,10 +963,74 @@ submission** (build-order step 6) — `feedback`'s schema exists (migration
   so a mismatched slug was only ever a confusing display bug, never a data
   leak, but it's still handled correctly rather than left showing the wrong
   hospital's name.
+- **Patient calendar enforces privacy server-side, not just in the UI**
+  (`GET /api/patient/calendar`): the handler never even SELECTs a patient/
+  appointment column for the booked-slot check — it queries only
+  `slot_time` for non-cancelled appointments in range and returns
+  `{ slotTime, available }`, nothing else, for every slot including the
+  viewer's OWN booking (their own appointments are the separate, already-
+  built read screen, not this grid). **Verified live with two real,
+  different patients**: patient A booked a slot; patient B's calendar
+  response for that exact slot was `{"slotTime":"...","available":false}`
+  — no id, name, reason, or status of any kind — while the staff calendar
+  for the same slot correctly showed the full detail. There is no code
+  path in this handler capable of leaking more than that boolean, by
+  construction, not by discipline.
+- **Booking and feedback require an explicit `patientId`, matching the read
+  screens' pattern exactly** — a session can cover several family profiles
+  sharing one phone, so both `POST /api/patient/appointments/book` and
+  `POST /api/patient/feedback` take a required `patientId`, re-verified via
+  `ownsPatient()` before use (403 `not_your_profile` otherwise) — never
+  defaulted to "the session's patient" the way a 1:1 mapping would allow.
+  Booking has no "new patient" option unlike the staff booking route — a
+  self-service booking can only target a profile that already exists under
+  this session's own phone (see `/api/patient/profiles`), never an
+  arbitrary name. Cancelling is different: it targets one specific,
+  already-patient-owned appointment by id, so there's no "which patient"
+  ambiguity to resolve — the check there is ownership (the appointment's
+  `patient_id` must be one of this session's own), not selection.
+- **Double-booking prevention is shared, not duplicated**: the booking
+  logic (transaction + unique-constraint P2002→409 translation) was
+  factored out of the staff route into `bookAppointment()` in
+  `src/lib/appointments.js`, used by both the staff and patient booking
+  routes — one place this mechanism can possibly drift, not two copies
+  that could disagree. It returns a result object rather than throwing,
+  since staff (`apiRoute.js`) and patient (`patientApiRoute.js`) routes
+  each define their own separate `HttpError` class.
+- **Two real bugs found and fixed while building this, both by testing
+  against the live server rather than trusting the code**:
+  1. `validate.js`'s `parseBody()` always throws the STAFF module's
+     `HttpError` class regardless of which route calls it. Every patient
+     route's `catch (err) { if (err instanceof HttpError) ... }` used
+     PATIENT's own separate `HttpError` class, so a validation failure on
+     any patient route (missing/invalid body field) fell through to a raw
+     500 instead of the intended 400 — caught by literally testing an
+     invalid booking request and seeing `500 internal_error` instead of
+     `400`. Fixed by changing both `apiRoute.js` and `patientApiRoute.js`'s
+     catch blocks from `instanceof HttpError` to duck-typing
+     (`typeof err.status === "number"`) — the real shared contract every
+     clean thrown error in this codebase follows, regardless of which
+     module's `HttpError` class constructed it.
+  2. `book/page.js` called `runWithContext(ctx, () => tenantDb.patients.
+     findMany(...))` — a bare non-async callback, exactly the documented
+     AsyncLocalStorage gotcha in this file's Prisma section ("a bare
+     `() => tenantDb.x.findMany()` loses the tenant context"). Caught by
+     loading the actual page and getting a 500 ("No tenant context").
+     Fixed to `async () => { return await tenantDb.patients.findMany(...); }`.
+     While fixing it, also hardened `dashboard/page.js`'s analogous call —
+     it happened to work (`async () => Promise.all([...])`, verified
+     empirically before this fix), but it wasn't the textbook-safe form
+     either (returning a promise chain without awaiting inside the async
+     function), so it was rewritten to explicitly await each call in turn
+     rather than rely on timing that happened to work in testing.
 - Files: `src/lib/patientAuth.js`, `patientAuthConstants.js`,
-  `patientSession.js`, `patientApiRoute.js`, `patientPortal.js`;
-  `src/app/api/patient-auth/*`, `src/app/api/patient/*`; UI at
-  `src/app/(patient)/patient/[tenantSlug]/{login,dashboard}` — its own
+  `patientSession.js`, `patientApiRoute.js`, `patientPortal.js`,
+  `appointments.js` (shared `bookAppointment`); `src/app/api/patient-auth/*`,
+  `src/app/api/patient/*` (profiles, doctors, calendar, appointments/book,
+  appointments/[id]/cancel, prescriptions, medications, lab-reports,
+  discharge-summaries, bills, visits, feedback); `src/app/api/feedback`
+  (staff-side view, `feedback:read`); UI at
+  `src/app/(patient)/patient/[tenantSlug]/{login,dashboard,book}` — its own
   route group, plain Tailwind (no `.hms-shell` retint, no dark mode) since
   this is a lightweight mobile-first consumer surface, not the staff
   product.
