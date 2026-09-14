@@ -11,7 +11,7 @@ import Link from "next/link";
 
 const OPEN = new Set(["REGISTERED", "TRIAGE", "WITH_DOCTOR", "PHARMACY", "LAB", "BILLING"]);
 
-export default function RegistrationClient({ canManageReferrals }) {
+export default function RegistrationClient({ canManageReferrals, canOverrideToken }) {
   const [form, setForm] = useState(null);
   const [values, setValues] = useState({});
   const [allergies, setAllergies] = useState([]);
@@ -26,6 +26,12 @@ export default function RegistrationClient({ canManageReferrals }) {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [flashIds, setFlashIds] = useState(new Set());
+  const [overrideToken, setOverrideToken] = useState(false);
+  const [manualToken, setManualToken] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
+  const [visitOverrideFor, setVisitOverrideFor] = useState(null); // patientId currently showing the override form
+  const [visitManualToken, setVisitManualToken] = useState("");
+  const [visitOverrideReason, setVisitOverrideReason] = useState("");
 
   function flash(id) {
     setFlashIds((s) => new Set(s).add(id));
@@ -102,11 +108,17 @@ export default function RegistrationClient({ canManageReferrals }) {
         referralSourceId: referralSourceId || undefined,
         customFields: custom,
         openVisit: true,
+        ...(overrideToken && manualToken
+          ? { manualToken: Number(manualToken), overrideReason }
+          : {}),
       });
       setValues({});
       setAllergies([]);
       setAbhaId("");
       setReferralSourceId("");
+      setOverrideToken(false);
+      setManualToken("");
+      setOverrideReason("");
       setMsg("Patient registered and added to the queue.");
     } catch (err) {
       setMsg(err.message);
@@ -129,13 +141,19 @@ export default function RegistrationClient({ canManageReferrals }) {
     }
   }
 
-  async function newVisit(patientId) {
+  async function newVisit(patientId, override) {
     setBusy(true);
     setMsg("");
     try {
-      await apiSend("/api/registration/visits", "POST", { patientId });
+      await apiSend("/api/registration/visits", "POST", {
+        patientId,
+        ...(override ? { manualToken: Number(override.manualToken), overrideReason: override.overrideReason } : {}),
+      });
       setResults(null);
       setQ("");
+      setVisitOverrideFor(null);
+      setVisitManualToken("");
+      setVisitOverrideReason("");
       setMsg("New visit opened.");
     } catch (err) {
       setMsg(err.message);
@@ -221,6 +239,14 @@ export default function RegistrationClient({ canManageReferrals }) {
                   >
                     New visit
                   </button>
+                  {canOverrideToken && (
+                    <button
+                      onClick={() => setVisitOverrideFor(visitOverrideFor === p.id ? null : p.id)}
+                      className="text-xs text-slate-400 hover:text-slate-700"
+                    >
+                      override token
+                    </button>
+                  )}
                 </div>
               </div>
               <AllergyBadge allergies={p.allergies} className="mt-1.5" />
@@ -228,6 +254,33 @@ export default function RegistrationClient({ canManageReferrals }) {
                 <p className="mt-1 text-xs text-slate-400">
                   Referred by: {p.referral_source_name} ({p.referral_source_type?.replace(/_/g, " ")})
                 </p>
+              )}
+              {visitOverrideFor === p.id && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-2">
+                  <input
+                    type="number"
+                    min="1"
+                    value={visitManualToken}
+                    onChange={(e) => setVisitManualToken(e.target.value)}
+                    placeholder="token #"
+                    className="w-20 rounded-md border border-slate-300 px-2 py-1 text-xs"
+                  />
+                  <input
+                    value={visitOverrideReason}
+                    onChange={(e) => setVisitOverrideReason(e.target.value)}
+                    placeholder="reason (required)"
+                    className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-xs"
+                  />
+                  <button
+                    onClick={() =>
+                      newVisit(p.id, { manualToken: visitManualToken, overrideReason: visitOverrideReason })
+                    }
+                    disabled={busy || !visitManualToken || !visitOverrideReason.trim()}
+                    className="rounded-md bg-amber-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    Confirm override
+                  </button>
+                </div>
               )}
               {editingId === p.id && (
                 <div className="mt-2 space-y-2">
@@ -296,12 +349,42 @@ export default function RegistrationClient({ canManageReferrals }) {
                   </Link>
                 )}
               </label>
+              {canOverrideToken && (
+                <div className="space-y-2 rounded-md border border-slate-200 p-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={overrideToken}
+                      onChange={(e) => setOverrideToken(e.target.checked)}
+                    />
+                    <span className="font-medium">Override token number</span>
+                  </label>
+                  {overrideToken && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        value={manualToken}
+                        onChange={(e) => setManualToken(e.target.value)}
+                        placeholder="token #"
+                        className="w-24 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      />
+                      <input
+                        value={overrideReason}
+                        onChange={(e) => setOverrideReason(e.target.value)}
+                        placeholder="reason (required, e.g. emergency walk-in)"
+                        className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             <p className="text-sm text-slate-400">Loading form…</p>
           )}
           <button
-            disabled={busy || !form}
+            disabled={busy || !form || (overrideToken && (!manualToken || !overrideReason.trim()))}
             className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
           >
             Register &amp; add to queue

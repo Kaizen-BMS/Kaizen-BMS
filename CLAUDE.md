@@ -1035,6 +1035,48 @@ calendar, self-service booking/cancellation, and feedback submission.
   this is a lightweight mobile-first consumer surface, not the staff
   product.
 
+## Appointment enhancements — built
+
+Two additions on top of the base Appointment Scheduling + Patient Portal
+system (migration 017), both depending on it being fully built first.
+
+- **Receptionist manual token override**: the walk-in OPD queue's
+  auto-assigned sequential daily token (`SELECT COUNT(*)+1 ... WHERE
+  DATE(created_at) = CURDATE()`) can be explicitly overridden — a
+  priority/emergency walk-in, or correcting a numbering mistake.
+  `src/lib/tokenOverride.js`'s `resolveTokenNumber()` is the one place both
+  visit-creation routes (`registration/patients`, `registration/visits`)
+  get a token number from — with no `manualToken` supplied, unchanged
+  auto-increment behavior; with one supplied, it requires
+  `visit:override_token` (`RECEPTIONIST` + `HOSPITAL_ADMIN` wildcard) and a
+  non-empty `reason`, checks the number isn't already taken today, and logs
+  to `token_overrides` (`reason` + `overridden_by` — same accountable,
+  never-silent audit shape as Billing's discounts). **Deliberately not
+  wrapped in a locking transaction**: a manual override is a human-paced,
+  low-frequency front-desk action, not a programmatic hot path, so it
+  intentionally matches the concurrency rigor already accepted for the
+  pre-existing auto-increment COUNT+1 path (which has the same unlocked
+  race in principle) rather than being held to a higher bar than the rest
+  of that code. **Verified live**: a role without `visit:override_token`
+  → 403; an override without a reason → 400; a successful override; a
+  same-day duplicate token number → 409 `token_already_taken`; the audit
+  row correctly recorded.
+- **Doctor-initiated follow-up scheduling**: a "Schedule follow-up" button
+  on the consultation screen (visible only once a consultation is recorded,
+  and only to the `DOCTOR` role — `ConsultationClient.jsx` receives
+  `doctorUserId` from the page only when `session.role === "DOCTOR"`) opens
+  `src/components/hms/DoctorSlotPicker.jsx` — a compact single-doctor Week
+  time-grid. **Not a second booking mechanism**: it calls the exact same
+  `GET /api/appointments/calendar` and `POST /api/appointments` the full
+  staff Appointments screen uses, so the same `bookAppointment()`
+  double-booking-prevention logic applies unchanged, and the resulting
+  `Appointment` row (`booked_by: "staff"`) is immediately visible in both
+  the staff calendar and the patient's own portal — **verified live**: a
+  doctor booked a follow-up for a real patient via this exact endpoint
+  sequence, and it appeared correctly in both
+  `GET /api/appointments/calendar` (staff) and `GET /api/patient/
+  appointments` (that same patient's own portal session).
+
 ## Referral sources — built
 
 Tracks where a patient came from — RMP/local doctors, health camps,

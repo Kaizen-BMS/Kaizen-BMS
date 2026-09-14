@@ -6,6 +6,7 @@ import { apiGet, apiSend } from "@/components/hms/api";
 import DynamicForm, { splitValues } from "@/components/hms/DynamicForm";
 import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
+import DoctorSlotPicker from "@/components/hms/DoctorSlotPicker";
 import { parseMaybeJson } from "@/components/hms/json";
 import { matchAllergy } from "@/lib/allergyCheck";
 
@@ -15,7 +16,7 @@ function upsertById(list, item) {
     : [...list, item];
 }
 
-export default function ConsultationClient({ visitId }) {
+export default function ConsultationClient({ visitId, doctorUserId }) {
   const [data, setData] = useState(null); // { visit, consultation, prescriptions, labOrders }
   const [form, setForm] = useState(null);
   const [values, setValues] = useState({});
@@ -23,6 +24,8 @@ export default function ConsultationClient({ visitId }) {
   const [tests, setTests] = useState([""]);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [followUpMsg, setFollowUpMsg] = useState("");
 
   const fields = useMemo(
     () => (form ? [...form.core, ...form.extra] : []),
@@ -201,15 +204,43 @@ export default function ConsultationClient({ visitId }) {
       ) : (
         <div className="space-y-6">
           <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-            <p className="font-semibold">Consultation recorded</p>
-            {consultation.diagnosis && (
-              <p className="mt-1">Diagnosis: {consultation.diagnosis}</p>
-            )}
-            {consultation.notes && (
-              <p className="mt-1 text-slate-600">{consultation.notes}</p>
-            )}
-            <p className="mt-1 text-slate-500">Fee: {consultation.fee}</p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">Consultation recorded</p>
+                {consultation.diagnosis && (
+                  <p className="mt-1">Diagnosis: {consultation.diagnosis}</p>
+                )}
+                {consultation.notes && (
+                  <p className="mt-1 text-slate-600">{consultation.notes}</p>
+                )}
+                <p className="mt-1 text-slate-500">Fee: {consultation.fee}</p>
+              </div>
+              {doctorUserId && (
+                <button
+                  onClick={() => {
+                    setFollowUpMsg("");
+                    setShowFollowUp(true);
+                  }}
+                  className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
+                >
+                  Schedule follow-up
+                </button>
+              )}
+            </div>
+            {followUpMsg && <p className="mt-2 text-xs text-green-700">{followUpMsg}</p>}
           </div>
+
+          {showFollowUp && doctorUserId && (
+            <DoctorSlotPicker
+              doctorUserId={doctorUserId}
+              patientId={visit.patient_id}
+              onClose={() => setShowFollowUp(false)}
+              onBooked={() => {
+                setShowFollowUp(false);
+                setFollowUpMsg("Follow-up scheduled.");
+              }}
+            />
+          )}
 
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             <p className="text-sm font-semibold">Prescription → Pharmacy</p>

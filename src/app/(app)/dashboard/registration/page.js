@@ -7,5 +7,10 @@ export const metadata = { title: "Registration" };
 
 export default async function RegistrationPage() {
   const { session } = await guardPage({ action: "visit:create" });
-  return <RegistrationClient canManageReferrals={can(session.role, "referral:manage")} />;
+  return (
+    <RegistrationClient
+      canManageReferrals={can(session.role, "referral:manage")}
+      canOverrideToken={can(session.role, "visit:override_token")}
+    />
+  );
 }

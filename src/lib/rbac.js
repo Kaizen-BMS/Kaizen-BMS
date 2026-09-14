@@ -42,6 +42,10 @@ const RECEPTIONIST = [
   "appointment:create",
   "appointment:read",
   "appointment:update",
+  // Bypasses normal queue fairness (a priority walk-in, or correcting a
+  // numbering mistake) — accountable, not silent: see visit:override_token
+  // in registration/patients and registration/visits.
+  "visit:override_token",
 ];
 
 const DOCTOR = [

@@ -4,12 +4,18 @@ import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { requireTenantId } from "@/lib/requestContext";
 import { emitToTenant } from "@/lib/realtime";
+import { resolveTokenNumber, logTokenOverride } from "@/lib/tokenOverride";
 
 export const dynamic = "force-dynamic";
 
 const createSchema = z.object({
   patientId: z.coerce.number().int().positive(),
   reason: z.string().trim().max(500).optional().default(""),
+  // Receptionist manual token override — a priority/emergency walk-in, or
+  // correcting a numbering mistake. Omit for the normal auto-assigned
+  // sequential token (unchanged default behavior).
+  manualToken: z.coerce.number().int().positive().optional(),
+  overrideReason: z.string().trim().max(255).optional(),
 });
 
 const OPEN_STATUSES = ["REGISTERED", "WITH_DOCTOR", "PHARMACY", "LAB", "BILLING"];
@@ -48,11 +54,10 @@ export const POST = apiRoute("visit:create", async (request, { session }) => {
   if (!patient) return json({ error: "patient_not_found" }, 404);
 
   const tid = requireTenantId();
-  const countRows = await tenantDb.$queryRawUnsafe(
-    "SELECT COUNT(*) AS n FROM visits WHERE tenant_id = ? AND DATE(created_at) = CURDATE()",
-    BigInt(tid),
-  );
-  const tokenNumber = Number(countRows[0].n) + 1;
+  const { tokenNumber, overridden } = await resolveTokenNumber(tenantDb, tid, session.role, {
+    manualToken: body.manualToken,
+    overrideReason: body.overrideReason,
+  });
 
   const created = await tenantDb.visits.create({
     data: {
@@ -65,6 +70,16 @@ export const POST = apiRoute("visit:create", async (request, { session }) => {
     },
     include: { patients: { select: { name: true, age: true, phone: true, allergies: true } } },
   });
+
+  if (overridden) {
+    await logTokenOverride(tenantDb, {
+      visitId: created.id,
+      tokenNumber,
+      reason: body.overrideReason,
+      overriddenBy: BigInt(session.userId),
+    });
+  }
+
   const { patients: p, ...rest } = created;
   const visit = {
     ...rest,

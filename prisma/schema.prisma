@@ -417,6 +417,7 @@ model tenants {
   referral_sources         referral_sources[]
   staff_members            staff_members[]
   tenant_modules           tenant_modules[]
+  token_overrides          token_overrides[]
   users                    users[]
   visits                   visits[]
 }
@@ -444,6 +445,7 @@ model users {
   prescription_item_acks   prescription_item_acks[]
   print_branding           print_branding[]
   refunds                  refunds[]
+  token_overrides          token_overrides[]
   tenants                  tenants?                   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_users_tenant")
   visits                   visits[]
 
@@ -452,29 +454,30 @@ model users {
 }
 
 model visits {
-  id             BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id      BigInt            @db.UnsignedBigInt
-  patient_id     BigInt            @db.UnsignedBigInt
-  entry_type     visits_entry_type @default(OPD)
-  token_number   Int?              @db.UnsignedInt
-  status         visits_status     @default(REGISTERED)
-  reason         String?           @db.VarChar(500)
-  custom_fields  String?           @db.LongText
-  registered_by  BigInt?           @db.UnsignedBigInt
-  follow_up_date DateTime?         @db.Date
-  created_at     DateTime          @default(now())
-  updated_at     DateTime          @default(now())
-  discharged_at  DateTime?
-  admissions     admissions[]
-  bills          bills[]
-  consultations  consultations[]
-  feedback       feedback[]
-  follow_ups     follow_ups[]
-  lab_orders     lab_orders[]
-  prescriptions  prescriptions[]
-  patients       patients          @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_patient")
-  users          users?            @relation(fields: [registered_by], references: [id], onUpdate: Restrict, map: "fk_visits_registered_by")
-  tenants        tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_tenant")
+  id              BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id       BigInt            @db.UnsignedBigInt
+  patient_id      BigInt            @db.UnsignedBigInt
+  entry_type      visits_entry_type @default(OPD)
+  token_number    Int?              @db.UnsignedInt
+  status          visits_status     @default(REGISTERED)
+  reason          String?           @db.VarChar(500)
+  custom_fields   String?           @db.LongText
+  registered_by   BigInt?           @db.UnsignedBigInt
+  follow_up_date  DateTime?         @db.Date
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @default(now())
+  discharged_at   DateTime?
+  admissions      admissions[]
+  bills           bills[]
+  consultations   consultations[]
+  feedback        feedback[]
+  follow_ups      follow_ups[]
+  lab_orders      lab_orders[]
+  prescriptions   prescriptions[]
+  token_overrides token_overrides[]
+  patients        patients          @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_patient")
+  users           users?            @relation(fields: [registered_by], references: [id], onUpdate: Restrict, map: "fk_visits_registered_by")
+  tenants         tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_tenant")
 
   @@index([registered_by], map: "fk_visits_registered_by")
   @@index([tenant_id], map: "idx_visits_hospital")
@@ -690,6 +693,23 @@ model feedback {
   @@index([patient_id], map: "fk_feedback_patient")
   @@index([visit_id], map: "fk_feedback_visit")
   @@index([tenant_id], map: "idx_feedback_tenant")
+}
+
+model token_overrides {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id     BigInt   @db.UnsignedBigInt
+  visit_id      BigInt   @db.UnsignedBigInt
+  token_number  Int      @db.UnsignedInt
+  reason        String   @db.VarChar(255)
+  overridden_by BigInt   @db.UnsignedBigInt
+  created_at    DateTime @default(now())
+  users         users    @relation(fields: [overridden_by], references: [id], onUpdate: Restrict, map: "fk_token_overrides_by")
+  tenants       tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_token_overrides_tenant")
+  visits        visits   @relation(fields: [visit_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_token_overrides_visit")
+
+  @@index([overridden_by], map: "fk_token_overrides_by")
+  @@index([tenant_id], map: "idx_token_overrides_tenant")
+  @@index([visit_id], map: "idx_token_overrides_visit")
 }
 
 enum beds_ward_type {

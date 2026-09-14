@@ -5,6 +5,7 @@ import { tenantDb } from "@/lib/prismaClient";
 import { requireTenantId } from "@/lib/requestContext";
 import { validateCustomFields } from "@/lib/forms";
 import { emitToTenant } from "@/lib/realtime";
+import { resolveTokenNumber, logTokenOverride } from "@/lib/tokenOverride";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,10 @@ const createSchema = z.object({
   referralSourceId: z.coerce.number().int().positive().optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
   openVisit: z.boolean().optional().default(true),
+  // Receptionist manual token override — see registration/visits for the
+  // same field pair on the "existing patient" path.
+  manualToken: z.coerce.number().int().positive().optional(),
+  overrideReason: z.string().trim().max(255).optional(),
 });
 
 // Front-desk patient lookup (returning patients) — name or phone substring.
@@ -100,14 +105,11 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
 
   let visit = null;
   if (body.openVisit) {
-    // DATE(created_at) = CURDATE() depends on the DB server's own clock —
-    // keep this one query raw so "today" means exactly what it always has.
     const tid = requireTenantId();
-    const countRows = await tenantDb.$queryRawUnsafe(
-      "SELECT COUNT(*) AS n FROM visits WHERE tenant_id = ? AND DATE(created_at) = CURDATE()",
-      BigInt(tid),
-    );
-    const tokenNumber = Number(countRows[0].n) + 1;
+    const { tokenNumber, overridden } = await resolveTokenNumber(tenantDb, tid, session.role, {
+      manualToken: body.manualToken,
+      overrideReason: body.overrideReason,
+    });
 
     const created = await tenantDb.visits.create({
       data: {
@@ -120,6 +122,16 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
       },
       include: { patients: true },
     });
+
+    if (overridden) {
+      await logTokenOverride(tenantDb, {
+        visitId: created.id,
+        tokenNumber,
+        reason: body.overrideReason,
+        overriddenBy: BigInt(session.userId),
+      });
+    }
+
     visit = flattenVisit(created);
     emitToTenant(session.tenantId, "visit:created", { visit });
   }

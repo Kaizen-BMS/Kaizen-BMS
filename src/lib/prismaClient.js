@@ -96,6 +96,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "referral_sources",
   "staff_members",
   "tenant_modules",
+  "token_overrides",
   "visits",
 ]);
 
