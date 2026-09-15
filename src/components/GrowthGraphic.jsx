@@ -1,101 +1,159 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { NodeDot, Crosshair } from "./graphics/primitives";
+import { CyanBlob } from "./graphics/primitives";
 
 /**
- * The homepage hero visual — replaces the earlier abstract orbital-field
- * graphic, which didn't reference the business at all. This one is a
- * direct, literal read of the tagline it sits next to: a staircase of
- * small ascending bars ("Small Improvements") with a line tracing up and
- * over them to a single bright endpoint ("Extraordinary Results") — the
- * Kaizen idea (continuous incremental improvement -> a real outcome)
- * rendered as one shape instead of a decorative field with no meaning.
- * Custom SVG only, per the design system — nothing borrowed from an icon set.
+ * The homepage hero visual, v2 — the first pass (ascending bars + a
+ * trajectory line) was meaningful but read as a flat diagram/infographic.
+ * This version is a tangible dashboard-panel mockup instead: a soft glow
+ * behind a floating "product screen" — a real-looking trend chart with a
+ * gradient fill and a couple of KPI rows — plus a small floating metric
+ * badge overlapping its corner, the way an actual product screenshot or
+ * device mockup sits in a modern SaaS hero. Depth comes from layered
+ * translucency, blur and drop-shadow rather than flat thin strokes.
+ * Custom SVG/CSS only, per the design system — nothing borrowed from an
+ * icon set or a stock photo.
  */
 
-const BARS = [
-  { x: 40, w: 46, h: 70 },
-  { x: 104, w: 46, h: 120 },
-  { x: 168, w: 46, h: 180 },
-  { x: 232, w: 46, h: 250 },
-  { x: 296, w: 46, h: 340 },
-];
-const BASE_Y = 460;
 const ACCENT = "#08DCDC";
+const ACCENT_2 = "#6E5BFF";
 
-function barTop(bar) {
-  return { x: bar.x + bar.w / 2, y: BASE_Y - bar.h };
+// A believable upward trend, not a straight diagonal — small dips included
+// so the chart reads as real data rather than a drawn arrow.
+const CHART_POINTS = [
+  [0, 150], [30, 138], [60, 142], [90, 112], [120, 118],
+  [150, 88], [180, 96], [210, 64], [240, 48], [260, 30],
+];
+
+function smoothPath(points) {
+  return points
+    .map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`))
+    .join(" ");
 }
 
 export default function GrowthGraphic({ className = "" }) {
-  const linePoints = BARS.map(barTop);
-  const path = `M${linePoints[0].x - 22},${linePoints[0].y + 26} ${linePoints
-    .map((p) => `L${p.x},${p.y - 10}`)
-    .join(" ")}`;
-  const endpoint = linePoints[linePoints.length - 1];
+  const linePath = smoothPath(CHART_POINTS);
+  const last = CHART_POINTS[CHART_POINTS.length - 1];
+  const areaPath = `${linePath} L${last[0]},176 L0,176 Z`;
 
   return (
-    <div className={`relative select-none ${className}`} aria-hidden="true">
-      <svg viewBox="0 0 420 520" className="h-full w-full" fill="none">
-        {/* baseline */}
-        <line x1="10" y1={BASE_Y} x2="410" y2={BASE_Y} stroke="var(--kbms-line)" strokeWidth="1" />
+    <div
+      className={`relative flex select-none items-center justify-center ${className}`}
+      aria-hidden="true"
+    >
+      {/* ambient glow behind the panel — depth, not a flat background */}
+      <div className="kbms-float absolute inset-0 -z-10">
+        <CyanBlob className="h-full w-full" opacity={0.35} />
+      </div>
 
-        {/* ascending bars — each a "small improvement," rising into view in sequence */}
-        {BARS.map((bar, i) => (
-          <motion.rect
-            key={bar.x}
-            x={bar.x}
-            width={bar.w}
-            height={bar.h}
-            y={BASE_Y - bar.h}
-            rx={2}
-            fill={i === BARS.length - 1 ? ACCENT : "var(--kbms-ink)"}
-            fillOpacity={i === BARS.length - 1 ? 0.9 : 0.1 + i * 0.03}
-            initial={{ scaleY: 0 }}
-            animate={{ scaleY: 1 }}
-            transition={{ duration: 0.6, delay: 0.15 * i, ease: [0.16, 1, 0.3, 1] }}
-            style={{ transformOrigin: `${bar.x + bar.w / 2}px ${BASE_Y}px` }}
-          />
-        ))}
+      {/* the main panel — a real-looking product screen, not a diagram */}
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-90 overflow-hidden rounded-2xl border border-(--kbms-line) bg-(--kbms-bg)"
+        style={{
+          boxShadow:
+            "0 30px 60px -20px rgba(0,0,0,0.28), 0 10px 24px -12px rgba(0,0,0,0.18)",
+        }}
+      >
+        {/* title bar */}
+        <div className="flex items-center justify-between border-b border-(--kbms-line) px-4 py-3">
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-(--kbms-ink)/15" />
+            <span className="h-2 w-2 rounded-full bg-(--kbms-ink)/15" />
+            <span className="h-2 w-2 rounded-full" style={{ background: ACCENT }} />
+          </div>
+          <span className="font-body text-[10px] font-medium uppercase tracking-[0.14em] text-(--kbms-ink-soft)">
+            Growth
+          </span>
+        </div>
 
-        {/* the trajectory tying every bar to the next — "extraordinary results" as a path, not a single leap */}
-        <motion.path
-          d={path}
-          stroke={ACCENT}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeDasharray="4 5"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 1.4, delay: 0.9, ease: "easeOut" }}
-        />
+        {/* chart */}
+        <div className="px-4 pt-4">
+          <svg viewBox="0 0 260 176" className="h-[150px] w-full">
+            <defs>
+              <linearGradient id="kbms-hero-area" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={ACCENT} stopOpacity="0.35" />
+                <stop offset="100%" stopColor={ACCENT} stopOpacity="0" />
+              </linearGradient>
+            </defs>
 
-        {/* the result — a calm, slow pulse at the trajectory's endpoint */}
-        <motion.circle
-          cx={endpoint.x}
-          cy={endpoint.y - 10}
-          r={7}
-          fill={ACCENT}
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: [0, 1.4, 1], opacity: 1 }}
-          transition={{ duration: 0.6, delay: 2.1, ease: "easeOut" }}
-        />
-        <motion.circle
-          cx={endpoint.x}
-          cy={endpoint.y - 10}
-          r={7}
-          fill="none"
-          stroke={ACCENT}
-          strokeWidth="1"
-          initial={{ scale: 1, opacity: 0.6 }}
-          animate={{ scale: [1, 2.2], opacity: [0.6, 0] }}
-          transition={{ duration: 2.2, delay: 2.3, repeat: Infinity, ease: "easeOut" }}
-        />
-      </svg>
+            {/* quiet horizontal guides */}
+            {[44, 88, 132].map((y) => (
+              <line key={y} x1="0" y1={y} x2="260" y2={y} stroke="var(--kbms-line)" strokeWidth="1" />
+            ))}
 
-      <Crosshair size={18} className="absolute right-[8%] top-[10%] opacity-60" />
-      <NodeDot r={2.5} className="absolute bottom-[30%] left-[4%] opacity-70" />
+            <motion.path
+              d={areaPath}
+              fill="url(#kbms-hero-area)"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.6, delay: 1.1 }}
+            />
+            <motion.path
+              d={linePath}
+              fill="none"
+              stroke={ACCENT}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 1.3, delay: 0.5, ease: "easeOut" }}
+            />
+            <motion.circle
+              cx={last[0]}
+              cy={last[1]}
+              r="4.5"
+              fill={ACCENT}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.4, delay: 1.8 }}
+            />
+          </svg>
+        </div>
+
+        {/* two quiet KPI rows — grounds the panel as "a real screen," not just a chart */}
+        <div className="space-y-2.5 px-4 pb-4 pt-1">
+          {[
+            { label: "Operational efficiency", value: 0.82, color: ACCENT },
+            { label: "Process maturity", value: 0.64, color: ACCENT_2 },
+          ].map((row, i) => (
+            <div key={row.label} className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-body text-[10px] text-(--kbms-ink-soft)">{row.label}</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-(--kbms-ink)/8">
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: row.color }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${row.value * 100}%` }}
+                  transition={{ duration: 0.9, delay: 1.3 + i * 0.15, ease: "easeOut" }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* a small floating metric badge overlapping the panel's corner —
+          the detail that reads as "a real product," not a flat graphic */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 1.9, ease: [0.16, 1, 0.3, 1] }}
+        className="kbms-float absolute -right-3 -top-3 flex items-center gap-1.5 rounded-xl border border-(--kbms-line) bg-(--kbms-bg) px-3 py-2"
+        style={{ boxShadow: "0 16px 30px -12px rgba(0,0,0,0.25)" }}
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+          <path d="M2 10L6 5L9 8L12 3" fill="none" stroke={ACCENT} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M9 3H12V6" fill="none" stroke={ACCENT} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="font-display text-sm text-(--kbms-ink)">+24%</span>
+      </motion.div>
     </div>
   );
 }
