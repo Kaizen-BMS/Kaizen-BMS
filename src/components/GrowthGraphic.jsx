@@ -17,6 +17,31 @@ import { INK, LINE, ACCENT, ACCENT_2 } from "./graphics/primitives";
 
 const w = { stroke: INK, opacity: 0.28 };
 
+/**
+ * Wraps a widget so it drifts away from its resting spot and springs back
+ * — a small, springy overshoot on each reversal reads as "bumping into"
+ * the edge of its own little orbit and bouncing off it, rather than a
+ * flat back-and-forth slide. Each caller gets its own distance/speed/
+ * offset so the whole collage feels loosely alive instead of one
+ * synchronized pulse.
+ */
+function Float({ dx = 10, dy = 8, duration = 2.4, delay = 0, children }) {
+  return (
+    <motion.g
+      animate={{ x: [0, dx, 0], y: [0, dy, 0] }}
+      transition={{
+        duration,
+        repeat: Infinity,
+        repeatDelay: 0.15,
+        ease: [0.34, 1.56, 0.64, 1], // overshoot-then-settle — the "bounce"
+        delay,
+      }}
+    >
+      {children}
+    </motion.g>
+  );
+}
+
 /** A jagged connected-dot line, like a small stock/analytics chart. */
 function ZigzagChart({ x, y }) {
   const pts = [
@@ -207,49 +232,81 @@ export default function GrowthGraphic({ className = "" }) {
         </g>
 
         <motion.g variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
-          <ZigzagChart x={40} y={40} />
-          <EqBars x={40} y={120} />
-          <DashedCircle x={210} y={70} r={26} />
+          <Float dx={10} dy={-8} duration={2.6}>
+            <ZigzagChart x={40} y={40} />
+          </Float>
+          <Float dx={-8} dy={6} duration={3.1} delay={0.3}>
+            <EqBars x={40} y={120} />
+          </Float>
+          <Float dx={7} dy={9} duration={2.2} delay={0.6}>
+            <DashedCircle x={210} y={70} r={26} />
+          </Float>
         </motion.g>
 
         <motion.g variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
-          <OverlapCircles x={330} y={70} />
+          <Float dx={-9} dy={7} duration={2.8} delay={0.15}>
+            <OverlapCircles x={330} y={70} />
+          </Float>
         </motion.g>
 
         <motion.g variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
-          <OverlapCircles x={700} y={70} />
-          <MiniScatter x={720} y={110} />
+          <Float dx={8} dy={-6} duration={2.4} delay={0.4}>
+            <OverlapCircles x={700} y={70} />
+          </Float>
+          <Float dx={-10} dy={8} duration={3.4} delay={0.1}>
+            <MiniScatter x={720} y={110} />
+          </Float>
         </motion.g>
 
         <motion.g variants={{ hidden: { opacity: 0, x: -10 }, show: { opacity: 1, x: 0 } }} transition={{ duration: 0.5 }}>
-          <NumberedRows x={40} y={260} />
+          <Float dx={9} dy={-7} duration={2.9} delay={0.25}>
+            <NumberedRows x={40} y={260} />
+          </Float>
         </motion.g>
 
         <motion.g variants={{ hidden: { opacity: 0, x: 10 }, show: { opacity: 1, x: 0 } }} transition={{ duration: 0.5 }}>
-          <SquareGrid x={700} y={250} />
-          <EqBars x={700} y={300} heights={[16, 8, 20, 10, 24, 12, 18]} />
+          <Float dx={-7} dy={8} duration={2.5} delay={0.5}>
+            <SquareGrid x={700} y={250} />
+          </Float>
+          <Float dx={8} dy={-9} duration={3.2} delay={0.2}>
+            <EqBars x={700} y={300} heights={[16, 8, 20, 10, 24, 12, 18]} />
+          </Float>
         </motion.g>
 
         <motion.g variants={{ hidden: { opacity: 0, y: -10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
-          <RadarRings x={100} y={460} />
-          <DiamondRow x={40} y={540} />
+          <Float dx={-8} dy={-7} duration={2.7} delay={0.35}>
+            <RadarRings x={100} y={460} />
+          </Float>
+          <Float dx={9} dy={6} duration={3.0} delay={0.55}>
+            <DiamondRow x={40} y={540} />
+          </Float>
         </motion.g>
 
         <motion.g variants={{ hidden: { opacity: 0, y: -10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
-          <RadarRings x={780} y={480} sizes={[6, 12, 18]} />
-          <NumberedRows x={660} y={430} count={2} />
-          <SquareGrid x={660} y={500} rows={1} cols={3} filled={[0]} />
+          <Float dx={7} dy={-8} duration={2.3} delay={0.45}>
+            <RadarRings x={780} y={480} sizes={[6, 12, 18]} />
+          </Float>
+          <Float dx={-9} dy={7} duration={3.3} delay={0.1}>
+            <NumberedRows x={660} y={430} count={2} />
+          </Float>
+          <Float dx={8} dy={8} duration={2.6} delay={0.3}>
+            <SquareGrid x={660} y={500} rows={1} cols={3} filled={[0]} />
+          </Float>
         </motion.g>
 
         <motion.g variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1 } }} transition={{ duration: 0.6 }}>
-          <DiamondRow x={370} y={500} count={4} />
+          <Float dx={-10} dy={-6} duration={2.9} delay={0.2}>
+            <DiamondRow x={370} y={500} count={4} />
+          </Float>
         </motion.g>
 
         <motion.g
           variants={{ hidden: { opacity: 0, scale: 0.85 }, show: { opacity: 1, scale: 1 } }}
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
         >
-          <HexCore cx={450} cy={320} />
+          <Float dx={6} dy={-6} duration={3.6} delay={0.2}>
+            <HexCore cx={450} cy={320} />
+          </Float>
         </motion.g>
       </svg>
     </motion.div>
