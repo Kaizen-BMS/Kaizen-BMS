@@ -2,7 +2,7 @@
 
 const { redirect } = require("next/navigation");
 const { getSession } = require("./session");
-const { can } = require("./rbac");
+const { canPlatform } = require("./rbac");
 const { anyModuleActive } = require("./modules");
 const { getTenant } = require("./tenants");
 
@@ -22,7 +22,9 @@ async function guardPage({ action, modules } = {}) {
     redirect("/login?suspended=1");
   }
 
-  if (action && !can(session.role, action)) redirect("/dashboard");
+  // canPlatform() — see rbac.js: can(role, action) plus, for
+  // tenant:read/tenant:manage specifically, session.role === "SUPER_ADMIN".
+  if (action && !canPlatform(session, action)) redirect("/dashboard");
   if (
     modules &&
     modules.length &&

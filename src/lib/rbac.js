@@ -193,4 +193,38 @@ function can(role, action) {
   return allowed.includes("*") || allowed.includes(action);
 }
 
-module.exports = { ROLES, PERMISSIONS, can };
+/**
+ * PLATFORM scope vs TENANT scope — a SEPARATE dimension from can(),
+ * deliberately not folded into it. Security finding, fixed 2026-09-15:
+ * `HOSPITAL_ADMIN`'s `"*"` wildcard above is intentional and correct —
+ * it means "full control of everything within their own tenant," and
+ * hundreds of already-tested tenant-scoped actions across this codebase
+ * depend on that being unchanged. The bug was never the wildcard itself;
+ * it was that `tenant:read`/`tenant:manage` are not tenant-scoped
+ * actions at all — their routes use the raw, cross-tenant `prisma`
+ * client by design (list/create/view/suspend ANY tenant), so the
+ * wildcard silently covered them too, letting a HOSPITAL_ADMIN reach a
+ * genuinely platform-wide endpoint. See CLAUDE.md "RBAC security
+ * hardening" for the full writeup.
+ *
+ * These two actions require a SUPER_ADMIN session specifically — not
+ * merely a role whose permission array happens to include them.
+ * `auth.js`'s `verifySession()` already guarantees, cryptographically,
+ * that no non-SUPER_ADMIN token can ever carry `tenantId: null` (a
+ * forged one is rejected before this code ever runs), so checking
+ * `session.role === "SUPER_ADMIN"` here is exact, not a heuristic.
+ */
+const PLATFORM_ONLY_ACTIONS = new Set(["tenant:read", "tenant:manage"]);
+
+function isPlatformOnlyAction(action) {
+  return PLATFORM_ONLY_ACTIONS.has(action);
+}
+
+/** can(role, action) AND, for platform-only actions, session.role === "SUPER_ADMIN". */
+function canPlatform(session, action) {
+  if (!session || !can(session.role, action)) return false;
+  if (isPlatformOnlyAction(action)) return session.role === "SUPER_ADMIN";
+  return true;
+}
+
+module.exports = { ROLES, PERMISSIONS, can, PLATFORM_ONLY_ACTIONS, isPlatformOnlyAction, canPlatform };

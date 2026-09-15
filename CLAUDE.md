@@ -313,6 +313,106 @@ intercept raw queries); everything else uses `tenantDb.<model>.<method>()`.
   route written the normal way (awaiting its DB calls) is safe by
   construction — this is only a trap for code written outside that wrapper.
 
+## RBAC security hardening — PLATFORM vs TENANT scope (2026-09-15)
+
+**Root cause.** `rbac.js`'s `PERMISSIONS.HOSPITAL_ADMIN = ["*"]` wildcard
+is correct and intentional — "full control of everything within their own
+tenant" — and hundreds of already-tested tenant-scoped actions across this
+codebase depend on it staying exactly as-is. The bug was that
+`tenant:read`/`tenant:manage` (gating `GET`/`POST /api/admin/tenants`,
+`GET`/`PATCH /api/admin/tenants/[id]`, `PATCH /api/admin/tenants/[id]/
+modules`, `GET /api/admin/modules`, and the 3 `/dashboard/platform/*`
+pages) are **not tenant-scoped actions at all** — their routes
+deliberately use the raw, cross-tenant `prisma` client (list every
+tenant, view/suspend/reactivate any tenant by id, toggle any tenant's
+modules), because that's the only way a genuinely platform-wide screen
+can work. `can(role, action)` has no notion of scope, only "does this
+role's array include this action" — so the wildcard silently covered
+these two actions as well, and neither `apiRoute()` nor `guardPage()`
+had any separate check that the caller was actually platform-scoped.
+
+**Previous behavior (verified live before the fix, not assumed)**:
+logged in as `admin@demo.hms` (HOSPITAL_ADMIN, tenant 1) and successfully
+called `GET /api/admin/tenants` — it returned the full list of all 5
+tenants on the platform, including ones Demo Hospital has no relationship
+to. The same session could reach `POST`/every `PATCH` under
+`/api/admin/tenants*` too, all gated by the same two actions.
+
+**Corrected behavior**: a new, separate SCOPE dimension —
+`PLATFORM_ONLY_ACTIONS` (`rbac.js`, currently exactly
+`{"tenant:read", "tenant:manage"}`, the complete set: every call site of
+either string in the whole repo was enumerated before writing this,
+not guessed) — and `canPlatform(session, action)`, which is
+`can(role, action)` **and**, only for actions in that set,
+`session.role === "SUPER_ADMIN"`. `apiRoute()` and `guardPage()` both now
+call `canPlatform()` instead of `can()` for their action check; nothing
+else about either function changed. `rbac.js`'s `PERMISSIONS` object —
+every role's actual permission array, including `HOSPITAL_ADMIN`'s
+wildcard — was **not touched**, precisely so none of the hundreds of
+legitimate tenant-scoped actions it grants could regress.
+
+Checking `session.role === "SUPER_ADMIN"` (rather than, say,
+`session.tenantId === null`, which is equivalent in practice) is exact,
+not a heuristic: `auth.js`'s `verifySession()` already rejects, at the
+JWT-verification layer, any token where `tid == null` and
+`role !== "SUPER_ADMIN"` — so no non-SUPER_ADMIN session can ever reach
+this check with a null tenant, forged token or not.
+
+**Role hierarchy, scope-annotated** (see "Role hierarchy" below for the
+full picture — this table only adds the PLATFORM/TENANT/RESOURCE scope
+axis the incident was missing):
+
+| Role | Typical actions | Scope | Notes |
+|---|---|---|---|
+| `SUPER_ADMIN` | `tenant:read`, `tenant:manage`, `*` | PLATFORM | Only role that ever has `tenantId === null`; the only one `canPlatform()` admits for platform-only actions. |
+| `HOSPITAL_ADMIN` | `*` (everything else) | TENANT (own, via `tenantDb`) | Full control within their own tenant only — `tenant:read`/`tenant:manage` are now the one exception, always denied. |
+| `DOCTOR` / `NURSE` / `PHARMACIST` / `LAB_TECH` / `BILLING_STAFF` / `RECEPTIONIST` | role-specific actions (`consultation:*`, `stock:*`, `bill:*`, …) | TENANT (own) + sometimes RESOURCE (e.g. a pharmacist's dispense is further scoped to one `module_instance`, `doctorslot:manage` to the caller's own `doctor_user_id`) | Unchanged by this fix — none of these roles ever had the wildcard. |
+| `OWNER_DOCTOR` / `OWNER_PHARMACIST` / `OWNER_LAB_TECH` | staff role's actions + `OWNER_EXTRAS` | TENANT (own solo tenant) | Unchanged. |
+
+**Protected platform endpoints** (require `canPlatform()` to pass — i.e.
+SUPER_ADMIN only, regardless of any wildcard): `GET`/`POST /api/admin/
+tenants`, `GET`/`PATCH /api/admin/tenants/[id]`, `PATCH /api/admin/
+tenants/[id]/modules`, `GET /api/admin/modules`, and the 3 platform pages
+(`/dashboard/platform/tenants[/new]`, `/dashboard/platform/modules`) via
+`guardPage()`. Everything else under `/api/admin/*` (e.g. `/api/admin/
+form-templates`) is a same-named-path coincidence, not a platform
+endpoint — it's genuinely tenant-scoped (`formtemplate:manage`, via
+`tenantDb`) and was never part of this vulnerability.
+
+**Frontend note**: the sidebar already correctly hid the PLATFORM-section
+nav items from any session with a non-null `tenantId` (`navRegistry.js`'s
+`visibleNav()` filters by section before it ever reaches the per-item
+`action` check) — so a HOSPITAL_ADMIN never saw a "Tenants" link to click.
+The vulnerability was reachable only by a direct API call or a guessed
+URL, never through the rendered UI — which is exactly why it wasn't
+caught by using the product normally, and exactly why backend
+authorization (never frontend visibility) has to be the actual boundary.
+
+**Security tests — all verified live** (see git history for the exact
+curl transcript): `SUPER_ADMIN` → `GET /api/admin/tenants` → 200;
+`HOSPITAL_ADMIN` → same → 403; `HOSPITAL_ADMIN` → create tenant → 403;
+`HOSPITAL_ADMIN` → suspend/reactivate another tenant → 403;
+`HOSPITAL_ADMIN` → provision a module for another tenant → 403;
+`HOSPITAL_ADMIN` → own-tenant `module-instances` → 200;
+`HOSPITAL_ADMIN` → `GET /api/admin/tenants/2` (another tenant) → 403;
+`SUPER_ADMIN` → module registry → 200; `DOCTOR`/`PHARMACIST` → platform
+endpoint → 403 (no new access). Frontend: `HOSPITAL_ADMIN` visiting
+`/dashboard/platform/tenants` → 307 redirect to `/dashboard`;
+`SUPER_ADMIN` → 200. **Regression, all still 200 for their legitimate
+own-tenant operations**: HOSPITAL_ADMIN's own dashboard, staff profiles,
+form templates, referral sources, branding, module-connections, pharmacy
+inventory; DOCTOR's OPD queue; PHARMACIST's pharmacy queue.
+
+**Remaining known risk, deliberately out of scope for this fix**: this
+hardening pass covered exactly the vulnerability found (`tenant:read`/
+`tenant:manage`). It did not re-audit every other action for a similar
+"wildcard accidentally covers something that should be scope-restricted"
+shape — the audit process used to find `PLATFORM_ONLY_ACTIONS`'s two
+members (enumerate every literal usage of a suspected action string
+across the repo) is the repeatable method if a similar finding needs to
+be checked for again later, but it was applied only to this specific
+report, not proactively to every action in `rbac.js`.
+
 ## Role hierarchy
 
 - **SUPER_ADMIN** (Kaizen platform team): `tenant_id = NULL` — not scoped to

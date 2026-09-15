@@ -2,7 +2,7 @@
 
 const { NextResponse } = require("next/server");
 const { getSession } = require("./session");
-const { can } = require("./rbac");
+const { canPlatform } = require("./rbac");
 const { requiredModules, anyModuleActive } = require("./modules");
 const { runWithContext } = require("./requestContext");
 const { getTenant } = require("./tenants");
@@ -40,7 +40,11 @@ function apiRoute(action, handler) {
     }
 
     if (action) {
-      if (!can(session.role, action)) return json({ error: "forbidden" }, 403);
+      // canPlatform() = can(role, action) AND, for tenant:read/tenant:manage
+      // specifically, session.role === "SUPER_ADMIN" — see rbac.js's own
+      // comment for why this is a separate check from can(), not a change
+      // to any role's permission array.
+      if (!canPlatform(session, action)) return json({ error: "forbidden" }, 403);
       const mods = requiredModules(action);
       if (mods.length && !(await anyModuleActive(session.tenantId, mods))) {
         return json({ error: "forbidden" }, 403);
