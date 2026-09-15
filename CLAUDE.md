@@ -1326,6 +1326,230 @@ wanted.
   panel in `RegistrationClient.jsx` — the same reasoning again, one
   rendering of the section, not two.
 
+## Platform rebuild — Phase 1 architecture sign-off (2026-09-15)
+
+Kaizen is being rebuilt incrementally from "a fixed HMS every tenant gets
+the same shape of" into a modular, connected, real-time platform (a
+74-part owner rebuild brief) — one phase group at a time, not all at
+once. A full repository audit preceded this and is not reproduced here;
+this is the concrete sign-off that authorized Phases 1–3 only. Do not
+read this as license to build Phases 4+ (realtime/outbox, the dashboard
+widget engine, drag-and-drop sidebar, etc.) — those remain explicitly
+out of scope until asked for.
+
+1. **Existing architecture** — everything documented above this section;
+   nothing about it changed to write this sign-off. Tenant isolation via
+   `tenantDb`'s AsyncLocalStorage-scoped Prisma extension, a two-layer
+   RBAC+module gate (`rbac.js` role→action, `modules.js` action→rentable
+   module), Socket.io rooms scoped `tenant:<id>` / `tenant:<id>:<module>`,
+   no frontend state library (plain fetch + socket-patch), one boolean row
+   per (tenant, module) in `tenant_modules` deciding whether a module is
+   active at all — no concept of *how many* named copies of it exist.
+2. **Target architecture** — module DEFINITION (still `moduleRegistry.js`,
+   unchanged) → module INSTANCE (new: `module_instances`, a named,
+   independently-lifecycled installed copy) → module CONNECTION (new:
+   `module_connections`, an explicit, approved, revocable relationship
+   between two instances) → DATA CONTRACT (new: code-defined in
+   `dataContracts.js`, mirrors the existing `form_templates`/`CORE_FIELDS`
+   core-vs-configurable split) → (later phases, not built) event/outbox →
+   realtime gateway.
+3. **Preserved as-is** — `tenant_modules` (still THE source of truth for
+   "is module X active for this tenant"; every existing RBAC/module-gate/
+   socket-room call site reads it completely unchanged), RBAC, tenant
+   isolation, and every domain module's business logic (Pharmacy's FEFO
+   dispense, Billing's event-driven IPD flow, Appointment's concurrency-
+   safe booking) — none of it changed except Pharmacy's explicit,
+   deliberate instance-scoping extension below.
+4. **Refactored** — Pharmacy's `pharmacy_stock` (added instance scoping —
+   see "Pharmacy — module instance scoping" below); the Super Admin module
+   rent/un-rent route and Create Tenant route (both now also keep a
+   module's default instance in sync).
+5. **Replaced** — nothing. No UI screen, no existing route's response
+   shape, no existing table was removed or restructured in Phases 1–3.
+6. **New database entities** — `module_instances`, `module_connections`,
+   `module_connection_events`, plus one additive nullable column,
+   `pharmacy_stock.module_instance_id`. Migrations 022–024.
+7. **New API/service boundaries** — `src/lib/moduleInstances.js`
+   (resolve/create/list/status), `src/lib/moduleConnections.js` (request/
+   transition/list, its own lifecycle-transition table), `src/lib/
+   dataContracts.js` (code-defined contract catalog + field/permission
+   sanitization); `/api/module-instances[/[id]]`,
+   `/api/module-connections[/[id]]`.
+8. **Migration strategy** — three additive migrations via the existing
+   `npm run db:migrate` guard (auto-backup first). 022 creates
+   `module_instances`, backfilling exactly one default instance per
+   existing `tenant_modules` row (status mirrors `is_active`). 023 adds
+   `pharmacy_stock.module_instance_id` (nullable), backfills every
+   existing row to its tenant's default Pharmacy instance, then re-keys
+   the batch-uniqueness constraint to include it. 024 creates
+   `module_connections` + `module_connection_events`, empty, no backfill
+   needed (the concept didn't exist before this phase).
+9. **Backward compatibility strategy** — every new column is nullable-
+   then-backfilled; every existing call site
+   (`getActiveModules`/`isModuleActive`/`moduleRoomsForRole`/every RBAC
+   check) reads `tenant_modules` exactly as before. Pharmacy's stock-in/
+   inventory/dispense routes accept an *optional* `moduleInstanceId` that
+   no existing caller sends, so they silently resolve to the tenant's one
+   default instance — today's actual single-instance reality — unless a
+   caller opts in. Module activation and tenant creation now also create/
+   sync a default instance automatically, so a newly-activated module is
+   never left without one.
+10. **Risks** — (a) `pharmacy_stock`'s unique constraint changed shape
+    (tenant+medicine+batch → tenant+instance+medicine+batch); safe because
+    every existing row already had exactly one row per (tenant, medicine,
+    batch), so a non-null instance id added to the key cannot create a new
+    collision. (b) The FEFO dispense query (raw SQL, outside the
+    tenant-scoping Prisma extension) now also filters by
+    `module_instance_id` — the single highest-risk line in this phase,
+    since getting it wrong could mean false stock-outs (over-narrowing) or
+    cross-instance leakage (under-narrowing); verified both directions
+    live. (c) The navy+gold palette decision was **not** implemented in
+    this phase, per explicit instruction — recorded as approved direction
+    for the later UI-rebuild phase only, so it can't regress anything now.
+11. **Rollback strategy** — every migration is additive; the automatic
+    pre-migration backup in `backups/` (gitignored) is the rollback path.
+    Because `tenant_modules` remains authoritative and untouched, even
+    reverting the application-layer changes alone (leaving the new tables
+    and the `pharmacy_stock` column in place, unused) would fully restore
+    prior behavior — the schema was deliberately designed to be inert if
+    the code that reads it were rolled back first.
+
+## Module instances — built (Phase 2)
+
+Separates MODULE DEFINITION (`moduleRegistry.js`, unchanged) from MODULE
+INSTANCE — a named, independently-lifecycled installed copy of a module
+(`module_instances`, migration 022). `tenant_modules` is deliberately
+**not** replaced or migrated away from — it stays the single source of
+truth for "is module X active for this tenant," untouched; instances sit
+underneath an active module, answering "which named operational copies of
+it exist" — a question `tenant_modules` was never designed to answer. A
+tenant with exactly one instance (every tenant today) behaves identically
+to before this phase.
+
+- **Default-instance invariant, enforced at the DB level, not just in
+  application code**: at most one `is_default = true` row per
+  (tenant, module) — a generated `default_slot` column (`1` when
+  `is_default`, else `NULL`) under a unique key, the exact same
+  NULL-≠-NULL trick already used for `appointments.active_slot_time` and
+  `visits.visit_date`.
+- **`src/lib/moduleInstances.js`** — every function takes an explicit
+  `tenantId`, never the AsyncLocalStorage context, since callers include
+  both tenant-scoped routes (`tenantDb`) and Super Admin routes (raw
+  `prisma`, no context — a SUPER_ADMIN session has `tenantId: null`).
+  `resolveInstance(db, tenantId, moduleName, instanceId)` is the one
+  function every consuming route calls: no `instanceId` → the tenant's
+  default instance (what every existing caller gets, unchanged);
+  an explicit id is re-verified against tenant + module + `ACTIVE` status
+  before use, never trusted bare — same discipline as
+  `resolvePatientIdFilter`/`ownsPatient()` elsewhere in this codebase.
+- **`syncDefaultInstance()`** keeps a module's default instance in sync
+  automatically whenever `tenant_modules.is_active` is toggled (Super
+  Admin's rent/un-rent switch) — creates one if missing, flips
+  ACTIVE↔SUSPENDED to match, but never resurrects an instance an admin
+  explicitly ARCHIVED (a bulk module toggle shouldn't silently undo a
+  specific, deliberate archive). Tenant creation
+  (`POST /api/admin/tenants`) creates each rented module's default
+  instance inline, in the same transaction as the tenant + `tenant_modules`
+  rows, so a brand-new tenant is never missing one either.
+- **The default instance can be suspended but never archived** — archiving
+  the one instance every existing route falls back to when no
+  `moduleInstanceId` is given would silently break every one of them.
+  Enforced in `setInstanceStatus()`, not just left to admin discipline.
+- **Pharmacy — module instance scoping** (migration 023): the one domain
+  module actually wired to module instances in this phase, since it's the
+  example the rebuild brief itself uses ("Main Pharmacy" vs "Emergency
+  Pharmacy") and the one whose isolation the brief explicitly asked to be
+  tested. `pharmacy_stock` gained a nullable `module_instance_id`
+  (backfilled to each tenant's default Pharmacy instance for every
+  existing row), and its batch-uniqueness constraint was re-keyed from
+  `(tenant, medicine, batch)` to `(tenant, instance, medicine, batch)` —
+  two instances can now stock an identical medicine name + batch number as
+  two genuinely separate batches. `pharmacy_stock_movements` and
+  `pharmacy_thresholds` were deliberately left untouched: movements are
+  already scoped transitively through `stock_id` (same pattern as
+  `bill_items` → `bills`), and thresholds stay tenant-wide by design — a
+  low-stock alert level for a medicine name is reasonable to share across
+  a tenant's pharmacy instances rather than configure N times. The FEFO
+  dispense query (`POST /api/pharmacy/dispense/[itemId]`, raw SQL, `FOR
+  UPDATE`) now also filters `module_instance_id = ?` — the one place a
+  mistake here could have caused real cross-instance leakage — and
+  `POST /api/pharmacy/stock` / `GET /api/pharmacy/inventory` both accept
+  an *optional* `moduleInstanceId`, defaulting to the tenant's default
+  instance when omitted, which is every existing caller today.
+  **Prescription-to-instance routing is deliberately deferred**: nothing
+  in Clinical/OPD knows about Pharmacy instances yet, so every
+  prescription dispenses from the tenant's default Pharmacy instance,
+  exactly as before this phase — real routing (which pharmacy a given
+  prescription should draw from) is a Module Connections concern for a
+  later phase, not invented here ahead of need.
+- **Basic admin UI**: `(app)/dashboard/admin/module-instances` —
+  HOSPITAL_ADMIN only (`moduleinstance:manage`/`:read`, satisfied only by
+  the `"*"` wildcard role, same as every other admin-only nav entry),
+  `tenantTypes: ["HOSPITAL"]` (a solo tenant has exactly one instance of
+  its one module by definition — nothing here for it to manage, same
+  reasoning as Staff Management). Deliberately plain — list instances per
+  module, a name input to add one, suspend/reactivate/archive buttons.
+  The polished version is a later phase.
+- **RBAC**: `moduleinstance:read`/`moduleinstance:manage` — no `rbac.js`
+  array changes were needed; both actions are satisfied only by the `"*"`
+  wildcard `SUPER_ADMIN`/`HOSPITAL_ADMIN` already carry.
+
+## Module Connection Center — data model + basic foundation (Phase 3)
+
+The first-class MODULE CONNECTION concept the audit found completely
+missing. A connection is an explicit, approved, revocable relationship
+between two `module_instances`, carrying exactly which fields of which
+data contract cross the boundary — never "share everything." This phase
+is the data model, service layer, authorization and lifecycle; the full
+authenticator-style UX (select source → target → review data → authorize
+→ connected) is a later phase — see the two client components' own
+comments for exactly what's basic-foundation-only here.
+
+- **Same-tenant only, this phase** — `requestConnection()` resolves both
+  instances through `tenantDb` (auto tenant-scoped), so a cross-tenant
+  instance id simply isn't found: 404, never a distinct "wrong tenant"
+  response, the same no-enumeration discipline as everywhere else in this
+  codebase. Migration 024's own comment documents why the schema doesn't
+  *block* a future cross-tenant case (a standalone Pharmacy serving a
+  Hospital) — `module_connections.tenant_id` is independent of the two
+  instances' own tenant_ids specifically so that's addable later without a
+  schema change — but no route in this phase creates or approves one.
+- **`src/lib/dataContracts.js`** — the code-defined contract catalog,
+  the exact same "core shape is code, selection is tenant data" split
+  `form_templates`/`CORE_FIELDS` already established for registration
+  forms. Two contract types exist: `PRESCRIPTION_FULFILLMENT`
+  (DOCTOR_OPD → PHARMACY) and `LAB_ORDER_ROUTING` (DOCTOR_OPD → LAB) — each
+  declares its full field list, an explicit `restrictedFields` list (shown
+  in the UI as what's deliberately excluded, e.g. diagnosis/medical
+  history/private notes), and `defaultActions`. `sanitizeGrant()` is what
+  makes a connection's stored `allowed_fields`/`permissions` trustworthy —
+  it filters whatever a caller asks for down to only what the contract
+  actually declares, so a client can never smuggle in an undeclared field
+  or action.
+- **Lifecycle**: `PENDING → ACTIVE` (approve) `→ PAUSED/SUSPENDED → ACTIVE`
+  or `→ REVOKED` (terminal) — `ALLOWED_TRANSITIONS` in
+  `moduleConnections.js` is the one place this graph is defined; every
+  transition is rejected with 409 `invalid_transition` if it isn't a legal
+  edge, and every legal transition writes an append-only
+  `module_connection_events` row (from/to status, actor, note) — "the log
+  IS the audit trail," the same pattern already used for `bed_transfers`/
+  `pharmacy_stock_movements`/`token_overrides`. A `REVOKED` connection's
+  full history stays reconstructable forever; nothing is ever deleted.
+- **A connection alone never means unlimited access** — `allowed_fields`
+  and `permissions` are stored per-connection (JSON text — MariaDB's JSON
+  type is LONGTEXT under a CHECK constraint, same as `patients.
+  custom_fields`), validated against the contract's declared set at write
+  time, not just at read time.
+- **Basic admin UI**: `(app)/dashboard/admin/module-connections` — same
+  HOSPITAL_ADMIN-only, `tenantTypes: ["HOSPITAL"]` gating as module
+  instances. A connection-type picker shows the contract's field list and
+  restricted-field list inline before the admin requests it, source/target
+  dropdowns are filtered to `ACTIVE` instances of the contract's declared
+  modules, and each existing connection shows its status pill plus the
+  legal next actions for that status.
+- **RBAC**: `moduleconnection:read`/`moduleconnection:manage` — same "*"
+  wildcard-only shape as module instances, no `rbac.js` changes needed.
+
 ## Dashboard overview — improved
 
 `(app)/dashboard` (the landing page after login) went from a near-empty

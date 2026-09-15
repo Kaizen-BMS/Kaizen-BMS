@@ -248,16 +248,19 @@ model patients {
 model pharmacy_stock {
   id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
   tenant_id                BigInt                     @db.UnsignedBigInt
+  module_instance_id       BigInt?                    @db.UnsignedBigInt
   medicine_name            String
   batch_number             String?
   expiry_date              DateTime?                  @db.Date
   quantity                 Int                        @default(0)
+  module_instances         module_instances?          @relation(fields: [module_instance_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_pharmacy_stock_instance")
   tenants                  tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_stock_tenant")
   pharmacy_stock_movements pharmacy_stock_movements[]
 
-  @@unique([tenant_id, medicine_name, batch_number], map: "uq_pharmacy_stock_batch")
+  @@unique([tenant_id, module_instance_id, medicine_name, batch_number], map: "uq_pharmacy_stock_instance_batch")
   @@index([tenant_id], map: "idx_stock_hospital")
   @@index([tenant_id, medicine_name], map: "idx_stock_hospital_medicine")
+  @@index([module_instance_id], map: "idx_pharmacy_stock_instance")
 }
 
 model pharmacy_stock_movements {
@@ -409,6 +412,8 @@ model tenants {
   form_templates           form_templates[]
   lab_orders               lab_orders[]
   leave_requests           leave_requests[]
+  module_connections       module_connections[]
+  module_instances         module_instances[]
   nursing_notes            nursing_notes[]
   patient_insurance        patient_insurance[]
   patients                 patients[]
@@ -429,37 +434,41 @@ model tenants {
 }
 
 model users {
-  id                                               BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id                                        BigInt?                    @db.UnsignedBigInt
-  name                                             String
-  email                                            String
-  password_hash                                    String                     @db.VarChar(255)
-  role                                             users_role
-  created_at                                       DateTime                   @default(now())
-  admissions                                       admissions[]
-  appointments                                     appointments[]
-  attendance_logs                                  attendance_logs[]
-  bed_transfers                                    bed_transfers[]
-  bills                                            bills[]
-  consent_forms                                    consent_forms[]
-  consultations                                    consultations[]
-  discounts                                        discounts[]
-  doctor_slots                                     doctor_slots[]
-  duty_shifts_duty_shifts_created_byTousers        duty_shifts[]              @relation("duty_shifts_created_byTousers")
-  duty_shifts_duty_shifts_user_idTousers           duty_shifts[]              @relation("duty_shifts_user_idTousers")
-  leave_requests_leave_requests_approved_byTousers leave_requests[]           @relation("leave_requests_approved_byTousers")
-  leave_requests_leave_requests_user_idTousers     leave_requests[]           @relation("leave_requests_user_idTousers")
-  nursing_notes                                    nursing_notes[]
-  patient_insurance                                patient_insurance[]
-  payments                                         payments[]
-  pharmacy_stock_movements                         pharmacy_stock_movements[]
-  prescription_item_acks                           prescription_item_acks[]
-  print_branding                                   print_branding[]
-  refunds                                          refunds[]
-  staff_profiles                                   staff_profiles?
-  token_overrides                                  token_overrides[]
-  tenants                                          tenants?                   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_users_tenant")
-  visits                                           visits[]
+  id                                                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                                                BigInt?                    @db.UnsignedBigInt
+  name                                                     String
+  email                                                    String
+  password_hash                                            String                     @db.VarChar(255)
+  role                                                     users_role
+  created_at                                               DateTime                   @default(now())
+  admissions                                               admissions[]
+  appointments                                             appointments[]
+  attendance_logs                                          attendance_logs[]
+  bed_transfers                                            bed_transfers[]
+  bills                                                    bills[]
+  consent_forms                                            consent_forms[]
+  consultations                                            consultations[]
+  discounts                                                discounts[]
+  doctor_slots                                             doctor_slots[]
+  duty_shifts_duty_shifts_created_byTousers                duty_shifts[]              @relation("duty_shifts_created_byTousers")
+  duty_shifts_duty_shifts_user_idTousers                   duty_shifts[]              @relation("duty_shifts_user_idTousers")
+  leave_requests_leave_requests_approved_byTousers         leave_requests[]           @relation("leave_requests_approved_byTousers")
+  leave_requests_leave_requests_user_idTousers             leave_requests[]           @relation("leave_requests_user_idTousers")
+  module_connection_events                                 module_connection_events[]
+  module_connections_module_connections_approved_byTousers module_connections[]       @relation("module_connections_approved_byTousers")
+  module_connections_module_connections_created_byTousers  module_connections[]       @relation("module_connections_created_byTousers")
+  module_instances                                         module_instances[]
+  nursing_notes                                            nursing_notes[]
+  patient_insurance                                        patient_insurance[]
+  payments                                                 payments[]
+  pharmacy_stock_movements                                 pharmacy_stock_movements[]
+  prescription_item_acks                                   prescription_item_acks[]
+  print_branding                                           print_branding[]
+  refunds                                                  refunds[]
+  staff_profiles                                           staff_profiles?
+  token_overrides                                          token_overrides[]
+  tenants                                                  tenants?                   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_users_tenant")
+  visits                                                   visits[]
 
   @@unique([tenant_id, email], map: "uq_users_hospital_email")
   @@index([tenant_id], map: "idx_users_hospital")
@@ -808,6 +817,75 @@ model patient_insurance {
   @@index([tenant_id], map: "idx_patient_insurance_tenant")
 }
 
+model module_connection_events {
+  id                 BigInt                                @id @default(autoincrement()) @db.UnsignedBigInt
+  connection_id      BigInt                                @db.UnsignedBigInt
+  from_status        module_connection_events_from_status?
+  to_status          module_connection_events_to_status
+  actor_user_id      BigInt?                               @db.UnsignedBigInt
+  note               String?                               @db.VarChar(500)
+  created_at         DateTime                              @default(now()) @db.DateTime(0)
+  users              users?                                @relation(fields: [actor_user_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_module_connection_events_actor")
+  module_connections module_connections                    @relation(fields: [connection_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_module_connection_events_connection")
+
+  @@index([actor_user_id], map: "fk_module_connection_events_actor")
+  @@index([connection_id], map: "idx_module_connection_events_connection")
+}
+
+model module_connections {
+  id                                                                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                                                                BigInt                     @db.UnsignedBigInt
+  source_instance_id                                                       BigInt                     @db.UnsignedBigInt
+  target_instance_id                                                       BigInt                     @db.UnsignedBigInt
+  connection_type                                                          String                     @db.VarChar(64)
+  status                                                                   module_connections_status  @default(PENDING)
+  allowed_fields                                                           String?                    @db.LongText
+  permissions                                                              String?                    @db.LongText
+  created_by                                                               BigInt                     @db.UnsignedBigInt
+  approved_by                                                              BigInt?                    @db.UnsignedBigInt
+  approved_at                                                              DateTime?                  @db.DateTime(0)
+  created_at                                                               DateTime                   @default(now()) @db.DateTime(0)
+  updated_at                                                               DateTime                   @default(now()) @db.DateTime(0)
+  module_connection_events                                                 module_connection_events[]
+  users_module_connections_approved_byTousers                              users?                     @relation("module_connections_approved_byTousers", fields: [approved_by], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_module_connections_approved_by")
+  users_module_connections_created_byTousers                               users                      @relation("module_connections_created_byTousers", fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_module_connections_created_by")
+  module_instances_module_connections_source_instance_idTomodule_instances module_instances           @relation("module_connections_source_instance_idTomodule_instances", fields: [source_instance_id], references: [id], onUpdate: Restrict, map: "fk_module_connections_source")
+  module_instances_module_connections_target_instance_idTomodule_instances module_instances           @relation("module_connections_target_instance_idTomodule_instances", fields: [target_instance_id], references: [id], onUpdate: Restrict, map: "fk_module_connections_target")
+  tenants                                                                  tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_module_connections_tenant")
+
+  @@unique([source_instance_id, target_instance_id, connection_type], map: "uq_module_connections_pair_type")
+  @@index([approved_by], map: "fk_module_connections_approved_by")
+  @@index([created_by], map: "fk_module_connections_created_by")
+  @@index([source_instance_id], map: "idx_module_connections_source")
+  @@index([target_instance_id], map: "idx_module_connections_target")
+  @@index([tenant_id], map: "idx_module_connections_tenant")
+}
+
+model module_instances {
+  id                                                                         BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                                                                  BigInt                       @db.UnsignedBigInt
+  module_name                                                                module_instances_module_name
+  name                                                                       String
+  status                                                                     module_instances_status      @default(ACTIVE)
+  is_default                                                                 Boolean                      @default(false)
+  configuration                                                              String?                      @db.LongText
+  created_by                                                                 BigInt?                      @db.UnsignedBigInt
+  created_at                                                                 DateTime                     @default(now()) @db.DateTime(0)
+  updated_at                                                                 DateTime                     @default(now()) @db.DateTime(0)
+  default_slot                                                               Int?                         @db.UnsignedTinyInt
+  module_connections_module_connections_source_instance_idTomodule_instances module_connections[]         @relation("module_connections_source_instance_idTomodule_instances")
+  module_connections_module_connections_target_instance_idTomodule_instances module_connections[]         @relation("module_connections_target_instance_idTomodule_instances")
+  users                                                                      users?                       @relation(fields: [created_by], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_module_instances_created_by")
+  tenants                                                                    tenants                      @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_module_instances_tenant")
+  pharmacy_stock                                                             pharmacy_stock[]
+
+  @@unique([tenant_id, module_name, default_slot], map: "uq_module_instances_tenant_module_default")
+  @@unique([tenant_id, module_name, name], map: "uq_module_instances_tenant_module_name")
+  @@index([created_by], map: "fk_module_instances_created_by")
+  @@index([tenant_id], map: "idx_module_instances_tenant")
+  @@index([tenant_id, module_name], map: "idx_module_instances_tenant_module")
+}
+
 enum beds_ward_type {
   GENERAL
   PRIVATE
@@ -998,4 +1076,43 @@ enum patient_insurance_payment_category {
   GOVERNMENT_SCHEME
   AYUSHMAN_BHARAT
   OTHER
+}
+
+enum module_connection_events_from_status {
+  PENDING
+  ACTIVE
+  PAUSED
+  SUSPENDED
+  REVOKED
+}
+
+enum module_instances_module_name {
+  PHARMACY
+  DOCTOR_OPD
+  LAB
+  BILLING
+  IPD
+  APPOINTMENTS
+}
+
+enum module_connection_events_to_status {
+  PENDING
+  ACTIVE
+  PAUSED
+  SUSPENDED
+  REVOKED
+}
+
+enum module_instances_status {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum module_connections_status {
+  PENDING
+  ACTIVE
+  PAUSED
+  SUSPENDED
+  REVOKED
 }

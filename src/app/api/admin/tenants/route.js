@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prismaClient";
 import { hashPassword } from "@/lib/auth";
 import { TENANT_TYPES, SOLO_TYPE_MODULE, SOLO_TYPE_OWNER_ROLE } from "@/lib/tenants";
 import { MODULE_NAMES } from "@/lib/modules";
+import { MODULE_LABEL } from "@/lib/moduleInstances";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,12 @@ export const POST = apiRoute("tenant:manage", async (request) => {
     for (const m of modules) {
       await tx.tenant_modules.create({
         data: { tenant_id: tenant.id, module_name: m, is_active: true },
+      });
+      // Phase 2 of the platform rebuild: every module a tenant is
+      // provisioned with gets its default module_instances row up front,
+      // so nothing downstream ever has to lazily discover a missing one.
+      await tx.module_instances.create({
+        data: { tenant_id: tenant.id, module_name: m, name: MODULE_LABEL[m] || m, status: "ACTIVE", is_default: true },
       });
     }
     const owner = await tx.users.create({

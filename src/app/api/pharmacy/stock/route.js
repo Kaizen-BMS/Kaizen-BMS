@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
+import { resolveInstance } from "@/lib/moduleInstances";
 import { emitToModule } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
@@ -16,18 +17,25 @@ const createSchema = z.object({
     .optional()
     .or(z.literal("")),
   quantity: z.coerce.number().int().min(1).max(1_000_000),
+  // Optional — omitted (as every existing caller does today) resolves to
+  // the tenant's default Pharmacy instance, so this is fully backward
+  // compatible. See CLAUDE.md "Platform rebuild — Phase 2".
+  moduleInstanceId: z.coerce.number().int().positive().optional(),
 });
 
 // Stock-IN — receive new stock into a batch. Adding to an existing
 // (medicine, batch) increments its quantity rather than creating a
-// duplicate row.
+// duplicate row. Batches are scoped per Pharmacy module_instance — two
+// instances stocking the same medicine name + batch number are two
+// separate rows, never merged.
 export const POST = apiRoute("stock:create", async (request, { session }) => {
   const body = await parseBody(request, createSchema);
   const expiry = body.expiryDate || null;
+  const instance = await resolveInstance(tenantDb, session.tenantId, "PHARMACY", body.moduleInstanceId);
 
   const stockId = await tenantDb.$transaction(async (tx) => {
     const existing = await tx.pharmacy_stock.findFirst({
-      where: { medicine_name: body.medicineName, batch_number: body.batchNumber },
+      where: { medicine_name: body.medicineName, batch_number: body.batchNumber, module_instance_id: instance.id },
       select: { id: true },
     });
     let id;
@@ -47,6 +55,7 @@ export const POST = apiRoute("stock:create", async (request, { session }) => {
           batch_number: body.batchNumber,
           expiry_date: expiry ? new Date(expiry) : null,
           quantity: body.quantity,
+          module_instance_id: instance.id,
         },
       });
       id = created.id;

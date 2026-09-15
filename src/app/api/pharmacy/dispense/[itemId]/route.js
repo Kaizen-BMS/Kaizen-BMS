@@ -3,18 +3,27 @@ import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { requireTenantId } from "@/lib/requestContext";
+import { resolveInstance } from "@/lib/moduleInstances";
 import { emitToModule, emitToTenant } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
 
 const dispenseSchema = z.object({
   quantity: z.coerce.number().int().min(1).optional(),
+  // Optional — omitted (every existing caller today) resolves to the
+  // tenant's default Pharmacy instance, exactly today's behavior. Real
+  // prescription-to-instance routing (which pharmacy a given prescription
+  // should draw from) is deferred to when Module Connections actually
+  // carry that routing — see CLAUDE.md "Platform rebuild — Phase 2".
+  moduleInstanceId: z.coerce.number().int().positive().optional(),
 });
 
 // FEFO dispensing: consumes the item's remaining quantity from whichever
 // non-expired batches of that medicine run out soonest, oldest-expiry
-// first, across as many batches as it takes. Partial dispensing is allowed
-// when stock falls short — never a strict all-or-nothing block.
+// first, across as many batches as it takes, WITHIN ONE Pharmacy
+// module_instance — never drawing from another instance's stock. Partial
+// dispensing is allowed when stock falls short — never a strict
+// all-or-nothing block.
 export const POST = apiRoute("dispense:create", async (request, ctx) => {
   const { itemId } = await ctx.params;
   const id = BigInt(itemId);
@@ -27,15 +36,17 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
   const outstanding = item.quantity - item.dispensed_quantity;
   if (outstanding <= 0) throw new HttpError(400, "already fully dispensed");
   const requested = Math.min(body.quantity ?? outstanding, outstanding);
+  const instance = await resolveInstance(tenantDb, ctx.session.tenantId, "PHARMACY", body.moduleInstanceId);
 
   const result = await tenantDb.$transaction(async (tx) => {
     const batches = await tx.$queryRawUnsafe(
       `SELECT * FROM pharmacy_stock
-        WHERE tenant_id = ? AND medicine_name = ? AND quantity > 0
+        WHERE tenant_id = ? AND module_instance_id = ? AND medicine_name = ? AND quantity > 0
           AND (expiry_date IS NULL OR expiry_date >= CURDATE())
         ORDER BY (expiry_date IS NULL) ASC, expiry_date ASC, id ASC
         FOR UPDATE`,
       BigInt(tid),
+      instance.id,
       item.medicine_name,
     );
 
