@@ -12,7 +12,7 @@ export default function Hero() {
           vertically on the section (top-1/2 + -translate-y-1/2) instead of
           pinned to the top, and pulled in from the edge instead of
           bleeding off-screen. */}
-      <div className="pointer-events-none absolute -right-16 top-1/2 h-52 w-52 -translate-y-1/2 opacity-70 sm:h-64 sm:w-64 md:-right-8 md:h-96 md:w-96 md:opacity-90 lg:right-[6%] lg:h-120 lg:w-105 lg:opacity-100">
+      <div className="pointer-events-none absolute -right-20 top-1/2 h-48 w-64 -translate-y-1/2 opacity-70 sm:h-56 sm:w-76 md:-right-10 md:h-72 md:w-96 md:opacity-90 lg:right-[2%] lg:h-90 lg:w-130 lg:opacity-100">
         <GrowthGraphic className="h-full w-full" />
       </div>
 

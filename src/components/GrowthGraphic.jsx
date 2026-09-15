@@ -1,108 +1,257 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CyanBlob, NodeDot } from "./graphics/primitives";
+import { INK, LINE, ACCENT, ACCENT_2 } from "./graphics/primitives";
 
 /**
- * The homepage hero visual, v3. v1 (ascending bars) read as a flat
- * infographic; v2 (a dashboard-panel mockup) read as a foreign UI
- * screenshot glued onto an editorial, line-art page — it didn't blend.
- * This version keeps the same visual DNA as the original OrbitalGraphic
- * (soft blob + thin rotating orbit rings + small node dots — nobody
- * disliked how that one LOOKED, only that it had no meaning) and adds
- * exactly one legible element on top: a single flowing line rising from
- * lower-left to upper-right through the rings, ending in a glowing point —
- * "Small Improvements" (the gentle climb, small waypoint nodes along it)
- * arriving at "Extraordinary Results" (the bright endpoint). Still custom
- * SVG/CSS only, thin strokes, calm motion — no boxes, no shadows, no UI
- * chrome that would look pasted on top of the page.
+ * The homepage hero visual, v4 — a dense "data/systems" collage (per an
+ * owner-supplied reference image: a tech-dashboard illustration with a
+ * central 3D hex core surrounded by small chart/grid/radar widgets), but
+ * hand-built as custom SVG in this site's own palette rather than the
+ * reference's literal gray/orange stock-illustration colors — the design
+ * system requires custom SVG only, no stock imagery, so this reproduces
+ * the COMPOSITION (a busy ring of small abstract data widgets around one
+ * glowing center), not the source pixels. Every widget below is a small,
+ * self-contained group so the whole thing stays legible to edit later.
  */
 
-const ACCENT = "#08DCDC";
+const w = { stroke: INK, opacity: 0.28 };
 
-const FLOW_PATH =
-  "M110,470 C160,440 190,380 230,360 C270,340 290,300 320,280 " +
-  "C360,255 380,210 420,185 C455,163 465,140 490,110";
+/** A jagged connected-dot line, like a small stock/analytics chart. */
+function ZigzagChart({ x, y }) {
+  const pts = [
+    [0, 34], [16, 20], [32, 26], [48, 8], [64, 16], [80, 2], [96, 12],
+  ];
+  const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0]},${p[1]}`).join(" ");
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <path d={d} fill="none" stroke={w.stroke} strokeOpacity={w.opacity} strokeWidth="1" />
+      {pts.map((p, i) => (
+        <circle key={i} cx={p[0]} cy={p[1]} r={i === 4 ? 2.5 : 1.6} fill={i === 4 ? ACCENT : INK} fillOpacity={i === 4 ? 1 : 0.4} />
+      ))}
+    </g>
+  );
+}
 
-const WAYPOINTS = [
-  { cx: 150, cy: 428 },
-  { cx: 260, cy: 330 },
-  { cx: 380, cy: 220 },
-];
+/** A small equalizer-style bar cluster, uneven heights. */
+function EqBars({ x, y, heights = [10, 18, 8, 22, 14, 26, 12] }) {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {heights.map((h, i) => (
+        <rect key={i} x={i * 7} y={26 - h} width="3" height={h} fill={INK} fillOpacity="0.18" />
+      ))}
+    </g>
+  );
+}
+
+function DashedCircle({ x, y, r, color = LINE }) {
+  return <circle cx={x} cy={y} r={r} fill="none" stroke={color} strokeWidth="1" strokeDasharray="2 5" opacity="0.6" />;
+}
+
+/** A couple of overlapping thin circles — reads as a quiet Venn/scope glyph. */
+function OverlapCircles({ x, y }) {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <circle cx="0" cy="0" r="22" fill="none" stroke={INK} strokeOpacity="0.2" strokeWidth="1" />
+      <circle cx="18" cy="6" r="14" fill="none" stroke={ACCENT_2} strokeOpacity="0.4" strokeWidth="1" />
+    </g>
+  );
+}
+
+/** A handful of scattered nodes with thin connecting lines. */
+function MiniScatter({ x, y }) {
+  const pts = [[0, 30], [26, 10], [46, 34], [70, 4], [88, 22]];
+  const edges = [[0, 1], [1, 2], [1, 3], [3, 4]];
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {edges.map(([a, b], i) => (
+        <line key={i} x1={pts[a][0]} y1={pts[a][1]} x2={pts[b][0]} y2={pts[b][1]} stroke={INK} strokeOpacity="0.18" strokeWidth="1" />
+      ))}
+      {pts.map((p, i) => (
+        <circle key={i} cx={p[0]} cy={p[1]} r={i === 3 ? 3 : 2} fill={i === 3 ? ACCENT : INK} fillOpacity={i === 3 ? 1 : 0.4} />
+      ))}
+    </g>
+  );
+}
+
+/** Numbered data rows — a tiny square marker, a thin bar, a "01"-style index. */
+function NumberedRows({ x, y, start = 1, count = 5 }) {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {Array.from({ length: count }).map((_, i) => (
+        <g key={i} transform={`translate(0,${i * 15})`}>
+          <rect x="0" y="0" width="6" height="6" fill="none" stroke={INK} strokeOpacity="0.3" strokeWidth="1" />
+          <rect x="14" y="2" width={40 - i * 3} height="2" fill={i === 1 ? ACCENT : INK} fillOpacity={i === 1 ? 0.8 : 0.18} />
+          <text x="90" y="6" fontSize="7" fill={INK} fillOpacity="0.3" fontFamily="var(--font-body)">
+            {String(start + i).padStart(2, "0")}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
+/** A quiet grid of small squares — a couple filled, most just outlined. */
+function SquareGrid({ x, y, rows = 2, cols = 4, filled = [1, 5] }) {
+  const cells = [];
+  let idx = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      cells.push(
+        <rect
+          key={idx}
+          x={c * 16}
+          y={r * 16}
+          width="12"
+          height="12"
+          fill={filled.includes(idx) ? ACCENT_2 : "none"}
+          fillOpacity={filled.includes(idx) ? 0.35 : 1}
+          stroke={INK}
+          strokeOpacity="0.2"
+          strokeWidth="1"
+        />,
+      );
+      idx++;
+    }
+  }
+  return <g transform={`translate(${x},${y})`}>{cells}</g>;
+}
+
+/** A row of small diamond outlines. */
+function DiamondRow({ x, y, count = 5, gap = 22 }) {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {Array.from({ length: count }).map((_, i) => (
+        <rect
+          key={i}
+          x={i * gap}
+          y="0"
+          width="10"
+          height="10"
+          fill="none"
+          stroke={INK}
+          strokeOpacity="0.22"
+          strokeWidth="1"
+          transform={`rotate(45 ${i * gap + 5} 5)`}
+        />
+      ))}
+    </g>
+  );
+}
+
+/** Concentric "radar" rings — the collage's stand-in for the reference's radiating-triangle clusters. */
+function RadarRings({ x, y, sizes = [8, 16, 24, 32] }) {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {sizes.map((r, i) => (
+        <circle key={i} cx="0" cy="0" r={r} fill="none" stroke={INK} strokeOpacity={0.28 - i * 0.05} strokeWidth="1" />
+      ))}
+      <circle cx="0" cy="0" r="2" fill={ACCENT} />
+    </g>
+  );
+}
+
+/** The center of the whole graphic: an isometric hex "block" with a glowing core cell, orbited by a couple of slow dashed rings. */
+function HexCore({ cx, cy, size = 78 }) {
+  const top = [[0, -size], [size * 0.87, -size * 0.5], [size * 0.87, size * 0.5], [0, size], [-size * 0.87, size * 0.5], [-size * 0.87, -size * 0.5]];
+  const topFace = `M${top.map((p) => p.join(",")).join(" L")} Z`;
+  return (
+    <g transform={`translate(${cx},${cy})`}>
+      <motion.g
+        animate={{ rotate: 360 }}
+        transition={{ duration: 70, repeat: Infinity, ease: "linear" }}
+        style={{ transformOrigin: "0px 0px" }}
+      >
+        <circle r={size * 1.55} fill="none" stroke={LINE} strokeWidth="1" strokeDasharray="1 8" />
+      </motion.g>
+      <motion.g
+        animate={{ rotate: -360 }}
+        transition={{ duration: 95, repeat: Infinity, ease: "linear" }}
+        style={{ transformOrigin: "0px 0px" }}
+      >
+        <circle r={size * 1.25} fill="none" stroke={LINE} strokeWidth="1" />
+      </motion.g>
+
+      <path d={topFace} fill="var(--kbms-bg)" stroke={INK} strokeOpacity="0.25" strokeWidth="1.25" />
+      <path d={`M0,-${size} L${size * 0.87},-${size * 0.5} L${size * 0.87},${size * 0.5} L0,0 Z`} fill={INK} fillOpacity="0.06" />
+      <path d={`M0,-${size} L${-size * 0.87},-${size * 0.5} L${-size * 0.87},${size * 0.5} L0,0 Z`} fill={INK} fillOpacity="0.03" />
+
+      <motion.circle
+        r={size * 0.22}
+        fill={ACCENT}
+        initial={{ opacity: 0.7 }}
+        animate={{ opacity: [0.7, 1, 0.7], scale: [1, 1.08, 1] }}
+        transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+      />
+    </g>
+  );
+}
 
 export default function GrowthGraphic({ className = "" }) {
   return (
-    <div className={`relative select-none ${className}`} aria-hidden="true">
-      {/* cyan organic field, very slow morph + float — same as the original */}
-      <div className="absolute inset-0 kbms-float">
-        <CyanBlob className="h-full w-full" opacity={0.5} />
-      </div>
+    <motion.div
+      className={`relative select-none ${className}`}
+      aria-hidden="true"
+      initial="hidden"
+      animate="show"
+      variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08, delayChildren: 0.15 } } }}
+    >
+      <svg viewBox="0 0 900 620" className="h-full w-full overflow-visible">
+        {/* quiet dotted-grid texture, same restrained density as DataPoints elsewhere */}
+        <g opacity="0.5">
+          {Array.from({ length: 14 }).map((_, r) =>
+            Array.from({ length: 20 }).map((_, c) => (
+              <circle key={`${r}-${c}`} cx={20 + c * 46} cy={16 + r * 46} r="1" fill={LINE} />
+            )),
+          )}
+        </g>
 
-      {/* orbital rings, slow independent rotation — same visual language as
-          every other abstract graphic on this site */}
-      <motion.svg
-        viewBox="0 0 600 600"
-        className="absolute inset-0 h-full w-full"
-        style={{ transformOrigin: "300px 300px" }}
-        animate={{ rotate: 360 }}
-        transition={{ duration: 100, repeat: Infinity, ease: "linear" }}
-      >
-        <circle cx="300" cy="300" r="230" fill="none" stroke="var(--kbms-ink)" strokeOpacity="0.12" strokeWidth="1" />
-        <circle cx="300" cy="300" r="170" fill="none" stroke="var(--kbms-ink)" strokeOpacity="0.18" strokeWidth="1" strokeDasharray="1 7" />
-      </motion.svg>
+        <motion.g variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
+          <ZigzagChart x={40} y={40} />
+          <EqBars x={40} y={120} />
+          <DashedCircle x={210} y={70} r={26} />
+        </motion.g>
 
-      {/* the one meaningful line: a gentle climb through the rings, ending
-          in a glowing result — drawn once on load, then settles */}
-      <svg viewBox="0 0 600 600" className="absolute inset-0 h-full w-full">
-        <motion.path
-          d={FLOW_PATH}
-          fill="none"
-          stroke={ACCENT}
-          strokeWidth="2"
-          strokeLinecap="round"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 0.9 }}
-          transition={{ duration: 2.2, delay: 0.3, ease: "easeInOut" }}
-        />
+        <motion.g variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
+          <OverlapCircles x={330} y={70} />
+        </motion.g>
 
-        {WAYPOINTS.map((p, i) => (
-          <motion.circle
-            key={i}
-            cx={p.cx}
-            cy={p.cy}
-            r="3.5"
-            fill="var(--kbms-ink)"
-            fillOpacity="0.55"
-            initial={{ opacity: 0, scale: 0 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.6 + i * 0.55 }}
-          />
-        ))}
+        <motion.g variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
+          <OverlapCircles x={700} y={70} />
+          <MiniScatter x={720} y={110} />
+        </motion.g>
 
-        {/* the result — a calm, slow pulse at the line's end */}
-        <motion.circle
-          cx="490"
-          cy="110"
-          r="6"
-          fill={ACCENT}
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.5, delay: 2.4, ease: "easeOut" }}
-        />
-        <motion.circle
-          cx="490"
-          cy="110"
-          r="6"
-          fill="none"
-          stroke={ACCENT}
-          strokeWidth="1"
-          initial={{ scale: 1, opacity: 0.6 }}
-          animate={{ scale: [1, 2.6], opacity: [0.6, 0] }}
-          transition={{ duration: 2.4, delay: 2.6, repeat: Infinity, ease: "easeOut" }}
-        />
+        <motion.g variants={{ hidden: { opacity: 0, x: -10 }, show: { opacity: 1, x: 0 } }} transition={{ duration: 0.5 }}>
+          <NumberedRows x={40} y={260} />
+        </motion.g>
+
+        <motion.g variants={{ hidden: { opacity: 0, x: 10 }, show: { opacity: 1, x: 0 } }} transition={{ duration: 0.5 }}>
+          <SquareGrid x={700} y={250} />
+          <EqBars x={700} y={300} heights={[16, 8, 20, 10, 24, 12, 18]} />
+        </motion.g>
+
+        <motion.g variants={{ hidden: { opacity: 0, y: -10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
+          <RadarRings x={100} y={460} />
+          <DiamondRow x={40} y={540} />
+        </motion.g>
+
+        <motion.g variants={{ hidden: { opacity: 0, y: -10 }, show: { opacity: 1, y: 0 } }} transition={{ duration: 0.5 }}>
+          <RadarRings x={780} y={480} sizes={[6, 12, 18]} />
+          <NumberedRows x={660} y={430} count={2} />
+          <SquareGrid x={660} y={500} rows={1} cols={3} filled={[0]} />
+        </motion.g>
+
+        <motion.g variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1 } }} transition={{ duration: 0.6 }}>
+          <DiamondRow x={370} y={500} count={4} />
+        </motion.g>
+
+        <motion.g
+          variants={{ hidden: { opacity: 0, scale: 0.85 }, show: { opacity: 1, scale: 1 } }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <HexCore cx={450} cy={320} />
+        </motion.g>
       </svg>
-
-      <NodeDot r={3} className="absolute bottom-[18%] left-[22%] opacity-70" />
-    </div>
+    </motion.div>
   );
 }
