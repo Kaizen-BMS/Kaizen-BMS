@@ -213,30 +213,31 @@ model nursing_notes {
 }
 
 model patients {
-  id                 BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id          BigInt            @db.UnsignedBigInt
+  id                 BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id          BigInt             @db.UnsignedBigInt
   name               String
-  age                Int?              @db.UnsignedSmallInt
+  age                Int?               @db.UnsignedSmallInt
   gender             patients_gender?
-  phone              String?           @db.VarChar(32)
+  phone              String?            @db.VarChar(32)
   email              String?
-  otp_code_hash      String?           @db.VarChar(255)
+  otp_code_hash      String?            @db.VarChar(255)
   otp_expires_at     DateTime?
   otp_requested_at   DateTime?
-  otp_attempts       Int               @default(0) @db.UnsignedTinyInt
-  custom_fields      String?           @db.LongText
-  allergies          String?           @db.LongText
-  abha_id            String?           @db.VarChar(64)
-  referral_source_id BigInt?           @db.UnsignedBigInt
-  created_at         DateTime          @default(now())
+  otp_attempts       Int                @default(0) @db.UnsignedTinyInt
+  custom_fields      String?            @db.LongText
+  allergies          String?            @db.LongText
+  abha_id            String?            @db.VarChar(64)
+  referral_source_id BigInt?            @db.UnsignedBigInt
+  created_at         DateTime           @default(now())
   appointments       appointments[]
   bills              bills[]
   consultations      consultations[]
   feedback           feedback[]
   follow_ups         follow_ups[]
   lab_orders         lab_orders[]
-  referral_sources   referral_sources? @relation(fields: [referral_source_id], references: [id], onUpdate: Restrict, map: "fk_patients_referral_source")
-  tenants            tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_patients_tenant")
+  patient_insurance  patient_insurance?
+  referral_sources   referral_sources?  @relation(fields: [referral_source_id], references: [id], onUpdate: Restrict, map: "fk_patients_referral_source")
+  tenants            tenants            @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_patients_tenant")
   visits             visits[]
 
   @@index([tenant_id], map: "idx_patients_hospital")
@@ -409,6 +410,7 @@ model tenants {
   lab_orders               lab_orders[]
   leave_requests           leave_requests[]
   nursing_notes            nursing_notes[]
+  patient_insurance        patient_insurance[]
   patients                 patients[]
   pharmacy_stock           pharmacy_stock[]
   pharmacy_stock_movements pharmacy_stock_movements[]
@@ -448,6 +450,7 @@ model users {
   leave_requests_leave_requests_approved_byTousers leave_requests[]           @relation("leave_requests_approved_byTousers")
   leave_requests_leave_requests_user_idTousers     leave_requests[]           @relation("leave_requests_user_idTousers")
   nursing_notes                                    nursing_notes[]
+  patient_insurance                                patient_insurance[]
   payments                                         payments[]
   pharmacy_stock_movements                         pharmacy_stock_movements[]
   prescription_item_acks                           prescription_item_acks[]
@@ -779,6 +782,32 @@ model staff_profiles {
   @@index([tenant_id], map: "idx_staff_profiles_tenant")
 }
 
+model patient_insurance {
+  id                       BigInt                             @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                BigInt                             @db.UnsignedBigInt
+  patient_id               BigInt                             @unique(map: "uq_patient_insurance_patient") @db.UnsignedBigInt
+  payment_category         patient_insurance_payment_category @default(SELF_PAY)
+  payment_reference_number String?                            @db.VarChar(120)
+  insurance_available      Boolean                            @default(false)
+  insurance_company        String?
+  policy_number            String?                            @db.VarChar(120)
+  member_id                String?                            @db.VarChar(120)
+  tpa                      String?
+  valid_from               DateTime?                          @db.Date
+  valid_until              DateTime?                          @db.Date
+  insurance_card_upload    String?                            @db.MediumText
+  pre_auth_required        Boolean                            @default(false)
+  updated_by               BigInt?                            @db.UnsignedBigInt
+  created_at               DateTime                           @default(now()) @db.DateTime(0)
+  updated_at               DateTime                           @default(now()) @db.DateTime(0)
+  patients                 patients                           @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_patient_insurance_patient")
+  tenants                  tenants                            @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_patient_insurance_tenant")
+  users                    users?                             @relation(fields: [updated_by], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_patient_insurance_updated_by")
+
+  @@index([updated_by], map: "fk_patient_insurance_updated_by")
+  @@index([tenant_id], map: "idx_patient_insurance_tenant")
+}
+
 enum beds_ward_type {
   GENERAL
   PRIVATE
@@ -960,4 +989,13 @@ enum leave_requests_status {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum patient_insurance_payment_category {
+  SELF_PAY
+  INSURANCE
+  CORPORATE
+  GOVERNMENT_SCHEME
+  AYUSHMAN_BHARAT
+  OTHER
 }

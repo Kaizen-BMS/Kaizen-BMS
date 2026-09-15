@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import Icon from "@/components/hms/icons";
+import { compressImageToDataUrl as compressPhoto } from "@/components/hms/imageCompress";
 
 const STATUS_LABEL = {
   NOT_CHECKED_IN: "Not checked in",
@@ -25,31 +26,6 @@ function fmtMinutes(mins) {
   const h = Math.floor((mins || 0) / 60);
   const m = Math.round(mins || 0) % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-// No file/blob storage exists in this project yet, and a single compressed
-// snapshot fits comfortably in a MEDIUMTEXT column — so the photo is
-// resized/compressed to a small JPEG data URL client-side rather than
-// inventing upload infrastructure for this one feature.
-async function compressPhoto(file, maxWidth = 480, quality = 0.6) {
-  const dataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-  const img = await new Promise((resolve, reject) => {
-    const image = new window.Image();
-    image.onload = () => resolve(image);
-    image.onerror = reject;
-    image.src = dataUrl;
-  });
-  const scale = Math.min(1, maxWidth / img.width);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(img.width * scale);
-  canvas.height = Math.round(img.height * scale);
-  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", quality);
 }
 
 export default function AttendanceClient({ canProxy, canManageStaff }) {
@@ -248,7 +224,7 @@ function ProxyRoster({ canManageStaff }) {
     setPhotoTarget(null);
     if (!file || !target) return;
     try {
-      const photoDataUrl = await compressPhoto(file);
+      const photoDataUrl = await compressPhoto(file, 480);
       const url =
         target.action === "check-in" ? "/api/attendance/proxy/check-in" : "/api/attendance/proxy/check-out";
       await apiSend(url, "POST", { staffMemberId: target.memberId, photoDataUrl });

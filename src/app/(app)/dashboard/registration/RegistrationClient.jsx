@@ -6,6 +6,7 @@ import DynamicForm, { splitValues } from "@/components/hms/DynamicForm";
 import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
 import AllergyTagInput from "@/components/hms/AllergyTagInput";
+import InsuranceFields, { DEFAULT_INSURANCE } from "@/components/hms/InsuranceFields";
 import { parseMaybeJson } from "@/components/hms/json";
 import Link from "next/link";
 
@@ -16,6 +17,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
   const [values, setValues] = useState({});
   const [allergies, setAllergies] = useState([]);
   const [abhaId, setAbhaId] = useState("");
+  const [insurance, setInsurance] = useState(DEFAULT_INSURANCE);
   const [referralSourceId, setReferralSourceId] = useState("");
   const [referralSources, setReferralSources] = useState([]);
   const [queue, setQueue] = useState([]);
@@ -24,6 +26,9 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
   const [editingId, setEditingId] = useState(null);
   const [editAllergies, setEditAllergies] = useState([]);
   const [editEmail, setEditEmail] = useState("");
+  const [editingInsuranceId, setEditingInsuranceId] = useState(null);
+  const [editInsurance, setEditInsurance] = useState(DEFAULT_INSURANCE);
+  const [insuranceBusy, setInsuranceBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [flashIds, setFlashIds] = useState(new Set());
@@ -107,6 +112,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
         reason: core.reason || "",
         allergies,
         abhaId,
+        insurance,
         referralSourceId: referralSourceId || undefined,
         customFields: custom,
         openVisit: true,
@@ -117,6 +123,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
       setValues({});
       setAllergies([]);
       setAbhaId("");
+      setInsurance(DEFAULT_INSURANCE);
       setReferralSourceId("");
       setOverrideToken(false);
       setManualToken("");
@@ -195,6 +202,30 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
     }
   }
 
+  async function startEditInsurance(p) {
+    setEditingInsuranceId(p.id);
+    setEditInsurance(DEFAULT_INSURANCE);
+    try {
+      const { insurance: ins } = await apiGet(`/api/registration/patients/${p.id}/insurance`);
+      if (ins) setEditInsurance({ ...DEFAULT_INSURANCE, ...ins });
+    } catch (err) {
+      setMsg(err.message);
+    }
+  }
+
+  async function saveInsurance(id) {
+    setInsuranceBusy(true);
+    try {
+      await apiSend(`/api/registration/patients/${id}/insurance`, "PUT", editInsurance);
+      setEditingInsuranceId(null);
+      setMsg("Insurance / payment details saved.");
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setInsuranceBusy(false);
+    }
+  }
+
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_1fr]">
       <section className="space-y-6">
@@ -237,6 +268,14 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
                     className="text-xs text-slate-400 hover:text-slate-700"
                   >
                     edit allergies / email
+                  </button>
+                  <button
+                    onClick={() =>
+                      editingInsuranceId === p.id ? setEditingInsuranceId(null) : startEditInsurance(p)
+                    }
+                    className="text-xs text-slate-400 hover:text-slate-700"
+                  >
+                    edit insurance / payment
                   </button>
                   <button
                     onClick={() => newVisit(p.id)}
@@ -317,6 +356,26 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
                   </div>
                 </div>
               )}
+              {editingInsuranceId === p.id && (
+                <div className="mt-2 space-y-2">
+                  <InsuranceFields value={editInsurance} onChange={setEditInsurance} />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveInsurance(p.id)}
+                      disabled={insuranceBusy}
+                      className="rounded-md bg-[var(--hms-btn-bg)] px-2 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingInsuranceId(null)}
+                      className="text-xs text-slate-400"
+                    >
+                      cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </form>
@@ -345,6 +404,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
                   Used for India&apos;s digital health ID system — full integration coming later.
                 </span>
               </label>
+              <InsuranceFields value={insurance} onChange={setInsurance} />
               <label className="block space-y-1 text-sm">
                 <span className="font-medium">Referred by (optional)</span>
                 <select

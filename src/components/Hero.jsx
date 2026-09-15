@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import OrbitalGraphic from "./OrbitalGraphic";
+import GrowthGraphic from "./GrowthGraphic";
 import MaskedText from "./MaskedText";
 
 export default function Hero() {
@@ -12,8 +12,8 @@ export default function Hero() {
           vertically on the section (top-1/2 + -translate-y-1/2) instead of
           pinned to the top, and pulled in from the edge instead of
           bleeding off-screen. */}
-      <div className="pointer-events-none absolute -right-16 top-1/2 h-52 w-52 -translate-y-1/2 opacity-70 sm:h-64 sm:w-64 md:-right-8 md:h-96 md:w-96 md:opacity-90 lg:right-[4%] lg:h-[560px] lg:w-[560px] lg:opacity-100">
-        <OrbitalGraphic className="h-full w-full" />
+      <div className="pointer-events-none absolute -right-16 top-1/2 h-52 w-52 -translate-y-1/2 opacity-70 sm:h-64 sm:w-64 md:-right-8 md:h-96 md:w-96 md:opacity-90 lg:right-[6%] lg:h-120 lg:w-105 lg:opacity-100">
+        <GrowthGraphic className="h-full w-full" />
       </div>
 
       <div className="relative mx-auto max-w-[1400px] px-6 md:pl-10 md:pr-16 lg:pr-20">

@@ -87,6 +87,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "lab_orders",
   "leave_requests",
   "nursing_notes",
+  "patient_insurance",
   "patients",
   "pharmacy_stock",
   "pharmacy_stock_movements",

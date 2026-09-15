@@ -6,6 +6,7 @@ import { requireTenantId } from "@/lib/requestContext";
 import { validateCustomFields } from "@/lib/forms";
 import { emitToTenant } from "@/lib/realtime";
 import { resolveTokenNumber, createVisitWithToken, logTokenOverride } from "@/lib/tokenOverride";
+import { insuranceInputSchema, upsertPatientInsurance, serializeInsurance } from "@/lib/patientInsurance";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ const createSchema = z.object({
   abhaId: z.string().trim().max(64).optional().or(z.literal("")),
   referralSourceId: z.coerce.number().int().positive().optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
+  // Insurance details + payment category — see patientInsurance.js.
+  insurance: insuranceInputSchema.optional(),
   openVisit: z.boolean().optional().default(true),
   // Receptionist manual token override — see registration/visits for the
   // same field pair on the "existing patient" path.
@@ -107,6 +110,7 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
 
   let patient;
   let visit = null;
+  let insuranceRow;
 
   if (body.openVisit) {
     // A losing token-override race now fails the visit-creation step for
@@ -117,6 +121,7 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
     const tid = requireTenantId();
     const result = await tenantDb.$transaction(async (tx) => {
       const p = await tx.patients.create({ data: patientData });
+      const ins = await upsertPatientInsurance(tx, p.id, body.insurance, BigInt(session.userId));
       const { tokenNumber, overridden } = await resolveTokenNumber(tx, tid, session.role, {
         manualToken: body.manualToken,
         overrideReason: body.overrideReason,
@@ -141,13 +146,15 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
           overriddenBy: BigInt(session.userId),
         });
       }
-      return { patient: p, visitRow: created };
+      return { patient: p, visitRow: created, insuranceRow: ins };
     });
     patient = result.patient;
     visit = flattenVisit(result.visitRow);
+    insuranceRow = result.insuranceRow;
     emitToTenant(session.tenantId, "visit:created", { visit });
   } else {
     patient = await tenantDb.patients.create({ data: patientData });
+    insuranceRow = await upsertPatientInsurance(tenantDb, patient.id, body.insurance, BigInt(session.userId));
   }
 
   const patientOut = {
@@ -160,6 +167,7 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
     allergies: body.allergies || [],
     abha_id: body.abhaId || null,
     referral_source_id: referralSourceId ? Number(referralSourceId) : null,
+    insurance: serializeInsurance(insuranceRow),
   };
   emitToTenant(session.tenantId, "patient:created", { patient: patientOut });
 

@@ -1,10 +1,8 @@
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
 import Stats from "@/components/Stats";
-import Process from "@/components/Process";
-import Transformation from "@/components/Transformation";
 import HowWeWork from "@/components/HowWeWork";
-import International from "@/components/International";
+import Partners from "@/components/Partners";
 import Insights from "@/components/Insights";
 import CTA from "@/components/CTA";
 import Contact from "@/components/Contact";
@@ -31,10 +29,8 @@ export default function Home() {
       <main>
         <Hero />
         <Stats />
-        <Process />
-        <Transformation />
         <HowWeWork />
-        <International />
+        <Partners />
         <Insights />
         <CTA />
         <Contact />
