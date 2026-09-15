@@ -970,34 +970,51 @@ calendar, self-service booking/cancellation, and feedback submission.
   edits) — no re-registration needed. New registrations capture it as an
   optional core field (`forms.js` `PATIENT_REGISTRATION`, order 4,
   `required: false`).
-- **A genuine send failure is still its own distinct error**:
-  `email_send_failed` (502) — this is NOT an enumeration leak the way
-  `no_email_on_file` was, because it only ever fires for a phone that
-  ALREADY has a known email (an attacker enumerating random phone numbers
-  essentially never reaches this path; it's an infrastructure-failure
-  signal, not a registration-status signal), so hiding it behind the
-  generic response would only cost a real patient a clear explanation for
-  no benefit. **The OTP is only persisted (hash/expiry/cooldown) AFTER
-  `sendOtpEmail()` succeeds** — a failed send never starts the 30-second
-  resend cooldown for a code the patient never received. Credentials
-  (`EMAIL_USER`/`EMAIL_APP_PASSWORD`, `.env`, a real Gmail **App
-  Password** — Gmail rejects plain-password SMTP auth entirely, requires
-  2-Step Verification on that account first) are never hardcoded and
-  never logged — a send failure logs only the error message, never
-  anything that touched the credential values.
-- **Verified live before real credentials existed**: registered a patient
-  with no email and compared its request-otp response against a genuinely
-  unregistered phone — identical status, identical body, identical
-  relevant headers; registered one with an email → attempted a real send,
-  got a clean 502 `email_send_failed` (credentials genuinely weren't
-  configured yet) with the exact "not configured" reason logged, confirmed
-  nothing was persisted (an immediate retry failed the identical way, not
-  `too_soon`), and confirmed adding an email to an EXISTING historical
-  patient via the PATCH route immediately made their phone number attempt
-  a real send too. **The real-send-arrives-in-a-real-inbox verification is
-  still pending** — deliberately deferred until the owner adds real Gmail
-  App Password credentials to `.env` themselves (not shared in chat); do
-  that verification then, not before.
+- **A second enumeration leak was found and fixed the same day a distinct
+  `email_send_failed` (502) response was first shipped** — worth keeping
+  as a second concrete example alongside the `no_email_on_file` one just
+  above, since it's the same mistake in a different disguise. The
+  reasoning at the time was "this only fires for a phone that already has
+  a known email, so it's an infrastructure signal, not a registration
+  signal" — that held in theory but not in practice: with no real SMTP
+  credentials configured yet (the common state on a fresh deploy, and the
+  actual state through most of this feature's own build), the send fails
+  for every request that reaches this path, making `email_send_failed`
+  fire 100% reliably and 100% correlated with "this phone has an email on
+  file" — a fully exploitable leak, not a theoretical one. **Fixed**: send
+  failure now falls through to the exact same generic response as every
+  other outcome; the failure is logged server-side only
+  (`console.error` with tenant id, phone, and matching-patient count —
+  never the credentials, which are never read into a variable in the
+  first place) for ops to notice and fix. A second, related leak was found
+  alongside it: the 30-second resend cooldown was originally read from
+  `patients.otp_requested_at`, a column that only exists on a real patient
+  row — so `too_soon` would only ever fire for a registered number,
+  making the cooldown itself a delayed enumeration oracle. **Fixed**:
+  `src/lib/otpThrottle.js` is a separate, input-keyed cooldown
+  (`${tenantId}:${phone}`, in-memory, same "keyed by the input, not by
+  whether a record exists" principle as `rateLimit.js`'s staff-login
+  limiter) checked and marked BEFORE any patient lookup happens, so
+  `too_soon` now behaves identically whether or not the phone is
+  registered. **The OTP is still only persisted (hash/expiry) AFTER
+  `sendOtpEmail()` succeeds** — a failed send doesn't cost the patient
+  a real code, it's the resend *cooldown* that had to move to being
+  input-keyed instead of record-keyed, not the persistence-after-success
+  rule itself. Credentials (`EMAIL_USER`/`EMAIL_APP_PASSWORD`, `.env`, a
+  real Gmail **App Password** — Gmail rejects plain-password SMTP auth
+  entirely, requires 2-Step Verification on that account first) are never
+  hardcoded and never logged.
+- **Verified live, before real credentials existed** (the convenient part:
+  every send genuinely fails in that state, so the leak was 100%
+  reproducible for testing it): a registered phone with an email — whose
+  send then genuinely fails — now returns a response byte-for-byte
+  identical to a genuinely unregistered phone (status, body, and headers
+  all compared directly); and an immediate second request against a
+  genuinely unregistered phone now correctly returns `too_soon`, which it
+  never did before this fix. **The real-send-arrives-in-a-real-inbox
+  verification is still pending** — deliberately deferred until the owner
+  adds real Gmail App Password credentials to `.env` themselves (not
+  shared in chat); do that verification then, not before.
 - **Read screens are module-aware per the product rule** ("a patient
   shouldn't see a Lab Reports section for a tenant that never had Lab
   active"): each route checks `isModuleActive` for its own module
@@ -1260,6 +1277,54 @@ tracking — flag separately if/when asked for).
   given `referralSourceId` resolves under `tenantDb` (i.e. belongs to the
   caller's own tenant) before writing it — the DB-level FK alone only
   guarantees the id exists *somewhere*, not that it's this tenant's row.
+
+## Insurance / payment (registration) — built
+
+Captured at patient registration for billing/claims accuracy, migration
+021: `patient_insurance`, one row per patient (attached per-PATIENT, same
+choice already made for `referral_sources` — insurance doesn't usually
+change across follow-up visits, and front desk can edit it later without
+re-registering). Data capture only for this pass, same deliberate scope
+cut as Referral Sources — no billing/claims integration yet (Billing's OPD
+line-item flow doesn't read this table); flag separately if/when that's
+wanted.
+
+- **Payment Category** (`SELF_PAY`/`INSURANCE`/`CORPORATE`/
+  `GOVERNMENT_SCHEME`/`AYUSHMAN_BHARAT`/`OTHER`) is always set, defaulting
+  to `SELF_PAY` — the common walk-in case. `payment_reference_number` is
+  the one generic "store the number of that thing" column the product
+  spec asked for: an Ayushman Bharat/PM-JAY card number, a corporate
+  employee ID, a government scheme reference — whichever applies to the
+  category chosen. The `INSURANCE` category doesn't use it — `policy_number`
+  below already serves that role for it.
+- **Insurance Details block** (company, policy number, member ID, TPA,
+  valid-from/until, pre-authorization required, card upload) only means
+  anything when `insurance_available` is true — `src/lib/patientInsurance.js`'s
+  `toRow()` explicitly nulls every sub-field when it's false, so toggling
+  insurance off and saving actually clears stale values instead of leaving
+  an old policy number sitting under a now-"no insurance" patient.
+- **Insurance card upload reuses the no-file-storage convention** already
+  established for Attendance's proxy check-in photo: no blob/S3
+  infrastructure exists in this project, so the image is resized/
+  compressed to a JPEG data URL client-side and stored directly in a
+  `MEDIUMTEXT` column. The compression helper itself was factored out of
+  `AttendanceClient.jsx` into `src/components/hms/imageCompress.js` once a
+  second caller needed the identical logic — one shared implementation,
+  not two copies that could drift.
+- **One shared place the shape lives**: `src/lib/patientInsurance.js`
+  (zod schema, row builder, serializer) is used by both the registration
+  create route (`registration/patients`, inside the same `$transaction` as
+  patient+visit creation when a visit is opened) and the dedicated
+  `GET`/`PUT /api/registration/patients/[id]/insurance` route for editing
+  a returning patient's insurance later — same "one place this can drift"
+  reasoning as `bookAppointment()`/`resolveTokenNumber()` elsewhere in this
+  codebase. Deliberately its own endpoint, not folded into the existing
+  narrow allergies/email `PATCH /api/registration/patients/[id]` — that
+  route's own comment already says it's intentionally narrow.
+- UI: `src/components/hms/InsuranceFields.jsx`, shared between the
+  new-patient form and the returning-patient "edit insurance / payment"
+  panel in `RegistrationClient.jsx` — the same reasoning again, one
+  rendering of the section, not two.
 
 ## Dashboard overview — improved
 

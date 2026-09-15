@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prismaClient";
 import { generateOtp, hashOtp } from "@/lib/patientAuth";
 import { sendOtpEmail } from "@/lib/mailer";
-import { OTP_TTL_SECONDS, OTP_RESEND_COOLDOWN_SECONDS } from "@/lib/patientAuthConstants";
+import { checkOtpCooldown, markOtpRequested } from "@/lib/otpThrottle";
+import { OTP_TTL_SECONDS } from "@/lib/patientAuthConstants";
 
 const bodySchema = z.object({
   tenantSlug: z.string().trim().min(1).max(191),
@@ -17,6 +18,22 @@ const bodySchema = z.object({
 // The code is sent to whichever of those patients has an email on file
 // first (most patients only have one anyway) — real Gmail SMTP delivery
 // via src/lib/mailer.js, replacing the earlier console-logged stub.
+//
+// This response is byte-for-byte identical for EVERY outcome except
+// invalid input and an unknown tenant slug (neither of those is secret):
+// unregistered phone, registered with no email anywhere, registered with
+// an email and the send succeeds, and registered with an email but the
+// send genuinely fails. A distinct response for any of those — including
+// an earlier version of this route that returned a different error for
+// "no email on file" and another that let a naturally-failing send return
+// a different status — is an enumeration oracle: it lets a caller learn
+// "this phone has an account" (or "has an account with an email") purely
+// from which shape of response comes back, with no other information
+// needed. Delivery failure is deliberately invisible to the caller here,
+// the same way a mature "forgot password" flow never distinguishes
+// "email doesn't exist" from "email exists but sending failed" — a send
+// failure is logged server-side for ops to notice and fix, never surfaced
+// differently to whoever asked.
 export async function POST(request) {
   let body;
   try {
@@ -31,59 +48,47 @@ export async function POST(request) {
   });
   if (!tenant) return NextResponse.json({ error: "tenant_not_found" }, { status: 404 });
 
+  // Cooldown is checked and marked BEFORE any patient/email lookup, keyed
+  // only by (tenant, phone) — see otpThrottle.js's comment for why this
+  // must be unconditional: if it only got marked when a patient/email
+  // actually existed, the cooldown itself would become a second-request
+  // enumeration oracle, just delayed by one round trip.
+  const cooldownKey = `${tenant.id}:${body.phone}`;
+  const cooldown = checkOtpCooldown(cooldownKey);
+  if (!cooldown.allowed) {
+    return NextResponse.json({ error: "too_soon", retryAfter: cooldown.retryAfter }, { status: 429 });
+  }
+  markOtpRequested(cooldownKey);
+
   const patients = await prisma.patients.findMany({
     where: { tenant_id: tenant.id, phone: body.phone },
-    select: { id: true, email: true, otp_requested_at: true },
+    select: { id: true, email: true },
     orderBy: { id: "asc" },
   });
-
-  // A registered phone with no email on any matching patient falls all the
-  // way through to the identical generic response below, same as an
-  // unregistered phone — a distinct "no email on file" message was tried
-  // first and reverted: it let anyone learn "this phone has an account"
-  // just by seeing which message came back, which is exactly the
-  // enumeration this response is supposed to prevent. The UX concern (a
-  // real patient with no email shouldn't be left confused) is solved a
-  // different way instead — a static, always-visible help line on the
-  // login screen itself ("front desk" pointer), not a response that
-  // varies by lookup result. See LoginClient.jsx.
   const withEmail = patients.filter((p) => p.email);
+
   if (withEmail.length > 0) {
-    const lastRequested = patients
-      .map((p) => p.otp_requested_at)
-      .filter(Boolean)
-      .sort((a, b) => b - a)[0];
-    if (lastRequested && Date.now() - lastRequested.getTime() < OTP_RESEND_COOLDOWN_SECONDS * 1000) {
-      const retryAfter = Math.ceil(
-        (OTP_RESEND_COOLDOWN_SECONDS * 1000 - (Date.now() - lastRequested.getTime())) / 1000,
-      );
-      return NextResponse.json({ error: "too_soon", retryAfter }, { status: 429 });
-    }
-
     const code = generateOtp();
-
-    // Send BEFORE persisting anything — a failed send shouldn't start the
-    // resend cooldown for a code that never arrived.
     try {
       await sendOtpEmail(withEmail[0].email, code);
-    } catch (err) {
-      // Never log the credentials (they're never read into a variable
-      // here in the first place) — only the failure itself.
-      console.error("[patient-otp] email send failed:", err.message);
-      return NextResponse.json({ error: "email_send_failed" }, { status: 502 });
-    }
 
-    const hash = await hashOtp(code);
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + OTP_TTL_SECONDS * 1000);
-    await prisma.patients.updateMany({
-      where: { id: { in: patients.map((p) => p.id) } },
-      data: { otp_code_hash: hash, otp_expires_at: expiresAt, otp_requested_at: now, otp_attempts: 0 },
-    });
+      const hash = await hashOtp(code);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + OTP_TTL_SECONDS * 1000);
+      await prisma.patients.updateMany({
+        where: { id: { in: patients.map((p) => p.id) } },
+        data: { otp_code_hash: hash, otp_expires_at: expiresAt, otp_requested_at: now, otp_attempts: 0 },
+      });
+    } catch (err) {
+      // Never returned to the caller, never logs the credentials (they're
+      // never read into a variable here in the first place) — only
+      // enough for ops to find and fix the real problem.
+      console.error(
+        `[patient-otp] SMTP send failed for tenant=${tenant.id} phone=${body.phone} (${patients.length} matching patient(s)):`,
+        err.message,
+      );
+    }
   }
 
-  // Identical response whether or not the phone matched a registered
-  // patient (that has an email) — never reveal who's registered, same
-  // principle as staff login.
   return NextResponse.json({ message: "If this number is registered, a code has been sent." });
 }

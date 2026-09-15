@@ -3,20 +3,24 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-// Deliberately no "no email on file" entry here — that response doesn't
-// exist anymore (see request-otp/route.js's comment): it would let a
-// visitor learn "this phone has an account" just by which message came
-// back, reintroducing the exact enumeration this whole response shape
-// exists to prevent. The equivalent guidance is the static help line
-// below the phone field instead — always shown, never a function of what
-// the lookup found.
+// Deliberately no "no email on file" or "send failed" entries here — ANY
+// distinct response for a lookup/delivery outcome is an enumeration
+// oracle (see request-otp/route.js's comment): it lets a visitor learn
+// something about a private record just by which message came back. The
+// only responses this endpoint ever returns are invalid_input,
+// tenant_not_found (a public URL slug, not secret), too_soon (a function
+// of the requester's own request rate, not of any private data), and the
+// generic "sent" message — every other outcome, including "no email on
+// file" and "the send genuinely failed," is folded into that last one on
+// purpose. The equivalent guidance for a stuck real patient is the static
+// help line below the phone field instead — always shown, never a
+// function of what any lookup found.
 const ERRORS = {
   invalid_input: "Please check the form and try again.",
   tenant_not_found: "We couldn't find this hospital's patient portal.",
   too_soon: "Please wait before requesting another code.",
   invalid_or_expired_code: "That code is wrong or has expired.",
   too_many_attempts: "Too many attempts. Request a new code.",
-  email_send_failed: "We couldn't send the code right now. Please try again in a moment.",
 };
 
 function LoginForm({ tenantSlug }) {
