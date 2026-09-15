@@ -3,7 +3,6 @@ import Hero from "@/components/Hero";
 import Stats from "@/components/Stats";
 import HowWeWork from "@/components/HowWeWork";
 import Partners from "@/components/Partners";
-import Insights from "@/components/Insights";
 import CTA from "@/components/CTA";
 import Contact from "@/components/Contact";
 import Footer from "@/components/Footer";
@@ -31,7 +30,6 @@ export default function Home() {
         <Stats />
         <HowWeWork />
         <Partners />
-        <Insights />
         <CTA />
         <Contact />
       </main>

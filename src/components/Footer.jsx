@@ -7,7 +7,6 @@ const COMPANY_LINKS = [
   { label: "About", href: "#about" },
   { label: "Services", href: "#how-we-work" },
   { label: "Industries", href: "#industries" },
-  { label: "Insights", href: "#insights" },
   { label: "Contact", href: "#contact" },
 ];
 

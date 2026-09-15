@@ -11,7 +11,6 @@ const NAV_LINKS = [
   { label: "Services", href: "#how-we-work", hasDropdown: true },
   { label: "Industries", href: "#industries" },
   { label: "Work", href: "#work" },
-  { label: "Insights", href: "#insights" },
   { label: "Contact", href: "#contact" },
 ];
 
