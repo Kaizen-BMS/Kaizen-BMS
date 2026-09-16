@@ -49,8 +49,22 @@ const EVENT_TYPES = ["AppointmentBooked", "PrescriptionCreated", "PaymentReceive
  * Write one durable event row inside an existing transaction. Returns the
  * created row (rarely needed by the caller — the point is that it
  * committed, not its return value).
+ *
+ * `occurredAt` — when the DOMAIN event itself happened, distinct from
+ * `created_at` (when this outbox row was persisted; see the migration
+ * 026 comment and CLAUDE.md's "created_at vs occurred_at" note). Every
+ * current call site creates its event synchronously inside the same
+ * transaction as the business write, so leaving it unset (the normal
+ * case — no caller needs to pass it today) defaults to "now," which is
+ * correct for all three of them. The parameter exists for the real
+ * future case this table is meant to support: a delayed, imported, or
+ * replayed event whose true occurrence predates when the row is written.
  */
-async function writeOutboxEvent(tx, { tenantId, eventType, aggregateType, aggregateId, payload, payloadVersion = 1 }) {
+async function writeOutboxEvent(tx, { tenantId, eventType, aggregateType, aggregateId, payload, payloadVersion = 1, occurredAt }) {
+  const occurred = occurredAt == null ? new Date() : new Date(occurredAt);
+  if (Number.isNaN(occurred.getTime())) {
+    throw new Error(`writeOutboxEvent: invalid occurredAt "${occurredAt}"`);
+  }
   return tx.outbox_events.create({
     data: {
       event_id: crypto.randomUUID(),
@@ -58,10 +72,33 @@ async function writeOutboxEvent(tx, { tenantId, eventType, aggregateType, aggreg
       event_type: eventType,
       aggregate_type: aggregateType,
       aggregate_id: BigInt(aggregateId),
+      occurred_at: occurred,
       payload: JSON.stringify(payload),
       payload_version: payloadVersion,
     },
   });
 }
 
-module.exports = { EVENT_TYPES, MAX_ATTEMPTS, backoffSeconds, writeOutboxEvent };
+/**
+ * DB row (snake_case) -> the canonical event envelope every consumer and
+ * observability surface should see: `{eventId, tenantId, eventType,
+ * aggregateType, aggregateId, payloadVersion, occurredAt, payload}` —
+ * the exact contract this project settled on. `occurredAt` is always a
+ * plain ISO-8601 string here, the one canonical timestamp representation
+ * at this boundary — never a bare Date object a consumer would have to
+ * know how to serialize itself.
+ */
+function toEnvelope(row) {
+  return {
+    eventId: row.event_id,
+    tenantId: Number(row.tenant_id),
+    eventType: row.event_type,
+    aggregateType: row.aggregate_type,
+    aggregateId: Number(row.aggregate_id),
+    payloadVersion: row.payload_version,
+    occurredAt: row.occurred_at.toISOString(),
+    payload: typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload,
+  };
+}
+
+module.exports = { EVENT_TYPES, MAX_ATTEMPTS, backoffSeconds, writeOutboxEvent, toEnvelope };

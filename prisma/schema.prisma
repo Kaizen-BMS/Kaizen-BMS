@@ -894,6 +894,7 @@ model outbox_events {
   event_type      String               @db.VarChar(64)
   aggregate_type  String               @db.VarChar(64)
   aggregate_id    BigInt               @db.UnsignedBigInt
+  occurred_at     DateTime             @db.DateTime(0)
   payload         String               @db.LongText
   payload_version Int                  @default(1) @db.UnsignedSmallInt
   status          outbox_events_status @default(PENDING)

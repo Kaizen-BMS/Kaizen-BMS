@@ -1679,15 +1679,47 @@ zero connections configured still gets `AppointmentBooked` events.
   constraint violation) after a real `patients.create()` in the same
   transaction — the patient row was rolled back too, no orphan of either
   kind.
-- **Schema** (migration 025, additive): `outbox_events` — `event_id`
-  (UUID, unique — the redelivery dedupe key), `tenant_id`, `event_type`
-  (plain string, not an ENUM — new event types shouldn't need a
-  migration), `aggregate_type`/`aggregate_id`, `payload` (JSON — LONGTEXT
-  under a CHECK constraint, same as every other JSON-shaped column in
-  this schema), `payload_version`, `status`
-  (`PENDING`/`PROCESSING`/`PROCESSED`/`FAILED`), `attempts`,
-  `available_at` (when it's next eligible to be claimed — pushed forward
-  on failure), `claimed_at`, `processed_at`, `last_error`.
+- **Schema** (migration 025, additive; `occurred_at` added by migration
+  026 — see below): `outbox_events` — `event_id` (UUID, unique — the
+  redelivery dedupe key), `tenant_id`, `event_type` (plain string, not an
+  ENUM — new event types shouldn't need a migration), `aggregate_type`/
+  `aggregate_id`, `occurred_at`, `payload` (JSON — LONGTEXT under a CHECK
+  constraint, same as every other JSON-shaped column in this schema),
+  `payload_version`, `status` (`PENDING`/`PROCESSING`/`PROCESSED`/
+  `FAILED`), `attempts`, `available_at` (when it's next eligible to be
+  claimed — pushed forward on failure), `claimed_at`, `processed_at`,
+  `last_error`, `created_at`.
+- **The canonical event envelope** — what `src/lib/outbox.js`'s
+  `toEnvelope(row)` produces, and the ONLY shape a consumer or the
+  observability endpoint should ever see (never the raw snake_case DB
+  row): `{eventId, tenantId, eventType, aggregateType, aggregateId,
+  payloadVersion, occurredAt, payload}`. `occurredAt` is always a plain
+  ISO-8601 string — one canonical timestamp representation at this
+  boundary, so no consumer has to know how to serialize a raw `Date`.
+- **`occurred_at` vs `created_at` — a real, deliberate distinction, not
+  two names for the same thing** (migration 026, added the day after
+  025 shipped without it — see below): `occurred_at` is when the DOMAIN
+  event happened; `created_at` is when this OUTBOX ROW was persisted.
+  For every event this project writes today they're the same instant,
+  because every `writeOutboxEvent()` call happens synchronously inside
+  the same transaction as the business write it represents — but
+  collapsing them into one column would foreclose the real future case
+  this table exists to support: a delayed, imported, or replayed event
+  whose true occurrence predates when the row is actually written.
+  `writeOutboxEvent()` accepts an optional `occurredAt` override for
+  exactly that case (validated — an unparseable value throws rather than
+  silently storing `Invalid Date`); no current call site needs it, so
+  none passes it, and it defaults to "now."
+- **Migration 026 — a same-day contract fix, not a redesign**: the
+  originally-approved envelope always specified `occurredAt`; the initial
+  025 migration and `outbox.js` implementation shipped without it. Added
+  additively (nullable column, backfilled from `created_at` — a genuine
+  no-op today since the table held zero rows at the time — then locked
+  to `NOT NULL`), never by editing the already-applied 025 migration
+  file. **Lesson for next time a field is missing from an
+  already-approved contract**: this is the correct shape for the fix — a
+  new additive migration plus updating the code that reads/writes the
+  table, never a retroactive edit to a migration file that already ran.
 - **The initial catalog — exactly 3 events, deliberately not more**:
   `AppointmentBooked` (owner: Appointments; written inside `src/lib/
   appointments.js`'s `bookAppointment()`, the ONE shared function both
@@ -1719,8 +1751,11 @@ zero connections configured still gets `AppointmentBooked` events.
   project's DB) inside its own transaction, then dispatches each to a
   registered consumer. **Verified concurrency-safe live**: 3 simultaneous
   ticks against 6 pending rows — the first claimed all 6 (via SKIP
-  LOCKED), the other two found nothing left to claim, and all 6 ended up
-  `PROCESSED` exactly once, never twice.
+  LOCKED), the other two found nothing left to claim, and every row was
+  marked `PROCESSED` a single time in that run. This proves the CLAIM is
+  race-safe (no two processors ever hold the same row at once) — it is
+  not, on its own, a claim that consumer side effects are exactly-once;
+  see "Idempotency" below for the actual delivery-semantics guarantee.
 - **Retry/failure**: on a consumer throwing, `attempts` increments,
   `available_at` is pushed forward with bounded exponential backoff
   (`60 * 2^attempts` seconds, capped at 1 hour), and after `MAX_ATTEMPTS`
@@ -1729,16 +1764,23 @@ zero connections configured still gets `AppointmentBooked` events.
   end-to-end: a deliberately-throwing test consumer walked a row through
   `attempts` 1→2→3→4 (backoff visibly doubling each time:
   ~2min→4min→8min→16min) then `FAILED` at attempt 5.
-- **Idempotency**: every event has a unique `event_id`; the claim
-  mechanism guarantees a row is only ever `PROCESSING` for one claimant
-  at a time. Phase 4's own 3 consumers are safe, side-effect-free
-  observability handlers (`console.log` only) — deliberately no real
-  business side effect was invented just to demonstrate the mechanism.
-  **Any future consumer with a real side effect (e.g. eventually
-  deducting stock, calling an external API) MUST check `event.event_id`
-  (or a business unique key, same pattern as `payments.idempotency_key`)
-  before acting** — the processor guarantees "at least once" delivery,
-  never "exactly once."
+- **Idempotency — delivery is at-least-once, never exactly-once, and the
+  docs must not claim otherwise**: every event has a unique `event_id`;
+  the claim mechanism guarantees a row is only ever `PROCESSING` for one
+  claimant at a time (see above). That is a claim-uniqueness guarantee,
+  not a delivery-semantics one — a worker can still perform a side
+  effect and then crash before the row is marked `PROCESSED`, and the
+  same event will be handed to a consumer again on the next tick. Phase
+  4's own 3 consumers are safe, side-effect-free observability handlers
+  (`console.log` only) — deliberately no real business side effect was
+  invented just to demonstrate the mechanism, so this gap has no actual
+  consequence yet. **Any future consumer with a real side effect (e.g.
+  eventually deducting stock, calling an external API) MUST check
+  `envelope.eventId` (or a business unique key, same pattern as
+  `payments.idempotency_key`) before acting** — do not build a generic
+  consumer-inbox/dedup table ahead of that real need; this is a
+  documentation obligation for the next consumer, not infrastructure to
+  build now.
 - **Tenant isolation**: `outbox_events` is in `TENANT_SCOPED_MODELS`, so
   every `tenantDb` query (including `groupBy`, confirmed in
   `prismaClient.js`'s `READ_OPS`) auto-scopes to the caller's own tenant.

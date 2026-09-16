@@ -1,7 +1,7 @@
 "use strict";
 
 const { prisma } = require("./prismaClient");
-const { MAX_ATTEMPTS, backoffSeconds } = require("./outbox");
+const { MAX_ATTEMPTS, backoffSeconds, toEnvelope } = require("./outbox");
 
 /**
  * The Outbox processor — a small, in-process, interval-driven dispatcher.
@@ -20,7 +20,9 @@ const { MAX_ATTEMPTS, backoffSeconds } = require("./outbox");
 const BATCH_SIZE = 20;
 const POLL_INTERVAL_MS = 2000;
 
-// eventType -> async (payload, event) => void
+// eventType -> async (payload, envelope) => void — `envelope` is the
+// canonical camelCase shape from outbox.js's toEnvelope(), always
+// carrying `occurredAt`, never the raw snake_case DB row.
 const consumers = new Map();
 
 /** Register what happens when an event of this type is processed. One handler per type — the last registration wins, deliberately (no fan-out to multiple handlers needed yet). */
@@ -71,8 +73,8 @@ async function processEvent(event) {
   const handler = consumers.get(event.event_type);
   try {
     if (handler) {
-      const payload = JSON.parse(event.payload);
-      await handler(payload, event);
+      const envelope = toEnvelope(event);
+      await handler(envelope.payload, envelope);
     }
     await prisma.outbox_events.update({
       where: { id: event.id },
