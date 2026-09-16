@@ -44,6 +44,10 @@ const ACTION_MODULE = {
   "bill:create": ["BILLING"],
   "bill:read": ["BILLING"],
   "bill:update": ["BILLING"],
+  "service:read": ["BILLING"],
+  "service:manage": ["BILLING"],
+  "tariff:read": ["BILLING"],
+  "tariff:manage": ["BILLING"],
 
   "bed:read": ["IPD"],
   "bed:manage": ["IPD"],

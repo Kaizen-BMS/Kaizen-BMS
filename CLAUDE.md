@@ -1876,7 +1876,150 @@ data comes from one endpoint, `GET /api/dashboard/overview`
   `Math.random()`, zero hardcoded numbers; an empty/new tenant correctly
   shows zeros and empty-state copy, not fabricated activity.
 
-## Patient safety & queue display
+## Pricing / Tariff (Phase 6, 2026-09-16)
+
+Service Master + Tariff Master + a GST-shaped tax foundation, consumed by
+Billing (migration 027). Existing billing (`bills`/`bill_items`/
+`payments`/`discounts`/`refunds`, `src/lib/billing.js`'s
+`recomputeBillStatus()`) is **untouched** — this is a new, additive
+pricing layer that Billing's line-item creation can optionally draw from;
+the pre-existing CONSULTATION/PHARMACY/LAB/IPD_ROOM auto-added bill items
+(consultation fee entered directly by the doctor, pharmacy/lab items
+priced manually by billing staff — see "Billing module" above) are
+completely unchanged and still work exactly as before.
+
+- **Service Master** (`services` table) — a tenant-owned catalog:
+  `code`/`name`/`description`/`category`/`service_type` (a fixed,
+  code-known ENUM: OPD/CONSULTATION/PROCEDURE/IPD/ROOM/LAB/RADIOLOGY/
+  EMERGENCY/PHARMACY/OTHER) + `active`. Same "category is code-defined,
+  the catalog itself is tenant data" split already established by
+  `referral_sources`/`form_templates`.
+- **Tariff Master** (`tariffs` table) — versioned pricing for a service.
+  **Never edited in place once it might be referenced by a bill**:
+  changing a price closes the currently-open tariff (`effective_to` set)
+  and inserts a new one (`src/lib/pricing.js`'s `changeTariff()`) —
+  `superseded_by_tariff_id` links the chain, so the full price history is
+  reconstructable forever, the same "the log/lineage IS the audit trail"
+  principle already used for `bed_transfers`/`pharmacy_stock_movements`/
+  `token_overrides`/`module_connection_events`. A tariff can only be
+  PATCHed to `active:false` (an undo for a data-entry mistake) — price,
+  rates, and dates are otherwise immutable; a real price change always
+  goes through `POST /api/tariffs` (a new version), never an edit.
+- **`patient_category` reuses `patient_insurance.payment_category`'s own
+  vocabulary** (SELF_PAY/INSURANCE/CORPORATE/GOVERNMENT_SCHEME/
+  AYUSHMAN_BHARAT/OTHER) instead of inventing a parallel GENERAL/
+  CORPORATE/... set — the category concept already existed in this
+  product (CLAUDE.md "Insurance / payment"), reused rather than
+  duplicated. `POST /api/billing/[id]/items` (below) defaults to the
+  bill's own patient's `payment_category` when the caller doesn't specify
+  one, so billing staff don't have to re-enter data that's already on
+  file.
+- **The `open_slot` invariant is a real DB constraint, not just
+  application discipline** — the same NULL-≠-NULL generated-column trick
+  already used for `module_instances.default_slot`/`appointments.
+  active_slot_time`/`visits.visit_date`: `open_slot` is `1` only for a
+  tariff that is both `active` AND still open-ended
+  (`effective_to IS NULL`), so at most one "current" tariff can exist per
+  `(tenant, service, patient_category)` at the storage-engine level.
+  **Verified under genuine concurrency**: 8 truly simultaneous
+  `POST /api/tariffs` requests for a brand-new service — 3 succeeded
+  (each correctly saw and closed whatever the previous winner had just
+  opened) and 5 got a clean 409 `tariff_conflict`; the resulting chain
+  was checked afterward and confirmed exactly one row was "open" at the
+  end, with an unbroken `superseded_by_tariff_id` lineage through all
+  three versions. This is a different (and equally rigorous) invariant
+  than Appointments'/Token Override's "exactly 1 of N wins" pattern —
+  versioning legitimately allows more than one sequential winner under
+  staggered concurrent requests; what must never happen is two
+  transactions simultaneously believing they each hold the only "current"
+  row, and the DB constraint is what actually prevents that, not the
+  `changeTariff()` fast-path pre-check alone (which existed first and
+  would otherwise be a check-then-act race).
+- **Bug caught before shipping**: the first version of `changeTariff()`
+  inserted the new tariff row *before* closing the old one — both rows
+  then satisfied `open_slot = 1` at the same instant and collided with
+  each other on `uq_tariffs_open_slot`, so a same-service, same-category
+  price change always failed with a self-inflicted `tariff_conflict`.
+  Fixed by closing the current tariff first (freeing the slot), then
+  inserting the new one, then filling in `superseded_by_tariff_id` once
+  the new row's id exists — all three steps happen inside the same
+  transaction the caller wraps `changeTariff()` in.
+- **Price snapshot on `bill_items`** (additive, nullable columns:
+  `service_id`, `tariff_id`, `quantity`, `unit_price`, `taxable_amount`,
+  `tax_rate`, `cgst_amount`, `sgst_amount`, `igst_amount`, `tax_amount`) —
+  the historical record of what a line actually charged, independent of
+  any later tariff change. `amount` (pre-existing, already summed by
+  `recomputeBillStatus()`) stays authoritative for every item, service-
+  priced or not; the new columns are `NULL` on every pre-Phase-6 item and
+  on any future non-service item, same as before. **Verified live, the
+  exact scenario CLAUDE.md's own build order for this phase specified**:
+  created a ₹500 CONSULTATION tariff, added it to a bill (bill_item = 500),
+  changed the tariff to ₹600, added the same service to a *different*
+  bill (bill_item = 600), then re-fetched the FIRST bill — its item was
+  still exactly 500. Also verified with an 18% GST (9% CGST + 9% SGST)
+  tariff, a bill-level discount, a payment, and a refund together — every
+  number matched hand computation, and the refund left the original
+  price-snapshot fields completely untouched (refunds reverse a payment,
+  never a tariff or a historical line item).
+- **Canonical, Decimal-safe calculation** — `src/lib/pricing.js`'s
+  `priceLine()` is the ONE place unit price + quantity + tax become a
+  billed amount; uses `Prisma.Decimal` (decimal.js) throughout, never a
+  plain JS number, for every step (this is a financial subsystem). Handles
+  both tax-exclusive (the common case: `tax = taxable × rate/100`) and
+  tax-inclusive pricing (back-calculates the pre-tax base via
+  `gross / (1 + rate/100)`); CGST/SGST/IGST amounts are split
+  proportionally from the total tax amount, and a tariff cannot combine
+  IGST with CGST/SGST (validated — real GST practice treats intra-state
+  and inter-state as mutually exclusive).
+- **Billing integration point** — `POST /api/billing/[id]/items` (action
+  `bill:update`, same grain as the existing item-price-PATCH route) is a
+  **new capability**: billing staff can add a priced, tariff-sourced line
+  to an OPEN bill for any active service (`source: "SERVICE"`, a new
+  `bill_items_source` ENUM value alongside the existing CONSULTATION/
+  PHARMACY/LAB/IPD_ROOM). This did not exist before Phase 6 — there was
+  previously no way to bill an ad-hoc procedure/room/misc charge at all.
+  Resolves the applicable tariff via `findApplicableTariff()` (service +
+  patient category + "now"); a service with no active tariff yet returns
+  a clean `400 no_active_tariff`, never a silent ₹0 charge. **Deliberately
+  NOT wired into**: the existing auto-added PHARMACY/LAB items in
+  `POST /api/billing/opd` (those still start at `amount: 0` and are priced
+  manually via the pre-existing `PATCH .../items/[itemId]` route,
+  unchanged — matching pharmacy medicine names / freeform lab test text to
+  a Service catalog entry is a fuzzy-matching problem deliberately left
+  for a later phase, not invented here ahead of need) and NOT into
+  `consultations.fee` (still entered directly by the doctor per visit,
+  an existing deliberate design this phase didn't touch).
+- **RBAC**: `service:read`/`tariff:read` — `BILLING_STAFF` (+
+  `HOSPITAL_ADMIN` wildcard) can browse the price list while billing.
+  `service:manage`/`tariff:manage` — HOSPITAL_ADMIN only (satisfied only
+  by the `"*"` wildcard, no `rbac.js` array changes needed, same shape as
+  Module Instances/Connections) — pricing changes are financially
+  sensitive and stay admin-restricted, read/write separated cleanly.
+  Module-gated on `BILLING` (`src/lib/modules.js`) for every action — a
+  solo tenant (never rents BILLING today) simply never sees Pricing at
+  all, verified live (403, same as every other BILLING-gated route).
+  **Did not reintroduce the earlier platform-scope RBAC vulnerability**:
+  `canPlatform()` is untouched, no action here is platform-only, and the
+  RBAC hardening's own audit method (enumerate every call site of a
+  suspected action) was re-checked against these 4 new actions before
+  shipping.
+- **Tenant isolation**: `services` and `tariffs` are both in
+  `TENANT_SCOPED_MODELS` (`prismaClient.js`) — auto-scoped by `tenantDb`
+  like every other tenant table. Verified via `runWithContext`: a
+  tenant-2 context sees zero of tenant 1's services/tariffs.
+- **Admin UI**: `(app)/dashboard/admin/pricing` — one tabbed page
+  (Services / Tariffs), same "one coherent screen, not disconnected pages"
+  precedent as Staff Management, `tenantTypes`/module gating handled by
+  the shared `dashboard/admin` layout (`formtemplate:manage`) plus the nav
+  entry's own `modules: ["BILLING"]`. "Pricing History" is folded into the
+  same `GET /api/tariffs?serviceId=` call the current-price view already
+  uses (each row carries a `current` boolean) rather than a separate
+  history endpoint — a deliberate route-structure simplification.
+- **Deliberately not built this phase** (explicit scope cut, matching the
+  owner's own acceleration instruction): insurance/TPA adjudication,
+  package pricing, dynamic/AI pricing, contract management, a GST filing
+  system. `patient_category` and `context` exist as extension points for
+  exactly that future work, not implementations of it.
 
 ## Patient safety & queue display
 

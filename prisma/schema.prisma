@@ -60,11 +60,25 @@ model bill_items {
   amount         Decimal           @default(0.00) @db.Decimal(12, 2)
   reference_type String?           @db.VarChar(50)
   reference_id   BigInt?           @db.UnsignedBigInt
+  service_id     BigInt?           @db.UnsignedBigInt
+  tariff_id      BigInt?           @db.UnsignedBigInt
+  quantity       Decimal           @default(1.00) @db.Decimal(10, 2)
+  unit_price     Decimal?          @db.Decimal(12, 2)
+  taxable_amount Decimal?          @db.Decimal(12, 2)
+  tax_rate       Decimal?          @db.Decimal(5, 2)
+  cgst_amount    Decimal?          @db.Decimal(12, 2)
+  sgst_amount    Decimal?          @db.Decimal(12, 2)
+  igst_amount    Decimal?          @db.Decimal(12, 2)
+  tax_amount     Decimal?          @db.Decimal(12, 2)
   created_at     DateTime          @default(now())
   bills          bills             @relation(fields: [bill_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bill_items_bill")
+  services       services?         @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "fk_bill_items_service")
+  tariffs        tariffs?          @relation(fields: [tariff_id], references: [id], onUpdate: Restrict, map: "fk_bill_items_tariff")
 
   @@index([bill_id], map: "idx_bill_items_bill")
   @@index([reference_type, reference_id], map: "idx_bill_items_reference")
+  @@index([service_id], map: "idx_bill_items_service")
+  @@index([tariff_id], map: "idx_bill_items_tariff")
 }
 
 model bills {
@@ -426,8 +440,10 @@ model tenants {
   prescriptions            prescriptions[]
   print_branding           print_branding[]
   referral_sources         referral_sources[]
+  services                 services[]
   staff_members            staff_members[]
   staff_profiles           staff_profiles[]
+  tariffs                  tariffs[]
   tenant_modules           tenant_modules[]
   token_overrides          token_overrides[]
   users                    users[]
@@ -466,7 +482,11 @@ model users {
   prescription_item_acks                                   prescription_item_acks[]
   print_branding                                           print_branding[]
   refunds                                                  refunds[]
+  services_services_created_byTousers                      services[]                 @relation("services_created_byTousers")
+  services_services_updated_byTousers                      services[]                 @relation("services_updated_byTousers")
   staff_profiles                                           staff_profiles?
+  tariffs_tariffs_created_byTousers                        tariffs[]                  @relation("tariffs_created_byTousers")
+  tariffs_tariffs_updated_byTousers                        tariffs[]                  @relation("tariffs_updated_byTousers")
   token_overrides                                          token_overrides[]
   tenants                                                  tenants?                   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_users_tenant")
   visits                                                   visits[]
@@ -911,6 +931,71 @@ model outbox_events {
   @@index([tenant_id], map: "idx_outbox_events_tenant")
 }
 
+model services {
+  id                               BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                        BigInt                @db.UnsignedBigInt
+  code                             String                @db.VarChar(50)
+  name                             String                @db.VarChar(200)
+  description                      String?               @db.VarChar(500)
+  category                         String?               @db.VarChar(100)
+  service_type                     services_service_type
+  active                           Boolean               @default(true)
+  created_by                       BigInt?               @db.UnsignedBigInt
+  updated_by                       BigInt?               @db.UnsignedBigInt
+  created_at                       DateTime              @default(now())
+  updated_at                       DateTime              @default(now())
+  bill_items                       bill_items[]
+  users_services_created_byTousers users?                @relation("services_created_byTousers", fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_services_created_by")
+  tenants                          tenants               @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_services_tenant")
+  users_services_updated_byTousers users?                @relation("services_updated_byTousers", fields: [updated_by], references: [id], onUpdate: Restrict, map: "fk_services_updated_by")
+  tariffs                          tariffs[]
+
+  @@unique([tenant_id, code], map: "uq_services_tenant_code")
+  @@index([created_by], map: "fk_services_created_by")
+  @@index([updated_by], map: "fk_services_updated_by")
+  @@index([tenant_id], map: "idx_services_tenant")
+  @@index([tenant_id, service_type, active], map: "idx_services_tenant_type_active")
+}
+
+model tariffs {
+  id                              BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                       BigInt                   @db.UnsignedBigInt
+  service_id                      BigInt                   @db.UnsignedBigInt
+  patient_category                tariffs_patient_category @default(SELF_PAY)
+  context                         String?                  @db.VarChar(100)
+  price                           Decimal                  @db.Decimal(12, 2)
+  tax_inclusive                   Boolean                  @default(false)
+  tax_category                    String?                  @db.VarChar(50)
+  cgst_rate                       Decimal                  @default(0.00) @db.Decimal(5, 2)
+  sgst_rate                       Decimal                  @default(0.00) @db.Decimal(5, 2)
+  igst_rate                       Decimal                  @default(0.00) @db.Decimal(5, 2)
+  effective_from                  DateTime                 @default(now())
+  effective_to                    DateTime?
+  active                          Boolean                  @default(true)
+  reason                          String?                  @db.VarChar(500)
+  superseded_by_tariff_id         BigInt?                  @db.UnsignedBigInt
+  open_slot                       Int?                     @db.TinyInt
+  created_by                      BigInt?                  @db.UnsignedBigInt
+  updated_by                      BigInt?                  @db.UnsignedBigInt
+  created_at                      DateTime                 @default(now())
+  updated_at                      DateTime                 @default(now())
+  bill_items                      bill_items[]
+  users_tariffs_created_byTousers users?                   @relation("tariffs_created_byTousers", fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_tariffs_created_by")
+  services                        services                 @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "fk_tariffs_service")
+  tariffs                         tariffs?                 @relation("tariffsTotariffs", fields: [superseded_by_tariff_id], references: [id], onUpdate: Restrict, map: "fk_tariffs_superseded_by")
+  other_tariffs                   tariffs[]                @relation("tariffsTotariffs")
+  tenants                         tenants                  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_tariffs_tenant")
+  users_tariffs_updated_byTousers users?                   @relation("tariffs_updated_byTousers", fields: [updated_by], references: [id], onUpdate: Restrict, map: "fk_tariffs_updated_by")
+
+  @@unique([tenant_id, service_id, patient_category, open_slot], map: "uq_tariffs_open_slot")
+  @@index([created_by], map: "fk_tariffs_created_by")
+  @@index([service_id], map: "fk_tariffs_service")
+  @@index([updated_by], map: "fk_tariffs_updated_by")
+  @@index([tenant_id, service_id, patient_category, active, effective_from], map: "idx_tariffs_service_lookup")
+  @@index([superseded_by_tariff_id], map: "idx_tariffs_superseded_by")
+  @@index([tenant_id], map: "idx_tariffs_tenant")
+}
+
 enum beds_ward_type {
   GENERAL
   PRIVATE
@@ -1028,13 +1113,6 @@ enum payments_mode {
   UPI
 }
 
-enum bill_items_source {
-  CONSULTATION
-  PHARMACY
-  LAB
-  IPD_ROOM
-}
-
 enum bills_bill_type {
   OPD
   IPD
@@ -1147,4 +1225,34 @@ enum outbox_events_status {
   PROCESSING
   PROCESSED
   FAILED
+}
+
+enum bill_items_source {
+  CONSULTATION
+  PHARMACY
+  LAB
+  IPD_ROOM
+  SERVICE
+}
+
+enum tariffs_patient_category {
+  SELF_PAY
+  INSURANCE
+  CORPORATE
+  GOVERNMENT_SCHEME
+  AYUSHMAN_BHARAT
+  OTHER
+}
+
+enum services_service_type {
+  OPD
+  CONSULTATION
+  PROCEDURE
+  IPD
+  ROOM
+  LAB
+  RADIOLOGY
+  EMERGENCY
+  PHARMACY
+  OTHER
 }

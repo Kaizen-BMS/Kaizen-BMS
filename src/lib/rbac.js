@@ -152,6 +152,12 @@ const BILLING_STAFF = [
   "bill:create",
   "bill:read",
   "bill:update",
+  // Browse the price list while billing (add a priced service line to a
+  // bill via bill:update) — does NOT include service:manage/tariff:manage,
+  // which stay HOSPITAL_ADMIN-only: pricing changes are financially
+  // sensitive (CLAUDE.md "Pricing / Tariff — RBAC").
+  "service:read",
+  "tariff:read",
   "followup:create",
   "followup:read",
   "formtemplate:read",
