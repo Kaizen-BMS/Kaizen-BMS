@@ -44,7 +44,7 @@ const NAV = [
   { key: "registration", label: "Registration", section: "OPERATIONS", route: "/dashboard/registration", icon: "registration", action: "visit:create", tenantTypes: ["HOSPITAL", "DOCTOR_SOLO"], status: "live" },
   { key: "billing", label: "Billing", section: "OPERATIONS", route: "/dashboard/billing", icon: "billing", action: "bill:create", modules: ["BILLING"], status: "live" },
   { key: "appointments", label: "Appointments", section: "OPERATIONS", route: "/dashboard/appointments", icon: "appointments", action: "appointment:read", modules: ["APPOINTMENTS"], status: "live" },
-  { key: "reports", label: "Reports & Analytics", section: "OPERATIONS", icon: "reports", action: "reports:view", status: "soon" },
+  { key: "reports", label: "Reports", section: "OPERATIONS", route: "/dashboard/reports", icon: "reports", action: "reports:view", modules: ["BILLING"], status: "live" },
 
   // ── Administration (admin / owner only) ──
   { key: "staff", label: "Staff Management", section: "ADMINISTRATION", route: "/dashboard/staff", icon: "staff", action: "staffroster:read", tenantTypes: ["HOSPITAL"], status: "live" },

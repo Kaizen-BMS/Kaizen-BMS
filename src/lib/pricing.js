@@ -279,6 +279,41 @@ function priceLine(tariff, quantity) {
   };
 }
 
+/**
+ * The patient's own payment category (CLAUDE.md "Insurance / payment"), or
+ * SELF_PAY when none is on file — the same default every tariff-pricing
+ * call site in this codebase uses so billing staff/clinicians never have
+ * to re-enter data that's already captured at registration.
+ */
+async function resolvePatientCategory(db, patientId) {
+  const insurance = await db.patient_insurance.findUnique({
+    where: { patient_id: BigInt(patientId) },
+    select: { payment_category: true },
+  });
+  return insurance?.payment_category || "SELF_PAY";
+}
+
+/**
+ * Phase 7 — the one shared "resolve a service's price right now" call every
+ * integration point (consultation, lab order item, prescription item,
+ * IPD room) uses. Returns a result object rather than throwing — matching
+ * this codebase's own `bookAppointment()` precedent — since callers need
+ * to react differently: an interactive create route wants a clean 400
+ * ("Pricing not configured" — CLAUDE.md Phase 7 instruction #36, NEVER a
+ * silent ₹0), while a fire-and-forget IPD event listener
+ * (`billingEvents.js`) just wants to skip pricing gracefully and fall back
+ * to its existing manual-value path.
+ */
+async function resolveAndPriceService(db, serviceId, patientCategory, quantity, at) {
+  const service = await db.services.findUnique({ where: { id: BigInt(serviceId) } });
+  if (!service || !service.active) return { ok: false, reason: "service_unavailable" };
+
+  const tariff = await findApplicableTariff(db, serviceId, patientCategory || "SELF_PAY", at);
+  if (!tariff) return { ok: false, reason: "no_active_tariff" };
+
+  return { ok: true, service, tariff, line: priceLine(tariff, quantity) };
+}
+
 module.exports = {
   SERVICE_TYPES,
   PATIENT_CATEGORIES,
@@ -290,5 +325,7 @@ module.exports = {
   changeTariff,
   findApplicableTariff,
   priceLine,
+  resolveAndPriceService,
+  resolvePatientCategory,
   money2,
 };

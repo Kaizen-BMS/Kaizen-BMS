@@ -2021,6 +2021,157 @@ completely unchanged and still work exactly as before.
   system. `patient_category` and `context` exist as extension points for
   exactly that future work, not implementations of it.
 
+## Billing integration + revenue reports (Phase 7, 2026-09-16)
+
+Connects the Service/Tariff Master (Phase 6) to the OPD/Lab/Pharmacy/IPD
+flows that actually create bill items, and adds a small set of real
+collection/revenue reports. Every mapping is **explicit** (a real
+`service_id` FK, chosen by a clinician/admin at the point of ordering) —
+nothing infers a service from freeform text (a medicine name, a lab test
+string) at billing time. Migrations 028 + 029.
+
+- **OPD consultations** (`consultations`): `fee` becomes optional the
+  moment an optional `serviceId` is given — the server resolves the
+  CONSULTATION-type Service's current tariff and computes `fee` itself
+  (Decimal-safe, with GST), never trusting a client-supplied final amount.
+  Omitting `serviceId` (every pre-Phase-7 caller, and any doctor who still
+  wants to enter a fee directly) works byte-for-byte as before — `fee`
+  required, `fee_source` stays `'MANUAL'`. `fee_source` (`'MANUAL'` |
+  `'TARIFF'`) is the audit trail for which path priced a given
+  consultation — no separate audit table needed, same "the row IS the
+  record" principle as everywhere else in this project.
+- **Pharmacy** (`prescription_items.service_id`, nullable): an *optional*,
+  explicit link to a PHARMACY-type Service, set at prescribing time.
+  **Prescribing still never touches inventory** — this column is read only
+  by billing, never by FEFO dispensing, which still matches purely on
+  `medicine_name` exactly as before. No mapping → the item is priced
+  manually at checkout exactly as it always was (`amount: 0`).
+- **Lab** (`lab_order_items`, new table): a `lab_orders.tests` order can
+  bundle 1-50 freeform test names, so a single nullable column on
+  `lab_orders` couldn't represent "some tests mapped, some not" — this
+  table holds one row per test the ordering clinician explicitly picked
+  from a LAB-type Service (never inferred from the test-name text at
+  billing time). `lab_orders.tests` itself is completely unchanged in
+  shape — every pre-Phase-7 order has zero rows here and bills exactly as
+  before (one combined ₹0 LAB line).
+- **IPD room charge** (`beds.service_id`, nullable): the existing
+  `beds.daily_rate × nights` mechanism (working, tested, used since the
+  IPD build) stays the default for every bed. Linking a bed to a
+  ROOM-type Service makes its room charge tariff-priced (with GST)
+  instead — same "tariff preferred, the existing manual value remains a
+  permanent, valid fallback" shape as consultations.
+- **Billing integration point, all four flows**: `POST /api/billing/opd`
+  (checkout) and `billingEvents.js`'s event listeners (the IPD running
+  bill) both now check for an explicit mapping before creating each line;
+  found + priced → `source: 'SERVICE'` with the full price snapshot
+  (`service_id`, `tariff_id`, `quantity`, `unit_price`, `taxable_amount`,
+  `tax_rate`, CGST/SGST/IGST amounts, `tax_amount`); not mapped, or mapped
+  but currently unpriced (its tariff was deactivated since ordering) →
+  falls back to the exact pre-Phase-7 shape (`CONSULTATION`/`PHARMACY`/
+  `LAB`/`IPD_ROOM`, `amount: 0` where that was already true) — **never** a
+  silent ₹0 under a `SERVICE` label, which would misrepresent "this was
+  priced from a tariff" when it wasn't (CLAUDE.md Phase 7 instruction
+  #36). Both integration points reuse the one canonical calculation
+  (`src/lib/pricing.js`'s `priceLine()`/`resolveAndPriceService()`) — no
+  second billing formula exists anywhere in this codebase.
+- **A real bug found and fixed while verifying this phase's own IPD
+  integration, not new to Phase 7**: `billingEvents.js`'s `appendItemOnce()`
+  — the one function every IPD running-bill append (pharmacy dispense, lab
+  result, room charge) funnels through — never called
+  `recomputeBillStatus()`. Every IPD bill's `total_amount`/`status` was
+  silently stuck at `0`/`OPEN` regardless of how many charges accrued
+  during the stay, until a payment route happened to recompute it as a
+  side effect. Found live: a genuine ₹3,360 tariff-priced room charge left
+  `total_amount` reading `"0"`. Fixed by calling the exact same
+  `recomputeBillStatus()` every other billing route already calls, inside
+  `appendItemOnce()` itself — one canonical function, never a second
+  calculation. This also makes the Dashboard's `pendingAmount` widget (and
+  the new Outstanding report) correctly include IPD bills for the first
+  time, a real accuracy improvement neither this phase nor Phase 5 caused
+  on their own but which Phase 7's own testing surfaced and fixed.
+- **`consultations.unit_price`** (migration 029) — a same-day fix: 028
+  gave consultations a full tax snapshot but missed `unit_price`,
+  caught immediately when the first live tariff-backed consultation's
+  bill_item came back with `unit_price: null`. Additive, never editing
+  the already-applied 028 — same discipline as the Phase 4 `occurredAt`
+  fix. `quantity` deliberately was NOT added — a consultation is
+  inherently always exactly one line.
+- **Reports** (`src/lib/reports.js`, `GET /api/reports/*`, action
+  `reports:view` — `BILLING_STAFF` + `HOSPITAL_ADMIN`, module-gated on
+  `BILLING`, so a solo tenant never sees it): Daily Collection, Outstanding
+  / Due, OPD/IPD/Lab/Pharmacy Revenue, Doctor/Service Revenue. Every
+  report aggregates in SQL (never loads a date range into Node to sum),
+  validates and caps its date range (max 366 days), and paginates where a
+  result could grow unbounded (Outstanding). `(app)/dashboard/reports` —
+  one tabbed page, a shared date filter, summary cards + tables; no
+  report-builder, no BI platform.
+  - **Outstanding** reuses `bills.total_amount`/`status` exactly as
+    `recomputeBillStatus()` maintains them — never re-derived — and
+    computes `outstanding = max(0, owed − netPaid)`. A first draft
+    returned the full owed amount as "outstanding" (conflating "this bill
+    isn't fully settled" with "this is what's still due") — caught and
+    fixed before shipping, verified against a bill with a payment AND a
+    refund (owed 1300, paid 120, refunded 20 → outstanding correctly
+    1200, not 1300).
+  - **Pharmacy Sales** deliberately has no per-line "refunded"/"collected"
+    column, in Pharmacy's report and the shared OPD/Lab/Pharmacy
+    source-revenue helper alike: a payment/refund is recorded against the
+    whole bill, not one line item, so a per-line figure would either be a
+    misleading approximation or — the actual bug a first draft shipped
+    with — double-count a bill-level refund across every line on a
+    multi-item bill. Collections are covered precisely, at the bill level,
+    by the Daily Collection report instead. Each Pharmacy Sales row still
+    carries which module instance dispensed it (via
+    `pharmacy_stock_movements` → `pharmacy_stock.module_instance_id`) —
+    **verified live**: Main Pharmacy and a second "Emergency Pharmacy"
+    instance, stocked/dispensed independently, appear as fully separate,
+    correctly-attributed rows, never blended.
+  - **Doctor/Service Revenue** only ever attributes a line to a doctor via
+    a direct FK chain (`bill_items.reference_type='consultation'` →
+    `consultations.doctor_id`) — lab/pharmacy lines are never guessed at,
+    per instruction #7's explicit "if a bill item cannot reliably be
+    attributed to a doctor, do not assign it." (Caught a real MariaDB
+    syntax error here too: `lines` is a reserved word — SQL error code
+    1064 — aliased to `line_count` instead.)
+- **RBAC/security**: `service:read`/`tariff:read`/`reports:view` →
+  `BILLING_STAFF` (+ `HOSPITAL_ADMIN` wildcard); `service:manage`/
+  `tariff:manage` stay HOSPITAL_ADMIN-only (unchanged from Phase 6).
+  `canPlatform()`/`PLATFORM_ONLY_ACTIONS` untouched — no action added this
+  phase is platform-scoped, and the RBAC hardening's own audit method was
+  re-run against every new action before shipping. All new/extended
+  tables (`lab_order_items`, plus the extended `consultations`/
+  `prescription_items`/`beds`) are tenant-scoped via `tenantDb` exactly
+  like every other table; every raw report query filters
+  `bills.tenant_id = ?` explicitly, the same discipline
+  `recomputeBillStatus()` established.
+- **Verified live, the exact old-price/new-price scenario extended across
+  every integration point**: a ₹500 consultation tariff → billed at 500;
+  changed to ₹700 → the OLD bill's item still reads exactly 500 (and its
+  `unit_price`/tax fields), a NEW bill correctly gets 700. Same
+  verification repeated for a lab test (CBC, ₹200, no tax), a pharmacy
+  item (Paracetamol, ₹2/unit), and an IPD room (₹3,000/night, 12% GST) —
+  every one snapshotted correctly and stayed immutable after its tariff
+  changed. "Pricing not configured" was verified explicitly too: a
+  LAB-mapped test with no tariff yet fell back to the existing manual ₹0
+  line rather than silently billing ₹0 under a `SERVICE` label.
+- **Regression, all still correct after this phase**: appointment
+  double-booking concurrency (10 simultaneous requests → 1×201, 9×409,
+  unchanged mechanism), payment idempotency (a duplicate
+  `idempotencyKey` request creates zero extra payments), pharmacy FEFO +
+  module-instance isolation (two instances stocked/dispensed
+  independently, zero cross-contamination, verified down to the raw
+  `pharmacy_stock` rows), tenant isolation (a second tenant's context
+  sees zero of another tenant's `lab_order_items`/reports data), RBAC
+  platform-scope protection (`HOSPITAL_ADMIN` → platform tenants list →
+  still 403), dashboard/Outbox/OPD-queue/pharmacy-inventory/lab-queue all
+  still 200 and unaffected.
+- **Deliberately not built this phase** (explicit scope cut): a fuzzy
+  medicine-name/lab-test matcher (explicit mapping only, chosen once at
+  ordering time — the alternative was explicitly forbidden); a
+  report-builder or BI platform; export beyond what the existing table
+  components already support; any change to FEFO, appointment
+  concurrency, or Outbox.
+
 ## Patient safety & queue display
 
 - **Allergies** (`patients.allergies` JSON): a chip/tag input, never a

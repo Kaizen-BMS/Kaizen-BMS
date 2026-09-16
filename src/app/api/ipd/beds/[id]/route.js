@@ -10,10 +10,15 @@ const patchSchema = z
   .object({
     status: z.enum(["VACANT", "CLEANING", "MAINTENANCE"]).optional(),
     dailyRate: z.coerce.number().min(0).max(1_000_000).optional(),
+    // Set to a positive id to link a ROOM-type Service, or 0/null to clear
+    // the link and fall back to plain dailyRate pricing again.
+    serviceId: z.coerce.number().int().min(0).optional(),
     maintenanceReason: z.string().trim().min(1).max(255).optional(),
     maintenanceUntil: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal("")),
   })
-  .refine((b) => b.status !== undefined || b.dailyRate !== undefined, { message: "nothing to update" })
+  .refine((b) => b.status !== undefined || b.dailyRate !== undefined || b.serviceId !== undefined, {
+    message: "nothing to update",
+  })
   .refine((b) => b.status !== "MAINTENANCE" || !!b.maintenanceReason, {
     message: "maintenanceReason required when status is MAINTENANCE",
   });
@@ -47,6 +52,7 @@ export const PATCH = apiRoute("bed:manage", async (request, ctx) => {
     }
   }
   if (body.dailyRate !== undefined) patch.daily_rate = body.dailyRate;
+  if (body.serviceId !== undefined) patch.service_id = body.serviceId > 0 ? body.serviceId : null;
   const updated = await tenantDb.beds.update({ where: { id: bedId }, data: patch });
 
   emitToModule(ctx.session.tenantId, "IPD", "bed:updated", { bed: updated });

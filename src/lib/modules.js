@@ -48,6 +48,7 @@ const ACTION_MODULE = {
   "service:manage": ["BILLING"],
   "tariff:read": ["BILLING"],
   "tariff:manage": ["BILLING"],
+  "reports:view": ["BILLING"],
 
   "bed:read": ["IPD"],
   "bed:manage": ["IPD"],

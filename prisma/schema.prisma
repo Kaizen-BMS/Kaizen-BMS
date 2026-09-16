@@ -38,6 +38,7 @@ model beds {
   ward_type                                     beds_ward_type
   bed_number                                    String          @db.VarChar(50)
   daily_rate                                    Decimal         @default(0.00) @db.Decimal(10, 2)
+  service_id                                    BigInt?         @db.UnsignedBigInt
   status                                        beds_status     @default(VACANT)
   maintenance_reason                            String?         @db.VarChar(255)
   maintenance_until                             DateTime?       @db.Date
@@ -45,11 +46,13 @@ model beds {
   admissions                                    admissions[]
   bed_transfers_bed_transfers_from_bed_idTobeds bed_transfers[] @relation("bed_transfers_from_bed_idTobeds")
   bed_transfers_bed_transfers_to_bed_idTobeds   bed_transfers[] @relation("bed_transfers_to_bed_idTobeds")
+  services                                      services?       @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "fk_beds_service")
   tenants                                       tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_beds_tenant")
 
   @@unique([tenant_id, ward_type, bed_number], map: "uq_beds_tenant_ward_number")
   @@index([tenant_id], map: "idx_beds_tenant")
   @@index([tenant_id, status], map: "idx_beds_tenant_status")
+  @@index([service_id], map: "idx_beds_service")
 }
 
 model bill_items {
@@ -126,27 +129,41 @@ model consent_forms {
 }
 
 model consultations {
-  id            BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id     BigInt          @db.UnsignedBigInt
-  visit_id      BigInt?         @db.UnsignedBigInt
-  patient_id    BigInt          @db.UnsignedBigInt
-  doctor_id     BigInt          @db.UnsignedBigInt
-  notes         String?         @db.Text
-  diagnosis     String?         @db.VarChar(500)
-  fee           Decimal         @default(0.00) @db.Decimal(10, 2)
-  custom_fields String?         @db.LongText
-  created_at    DateTime        @default(now())
-  users         users           @relation(fields: [doctor_id], references: [id], onUpdate: Restrict, map: "fk_consultations_doctor")
-  patients      patients        @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_consultations_patient")
-  tenants       tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_consultations_tenant")
-  visits        visits?         @relation(fields: [visit_id], references: [id], onUpdate: Restrict, map: "fk_consultations_visit")
-  lab_orders    lab_orders[]
-  prescriptions prescriptions[]
+  id             BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id      BigInt                   @db.UnsignedBigInt
+  visit_id       BigInt?                  @db.UnsignedBigInt
+  patient_id     BigInt                   @db.UnsignedBigInt
+  doctor_id      BigInt                   @db.UnsignedBigInt
+  notes          String?                  @db.Text
+  diagnosis      String?                  @db.VarChar(500)
+  fee            Decimal                  @default(0.00) @db.Decimal(10, 2)
+  service_id     BigInt?                  @db.UnsignedBigInt
+  tariff_id      BigInt?                  @db.UnsignedBigInt
+  unit_price     Decimal?                 @db.Decimal(12, 2)
+  taxable_amount Decimal?                 @db.Decimal(12, 2)
+  tax_rate       Decimal?                 @db.Decimal(5, 2)
+  cgst_amount    Decimal?                 @db.Decimal(12, 2)
+  sgst_amount    Decimal?                 @db.Decimal(12, 2)
+  igst_amount    Decimal?                 @db.Decimal(12, 2)
+  tax_amount     Decimal?                 @db.Decimal(12, 2)
+  fee_source     consultations_fee_source @default(MANUAL)
+  custom_fields  String?                  @db.LongText
+  created_at     DateTime                 @default(now())
+  users          users                    @relation(fields: [doctor_id], references: [id], onUpdate: Restrict, map: "fk_consultations_doctor")
+  patients       patients                 @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_consultations_patient")
+  services       services?                @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "fk_consultations_service")
+  tariffs        tariffs?                 @relation(fields: [tariff_id], references: [id], onUpdate: Restrict, map: "fk_consultations_tariff")
+  tenants        tenants                  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_consultations_tenant")
+  visits         visits?                  @relation(fields: [visit_id], references: [id], onUpdate: Restrict, map: "fk_consultations_visit")
+  lab_orders     lab_orders[]
+  prescriptions  prescriptions[]
 
   @@index([doctor_id], map: "idx_consultations_doctor")
   @@index([tenant_id], map: "idx_consultations_hospital")
   @@index([patient_id], map: "idx_consultations_patient")
   @@index([visit_id], map: "idx_consultations_visit")
+  @@index([service_id], map: "idx_consultations_service")
+  @@index([tariff_id], map: "idx_consultations_tariff")
 }
 
 model follow_ups {
@@ -197,6 +214,7 @@ model lab_orders {
   resulted_by     BigInt?           @db.UnsignedBigInt
   created_at      DateTime          @default(now())
   resulted_at     DateTime?
+  lab_order_items lab_order_items[]
   consultations   consultations     @relation(fields: [consultation_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_consultation")
   patients        patients          @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_patient")
   tenants         tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_tenant")
@@ -332,6 +350,7 @@ model prescription_items {
   tenant_id                BigInt                     @db.UnsignedBigInt
   prescription_id          BigInt                     @db.UnsignedBigInt
   medicine_name            String
+  service_id               BigInt?                    @db.UnsignedBigInt
   dosage                   String?
   quantity                 Int                        @default(1) @db.UnsignedInt
   dispensed_quantity       Int                        @default(0) @db.UnsignedInt
@@ -340,10 +359,12 @@ model prescription_items {
   pharmacy_stock_movements pharmacy_stock_movements[]
   prescription_item_acks   prescription_item_acks[]
   prescriptions            prescriptions              @relation(fields: [prescription_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_presc_items_prescription")
+  services                 services?                  @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "fk_presc_items_service")
   tenants                  tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_presc_items_tenant")
 
   @@index([tenant_id], map: "idx_presc_items_hospital")
   @@index([prescription_id], map: "idx_presc_items_prescription")
+  @@index([service_id], map: "idx_presc_items_service")
 }
 
 model prescriptions {
@@ -424,6 +445,7 @@ model tenants {
   feedback                 feedback[]
   follow_ups               follow_ups[]
   form_templates           form_templates[]
+  lab_order_items          lab_order_items[]
   lab_orders               lab_orders[]
   leave_requests           leave_requests[]
   module_connections       module_connections[]
@@ -944,7 +966,11 @@ model services {
   updated_by                       BigInt?               @db.UnsignedBigInt
   created_at                       DateTime              @default(now())
   updated_at                       DateTime              @default(now())
+  beds                             beds[]
   bill_items                       bill_items[]
+  consultations                    consultations[]
+  lab_order_items                  lab_order_items[]
+  prescription_items               prescription_items[]
   users_services_created_byTousers users?                @relation("services_created_byTousers", fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_services_created_by")
   tenants                          tenants               @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_services_tenant")
   users_services_updated_byTousers users?                @relation("services_updated_byTousers", fields: [updated_by], references: [id], onUpdate: Restrict, map: "fk_services_updated_by")
@@ -980,6 +1006,7 @@ model tariffs {
   created_at                      DateTime                 @default(now())
   updated_at                      DateTime                 @default(now())
   bill_items                      bill_items[]
+  consultations                   consultations[]
   users_tariffs_created_byTousers users?                   @relation("tariffs_created_byTousers", fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_tariffs_created_by")
   services                        services                 @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "fk_tariffs_service")
   tariffs                         tariffs?                 @relation("tariffsTotariffs", fields: [superseded_by_tariff_id], references: [id], onUpdate: Restrict, map: "fk_tariffs_superseded_by")
@@ -994,6 +1021,23 @@ model tariffs {
   @@index([tenant_id, service_id, patient_category, active, effective_from], map: "idx_tariffs_service_lookup")
   @@index([superseded_by_tariff_id], map: "idx_tariffs_superseded_by")
   @@index([tenant_id], map: "idx_tariffs_tenant")
+}
+
+model lab_order_items {
+  id           BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id    BigInt     @db.UnsignedBigInt
+  lab_order_id BigInt     @db.UnsignedBigInt
+  service_id   BigInt?    @db.UnsignedBigInt
+  test_name    String
+  quantity     Decimal    @default(1.00) @db.Decimal(10, 2)
+  created_at   DateTime   @default(now())
+  lab_orders   lab_orders @relation(fields: [lab_order_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_order_items_order")
+  services     services?  @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "fk_lab_order_items_service")
+  tenants      tenants    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_order_items_tenant")
+
+  @@index([lab_order_id], map: "idx_lab_order_items_order")
+  @@index([service_id], map: "idx_lab_order_items_service")
+  @@index([tenant_id], map: "idx_lab_order_items_tenant")
 }
 
 enum beds_ward_type {
@@ -1255,4 +1299,9 @@ enum services_service_type {
   EMERGENCY
   PHARMACY
   OTHER
+}
+
+enum consultations_fee_source {
+  MANUAL
+  TARIFF
 }

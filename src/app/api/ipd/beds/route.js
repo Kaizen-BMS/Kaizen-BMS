@@ -30,13 +30,24 @@ const createSchema = z.object({
   wardType: z.enum(["GENERAL", "PRIVATE", "ICU"]),
   bedNumber: z.string().trim().min(1).max(50),
   dailyRate: z.coerce.number().min(0).max(1_000_000).optional().default(0),
+  // Optional link to a ROOM-type Service Master entry (Phase 7 — CLAUDE.md
+  // "Pricing / Tariff — IPD integration"). When set, the room charge at
+  // discharge is tariff-priced (with GST) instead of dailyRate × nights;
+  // dailyRate still stays on every bed as the always-present manual value
+  // (and the fallback if the tariff is later deactivated).
+  serviceId: z.coerce.number().int().positive().optional(),
 });
 
 // Add a bed to the master list.
 export const POST = apiRoute("bed:manage", async (request, { session }) => {
   const body = await parseBody(request, createSchema);
   const bed = await tenantDb.beds.create({
-    data: { ward_type: body.wardType, bed_number: body.bedNumber, daily_rate: body.dailyRate },
+    data: {
+      ward_type: body.wardType,
+      bed_number: body.bedNumber,
+      daily_rate: body.dailyRate,
+      service_id: body.serviceId ?? null,
+    },
   });
   emitToModule(session.tenantId, "IPD", "bed:updated", { bed });
   return json({ bed }, 201);

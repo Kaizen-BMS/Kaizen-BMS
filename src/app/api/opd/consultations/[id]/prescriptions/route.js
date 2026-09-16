@@ -19,6 +19,13 @@ const createSchema = z.object({
         // Set only when the client showed an allergy-match warning for this
         // line and the doctor explicitly acknowledged it.
         allergyAck: z.boolean().optional().default(false),
+        // Optional, explicit Service Master link (Phase 7 — CLAUDE.md
+        // "Pricing / Tariff — pharmacy integration"). Never inferred from
+        // medicineName text; omitted (every pre-Phase-7 caller) leaves this
+        // item priced manually at checkout exactly as before. Purely a
+        // pricing/billing concern — FEFO dispensing still matches by
+        // medicine_name, completely unaffected by this field.
+        serviceId: z.coerce.number().int().positive().optional(),
       }),
     )
     .min(1)
@@ -78,6 +85,7 @@ export const POST = apiRoute("prescription:create", async (request, ctx) => {
           medicine_name: it.medicineName,
           dosage: it.dosage || null,
           quantity: it.quantity,
+          service_id: it.serviceId ?? null,
         },
       });
       ids.push(item.id);

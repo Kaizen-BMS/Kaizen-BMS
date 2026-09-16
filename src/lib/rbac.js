@@ -158,6 +158,9 @@ const BILLING_STAFF = [
   // sensitive (CLAUDE.md "Pricing / Tariff — RBAC").
   "service:read",
   "tariff:read",
+  // Collections/outstanding/revenue reports (Phase 7) — billing staff's
+  // natural day-to-day view; not given to clinical roles.
+  "reports:view",
   "followup:create",
   "followup:read",
   "formtemplate:read",
