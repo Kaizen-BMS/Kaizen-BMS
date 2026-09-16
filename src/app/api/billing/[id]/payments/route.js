@@ -4,6 +4,7 @@ import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { recomputeBillStatus } from "@/lib/billing";
 import { emitToModule } from "@/lib/realtime";
+import { writeOutboxEvent } from "@/lib/outbox";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export const POST = apiRoute("bill:update", async (request, ctx) => {
   }
 
   const result = await tenantDb.$transaction(async (tx) => {
-    await tx.payments.create({
+    const payment = await tx.payments.create({
       data: {
         bill_id: billId,
         amount: body.amount,
@@ -52,6 +53,25 @@ export const POST = apiRoute("bill:update", async (request, ctx) => {
       },
     });
     await recomputeBillStatus(tx, billId);
+    // Durable event, same transaction as the payment write — see CLAUDE.md
+    // "Outbox — durable domain events". Separate concern from the
+    // idempotencyKey above: that protects against a client double-
+    // submitting the same "record payment" click; this is the durable
+    // record of the fact itself, for a future durable consumer. Not the
+    // realtime emit — emitToModule("bill:paid") below stays untouched.
+    await writeOutboxEvent(tx, {
+      tenantId: ctx.session.tenantId,
+      eventType: "PaymentReceived",
+      aggregateType: "Payment",
+      aggregateId: payment.id,
+      payload: {
+        paymentId: Number(payment.id),
+        billId: Number(billId),
+        amount: body.amount,
+        mode: body.mode,
+        recordedBy: ctx.session.userId,
+      },
+    });
     return tx.bills.findUnique({
       where: { id: billId },
       include: { bill_items: true, payments: true, discounts: true, refunds: true },

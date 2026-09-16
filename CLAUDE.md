@@ -1650,6 +1650,131 @@ comments for exactly what's basic-foundation-only here.
 - **RBAC**: `moduleconnection:read`/`moduleconnection:manage` — same "*"
   wildcard-only shape as module instances, no `rbac.js` changes needed.
 
+## Outbox — durable domain events (Phase 4, 2026-09-16)
+
+**REALTIME != OUTBOX. The Outbox does not replace realtime, and realtime
+does not depend on the Outbox.** These are two completely separate
+mechanisms solving two different problems, and Phase 4 was built
+specifically to keep them that way:
+
+| | Realtime (`emitToTenant`/`emitToModule`) | Outbox (`outbox_events`) |
+|---|---|---|
+| Purpose | UI delivery — tell a connected browser something changed | Durable business fact — survive a crash, a disconnected client, a future consumer that didn't exist yet |
+| Timing | Same request cycle, zero delay | Asynchronous, polled every 2s by an in-process processor |
+| Durability | None — if nobody's listening, it's gone | Persisted; survives a process restart |
+| Changed by Phase 4? | **No — not one line of any existing `emitToTenant`/`emitToModule` call site was touched** | New, entirely additive |
+
+Also distinct from **`module_connection_events`** (Phase 3) — that's the
+audit trail for a *configured Module Connection's own lifecycle*
+(PENDING→ACTIVE→PAUSED→...), scoped to one connection row. `outbox_events`
+is a durable record of a *business fact* (an appointment was booked), with
+no necessary relationship to any Module Connection at all — a tenant with
+zero connections configured still gets `AppointmentBooked` events.
+
+- **The one non-negotiable rule**: the `outbox_events` row is written
+  **inside the exact same `tx.$transaction(...)`** as the business write
+  it represents — same `tx` handle, not a separate call after commit.
+  Either both exist or neither does; verified live by deliberately forcing
+  the outbox insert to fail (a duplicate `event_id`, i.e. a real UNIQUE
+  constraint violation) after a real `patients.create()` in the same
+  transaction — the patient row was rolled back too, no orphan of either
+  kind.
+- **Schema** (migration 025, additive): `outbox_events` — `event_id`
+  (UUID, unique — the redelivery dedupe key), `tenant_id`, `event_type`
+  (plain string, not an ENUM — new event types shouldn't need a
+  migration), `aggregate_type`/`aggregate_id`, `payload` (JSON — LONGTEXT
+  under a CHECK constraint, same as every other JSON-shaped column in
+  this schema), `payload_version`, `status`
+  (`PENDING`/`PROCESSING`/`PROCESSED`/`FAILED`), `attempts`,
+  `available_at` (when it's next eligible to be claimed — pushed forward
+  on failure), `claimed_at`, `processed_at`, `last_error`.
+- **The initial catalog — exactly 3 events, deliberately not more**:
+  `AppointmentBooked` (owner: Appointments; written inside `src/lib/
+  appointments.js`'s `bookAppointment()`, the ONE shared function both
+  `POST /api/appointments` and `POST /api/patient/appointments/book`
+  already call — both flows get the durable event for free, no
+  duplicated logic), `PrescriptionCreated` (owner: Clinical/OPD; written
+  inside `POST /api/opd/consultations/[id]/prescriptions`'s existing
+  transaction), `PaymentReceived` (owner: Billing; written inside
+  `POST /api/billing/[id]/payments`'s existing transaction, alongside —
+  not instead of — its pre-existing `idempotencyKey` request-dedupe
+  column, a genuinely separate concern: that protects against a client
+  double-submitting one click, this is the durable record of the fact
+  itself).
+- **Payloads are ID-first and PHI-minimal by design** — e.g.
+  `PrescriptionCreated` carries `{prescriptionId, patientId, visitId,
+  consultationId, createdBy, itemCount}`, never the medicine list,
+  dosage, diagnosis, or clinical notes. No event payload anywhere
+  contains a password, OTP, or token — none of the three events touch
+  auth data at all, so this is true by construction, not by a filter.
+- **Prescription creation still does not touch pharmacy inventory** —
+  Phase 4 changed nothing about that; verified live (creating a
+  prescription with a brand-new medicine name created zero
+  `pharmacy_stock` rows).
+- **`src/lib/outboxProcessor.js`** — a small in-process interval loop
+  (2s poll, 20-row batches), registered once in `server.js` (guarded by a
+  `globalThis` flag, same singleton pattern as `realtime.js`'s
+  `serverEvents`). Claims eligible `PENDING` rows via `SELECT ... FOR
+  UPDATE SKIP LOCKED` (MariaDB 11.8, already confirmed available on this
+  project's DB) inside its own transaction, then dispatches each to a
+  registered consumer. **Verified concurrency-safe live**: 3 simultaneous
+  ticks against 6 pending rows — the first claimed all 6 (via SKIP
+  LOCKED), the other two found nothing left to claim, and all 6 ended up
+  `PROCESSED` exactly once, never twice.
+- **Retry/failure**: on a consumer throwing, `attempts` increments,
+  `available_at` is pushed forward with bounded exponential backoff
+  (`60 * 2^attempts` seconds, capped at 1 hour), and after `MAX_ATTEMPTS`
+  (5) the row flips to `FAILED` — a terminal state, never an infinite
+  retry loop. `last_error` keeps the message for diagnosis. Verified live
+  end-to-end: a deliberately-throwing test consumer walked a row through
+  `attempts` 1→2→3→4 (backoff visibly doubling each time:
+  ~2min→4min→8min→16min) then `FAILED` at attempt 5.
+- **Idempotency**: every event has a unique `event_id`; the claim
+  mechanism guarantees a row is only ever `PROCESSING` for one claimant
+  at a time. Phase 4's own 3 consumers are safe, side-effect-free
+  observability handlers (`console.log` only) — deliberately no real
+  business side effect was invented just to demonstrate the mechanism.
+  **Any future consumer with a real side effect (e.g. eventually
+  deducting stock, calling an external API) MUST check `event.event_id`
+  (or a business unique key, same pattern as `payments.idempotency_key`)
+  before acting** — the processor guarantees "at least once" delivery,
+  never "exactly once."
+- **Tenant isolation**: `outbox_events` is in `TENANT_SCOPED_MODELS`, so
+  every `tenantDb` query (including `groupBy`, confirmed in
+  `prismaClient.js`'s `READ_OPS`) auto-scopes to the caller's own tenant.
+  Verified live via `runWithContext`: a tenant-2 context querying
+  `outbox_events` sees zero rows while tenant-1's context sees its real
+  events, using the exact same query the live API route runs.
+- **Observability**: `GET /api/outbox` (action `outbox:read` — reachable
+  only via the `"*"` wildcard, same as module instances/connections; no
+  `rbac.js` change needed) returns counts by status, counts by event
+  type, and the 5 most recent `FAILED` rows (event type, attempts, error
+  message — never the payload). Scope is derived from the session, never
+  a client parameter: `session.tenantId === null` (SUPER_ADMIN) gets
+  platform-wide counts via raw `prisma`; everyone else gets their own
+  tenant's counts via `tenantDb`. Deliberately minimal — no pagination,
+  no filters, no raw payload exposure; a fuller operational dashboard is
+  a later phase, not this one. No UI screen was built for this endpoint
+  in this phase (kept intentionally out of scope, per instruction).
+- **Performance**: the HTTP request path is unchanged —
+  `transaction → commit → existing realtime emit → response`; the
+  processor's 2s poll is a completely separate, asynchronous loop that
+  never blocks a request. Verified live: appointment booking response
+  time was unaffected (sub-second on a warm route, consistent with this
+  project's already-documented remote-DB latency, not the 2s poll
+  interval).
+- **A test-cleanup lesson worth remembering**: while cleaning up test
+  data after this phase's verification, a cleanup query matched
+  appointments by `reason` text (`"race-1"` through `"race-10"`) and
+  accidentally deleted a genuinely pre-existing, unrelated row from the
+  ORIGINAL Appointment Scheduling concurrency test (2026-09-13, also
+  using `"race-N"` reason strings — the same obvious naming convention
+  reused three days apart). Caught by checking counts against the
+  automatic pre-migration backup, restored exactly from it. **Lesson**:
+  scope a cleanup delete by the exact IDs just created in that session,
+  never by a content match (a reason string, a name) that a genuinely
+  unrelated historical row could also satisfy.
+
 ## Dashboard overview — improved
 
 `(app)/dashboard` (the landing page after login) went from a near-empty

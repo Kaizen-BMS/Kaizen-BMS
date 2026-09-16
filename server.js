@@ -13,10 +13,17 @@ const { SESSION_COOKIE } = require("./src/lib/authConstants");
 const { getActiveModules, moduleRoomsForRole } = require("./src/lib/modules");
 const { registerIo } = require("./src/lib/realtime");
 const { prisma } = require("./src/lib/prismaClient");
+const outboxProcessor = require("./src/lib/outboxProcessor");
 // Side-effect require: registers Billing's IPD event listeners on the
 // serverEvents bus once, for the lifetime of this process. See
 // src/lib/billingEvents.js / CLAUDE.md "Billing module".
 require("./src/lib/billingEvents");
+// Side-effect require: registers the Outbox's observability-only
+// consumers once, for the lifetime of this process. See
+// src/lib/outboxConsumers.js / CLAUDE.md "Outbox — durable domain events".
+// This is unrelated to Socket.io realtime above — a completely separate,
+// asynchronous mechanism.
+require("./src/lib/outboxConsumers");
 
 function parseCookies(header) {
   const out = {};
@@ -99,10 +106,21 @@ app.prepare().then(() => {
   });
 
   registerIo(io);
+  outboxProcessor.start();
 
   httpServer.listen(port, () => {
     console.log(
       `> kaizenbms ready on http://localhost:${port} (${dev ? "development" : process.env.NODE_ENV})`,
     );
   });
+
+  // Graceful shutdown — stop claiming new outbox batches before the
+  // process actually exits. Nothing else in this file has shutdown
+  // handling yet; this is intentionally scoped to just the processor.
+  for (const sig of ["SIGTERM", "SIGINT"]) {
+    process.on(sig, () => {
+      outboxProcessor.stop();
+      httpServer.close(() => process.exit(0));
+    });
+  }
 });

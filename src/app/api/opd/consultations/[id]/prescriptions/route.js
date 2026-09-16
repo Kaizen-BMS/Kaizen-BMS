@@ -4,6 +4,7 @@ import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { emitToModule } from "@/lib/realtime";
 import { matchAllergy } from "@/lib/allergyCheck";
+import { writeOutboxEvent } from "@/lib/outbox";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +94,26 @@ export const POST = apiRoute("prescription:create", async (request, ctx) => {
         });
       }
     }
+    // Durable event, same transaction as the prescription write — see
+    // CLAUDE.md "Outbox — durable domain events". ID-first/minimal by
+    // design: no medicine list, no diagnosis, no clinical notes. This is
+    // NOT the realtime emit — emitToModule("prescription:created") below
+    // stays exactly as it was, untouched, still zero-delay.
+    await writeOutboxEvent(tx, {
+      tenantId: session.tenantId,
+      eventType: "PrescriptionCreated",
+      aggregateType: "Prescription",
+      aggregateId: created.id,
+      payload: {
+        prescriptionId: Number(created.id),
+        patientId: Number(consultation.patient_id),
+        visitId: consultation.visit_id != null ? Number(consultation.visit_id) : null,
+        consultationId: Number(consultationId),
+        createdBy: session.userId,
+        itemCount: ids.length,
+      },
+    });
+
     return { prescriptionId: created.id, itemIds: ids };
   });
 

@@ -1,5 +1,8 @@
 "use strict";
 
+const { requireTenantId } = require("./requestContext");
+const { writeOutboxEvent } = require("./outbox");
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -131,6 +134,25 @@ async function bookAppointment(tenantDb, { doctorUserId, slotTime, patientId, ne
           slot_time: slotTime,
           booked_by: bookedBy,
           reason: reason || null,
+        },
+      });
+      // Durable event, same transaction as the appointment write — see
+      // CLAUDE.md "Outbox — durable domain events". Both staff
+      // (POST /api/appointments) and patient-portal booking share this
+      // one function, so both automatically get this for free. This is
+      // NOT the realtime emit — emitToModule("appointment:booked") below
+      // in each caller stays exactly as it was, untouched.
+      await writeOutboxEvent(tx, {
+        tenantId: requireTenantId(),
+        eventType: "AppointmentBooked",
+        aggregateType: "Appointment",
+        aggregateId: appt.id,
+        payload: {
+          appointmentId: Number(appt.id),
+          patientId: Number(pid),
+          doctorUserId: Number(doctorUserId),
+          slotTime: slotTime.toISOString(),
+          bookedBy,
         },
       });
       return appt.id;
