@@ -36,6 +36,7 @@ async function getTenant(tenantId) {
       type: true,
       active: true,
       allow_doctor_branding: true,
+      created_at: true,
     },
   });
 }

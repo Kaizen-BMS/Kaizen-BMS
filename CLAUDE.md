@@ -1817,27 +1817,66 @@ zero connections configured still gets `AppointmentBooked` events.
   never by a content match (a reason string, a name) that a genuinely
   unrelated historical row could also satisfy.
 
-## Dashboard overview — improved
+## Dashboard — widget-driven overview (2026-09-16, replaces the earlier
+## server-component "Dashboard overview — improved" version)
 
-`(app)/dashboard` (the landing page after login) went from a near-empty
-placeholder to real at-a-glance stat cards, module-aware — a card only
-appears if that module is active for the tenant. Server component, raw
-`prisma` throughout (no request/AsyncLocalStorage context here, same
-reasoning as `dashboard/layout.js`), every query explicitly
-`tenant_id`-scoped.
+`(app)/dashboard` was rebuilt from a server component (raw `prisma`, no
+realtime capability) into the same client-component + `apiGet()` +
+`useRealtime()` pattern every other HMS screen already uses — needed for
+live updates, and the one deliberate exception to "prefer server
+components" this project has, justified the same way `dashboard/page.js`'s
+own comment states it: a plain server component can't hold a live socket
+subscription. `page.js` is now a thin wrapper (`<DashboardClient />`); all
+data comes from one endpoint, `GET /api/dashboard/overview`
+(`src/app/api/dashboard/overview/route.js`).
 
-- **Every tenant**: patients registered today, open visits today, patients
-  referred today (a `referral_sources` reporting payoff, not just data
-  capture).
-- **PHARMACY active**: low-stock medicine count (same threshold rule as
-  the Pharmacy inventory screen), prescriptions pending dispense.
-- **LAB active**: lab orders pending (ordered/in-progress).
-- **IPD active**: beds occupied / total.
-- **BILLING active**: open bills (OPEN/PARTIALLY_PAID).
-- **SUPER_ADMIN**: platform-wide counts (total tenants, active tenants,
-  staff accounts across all tenants) instead of the old static "next
-  build step" placeholder text, which was stale — Super Admin has been
-  built since.
+- **Widget registry** (`src/lib/dashboard/registry.js`) — mirrors
+  `navRegistry.js`'s own `visibleNav(ctx)` shape exactly, as
+  `visibleWidgets(ctx)`: 10 widgets (kpis, patientFlow, appointments, ipd,
+  pharmacy, lab, billing, charts, recentActivity, quickActions), each
+  filtered by role, `requiredModule` (checked against the tenant's active
+  `tenant_modules`, not a static list), and `tenantTypes`. A widget key
+  simply isn't in the `widgets` array when it doesn't apply — same
+  "module gating hides the section entirely, never renders an empty
+  shell" discipline already used everywhere else in this product.
+- **Query layer** (`src/lib/dashboard/queries.js`) — always `tenantDb`,
+  never raw `prisma`, for every tenant-scoped widget (the one deliberate
+  exception is `getPlatformOverview(prisma)` for SUPER_ADMIN, same
+  reasoning as every other platform-scoped screen). **Never invents
+  financial math**: `getBillingStatus()`'s `pendingAmount` reuses the
+  exact formula `src/lib/billing.js`'s `recomputeBillStatus()` already
+  established (`owed = max(items − discounts, 0)`, `netPaid = payments −
+  refunds`, `pending = max(owed − netPaid, 0)`) rather than a naive
+  `total − payments` that would silently ignore discounts/refunds — a
+  real bug caught and fixed before this shipped, verified live against a
+  bill with a discount AND a refund. **Multi-instance pharmacy**: per the
+  Module Instances phase, `getPharmacyStatus()` resolves and shows only
+  the tenant's DEFAULT Pharmacy instance (`getDefaultInstance()`), never
+  aggregated across instances — verified live by stocking a second,
+  non-default instance and confirming the widget didn't move. **Weekly
+  charts** are capped to `min(7, tenantAgeDays + 1)` days — a brand-new
+  tenant never sees padded/fake history rows for days before it existed.
+- **Per-widget resilience**: the API route wraps every query in a `safe()`
+  helper that catches independently, logs, and reports the key in a
+  `failedWidgets` array instead of throwing — one failing section (e.g. a
+  transient DB timeout on the remote Hostinger connection, see the
+  Prisma section's own note on that latency) never 500s the whole
+  dashboard. The client renders a distinct `FailedCard` for any widget
+  present in `failedWidgets`, separate from a widget simply not applying
+  to this role/module (which just isn't in `widgets` at all — two
+  different states, never conflated).
+- **Realtime**: subscribes to the same 15 already-existing Socket.io event
+  names this product already emits elsewhere (`patient:created`,
+  `appointment:booked`, `bed:updated`, `dispense:created`, `bill:paid`,
+  etc.) via the existing `useRealtime()` hook, debounced 400ms into one
+  full refetch rather than per-field patching — deliberately **not**
+  routed through the Phase 4 Outbox, per that phase's own explicit rule
+  that realtime stays completely independent of it.
+- **Every KPI/count comes from a real query against real data** — zero
+  `Math.random()`, zero hardcoded numbers; an empty/new tenant correctly
+  shows zeros and empty-state copy, not fabricated activity.
+
+## Patient safety & queue display
 
 ## Patient safety & queue display
 

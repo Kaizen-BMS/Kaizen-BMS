@@ -1,0 +1,369 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { apiGet } from "@/components/hms/api";
+import { useRealtime } from "@/components/hms/useRealtime";
+
+// The events that plausibly change something on this dashboard — reused
+// as-is (CLAUDE.md "Outbox — durable domain events": realtime stays
+// completely independent of the Outbox, unchanged). A single debounced
+// refetch on any of these, rather than hand-patching each counter, is the
+// deliberate acceleration-phase tradeoff — see the final report.
+const REFRESH_EVENTS = [
+  "patient:created", "patient:updated", "visit:created", "visit:updated",
+  "appointment:booked", "appointment:cancelled", "consultation:created",
+  "prescription:created", "admission:created", "admission:discharged",
+  "bed:updated", "dispense:created", "lab:result", "bill:created", "bill:paid",
+];
+
+function timeAgo(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function KpiCard({ label, value, href }) {
+  const body = (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300">
+      <p className="text-2xl font-semibold text-slate-900 tabular-nums">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{label}</p>
+    </div>
+  );
+  return href ? <Link href={href}>{body}</Link> : body;
+}
+
+function FailedCard({ title }) {
+  return (
+    <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+      <h3 className="text-sm font-semibold text-red-700">{title}</h3>
+      <p className="mt-1 text-sm text-red-600">Couldn&apos;t load this section — the rest of the dashboard is unaffected.</p>
+    </div>
+  );
+}
+
+function SectionCard({ title, href, children, empty }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+        {href && (
+          <Link href={href} className="text-xs text-slate-400 hover:text-slate-700">
+            open →
+          </Link>
+        )}
+      </div>
+      {empty ? <p className="text-sm text-slate-400">{empty}</p> : children}
+    </div>
+  );
+}
+
+function Metric({ label, value, tone }) {
+  const toneClass = tone === "warn" ? "text-amber-600" : tone === "danger" ? "text-red-600" : "text-slate-900";
+  return (
+    <div className="flex items-baseline justify-between border-b border-slate-100 py-1.5 last:border-0">
+      <span className="text-xs text-slate-500">{label}</span>
+      <span className={`text-sm font-semibold tabular-nums ${toneClass}`}>{value}</span>
+    </div>
+  );
+}
+
+/** A small, hand-rolled bar chart — no charting library needed for 7 bars. */
+function MiniBarChart({ data, formatValue }) {
+  if (!data || data.length === 0) return <p className="text-sm text-slate-400">No data available.</p>;
+  const max = Math.max(1, ...data.map((d) => d.value));
+  return (
+    <div className="flex h-24 items-end gap-1.5">
+      {data.map((d) => (
+        <div key={d.date} className="flex flex-1 flex-col items-center gap-1" title={`${d.date}: ${formatValue ? formatValue(d.value) : d.value}`}>
+          <div className="w-full rounded-t bg-[var(--hms-btn-bg)]/80" style={{ height: `${Math.max(2, (d.value / max) * 72)}px` }} />
+          <span className="text-[9px] text-slate-400">{d.date.slice(5)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const ACTIVITY_ICON = {
+  PatientRegistered: "👤", VisitCreated: "📋", ConsultationCompleted: "🩺",
+  PrescriptionCreated: "💊", AppointmentBooked: "📅", AdmissionCreated: "🛏️",
+  DischargeCompleted: "🏠", LabResultEntered: "🧪", MedicineDispensed: "💊",
+  PaymentReceived: "💳",
+};
+
+export default function DashboardClient() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const debounceRef = useRef(null);
+
+  const load = useCallback(() => {
+    apiGet("/api/dashboard/overview")
+      .then((d) => {
+        setData(d);
+        setError(false);
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const debouncedReload = useCallback(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(load, 400);
+  }, [load]);
+
+  useRealtime(
+    Object.fromEntries(REFRESH_EVENTS.map((e) => [e, debouncedReload])),
+    load, // onResync — one fresh fetch on reconnect
+  );
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="h-20 animate-pulse rounded-lg border border-slate-200 bg-slate-50" />
+        ))}
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+        <p className="text-sm text-red-600">Couldn&apos;t load the dashboard.</p>
+        <button onClick={load} className="mt-3 rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm text-[var(--hms-btn-fg)]">
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (data.scope === "PLATFORM") return <PlatformDashboard data={data} />;
+  return <TenantDashboard data={data} />;
+}
+
+function PlatformDashboard({ data }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Kaizen Platform</h1>
+        <p className="text-sm text-slate-500">
+          {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · Signed in as Super Admin
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KpiCard label="Total tenants" value={data.totalTenants} href="/dashboard/platform/tenants" />
+        <KpiCard label="Active tenants" value={data.activeTenants} href="/dashboard/platform/tenants" />
+        <KpiCard label="Suspended tenants" value={data.suspendedTenants} href="/dashboard/platform/tenants" />
+        <KpiCard label="Tenant types" value={Object.keys(data.byType).length} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SectionCard title="Tenants by type">
+          {Object.entries(data.byType).map(([type, count]) => (
+            <Metric key={type} label={type.replace(/_/g, " ")} value={count} />
+          ))}
+        </SectionCard>
+        <SectionCard title="Module instances">
+          {data.moduleInstances.map((m, i) => (
+            <Metric key={i} label={`${m.module.replace(/_/g, " ")} — ${m.status.toLowerCase()}`} value={m.count} tone={m.status === "SUSPENDED" ? "warn" : undefined} />
+          ))}
+        </SectionCard>
+      </div>
+
+      <SectionCard title="Recent tenants" href="/dashboard/platform/tenants" empty={data.recentTenants.length === 0 ? "No tenants yet." : null}>
+        <div className="space-y-2">
+          {data.recentTenants.map((t) => (
+            <div key={t.id} className="flex items-center justify-between border-b border-slate-100 py-1.5 last:border-0">
+              <div>
+                <span className="text-sm font-medium text-slate-800">{t.name}</span>
+                <span className="ml-2 text-xs text-slate-400">{t.type.replace(/_/g, " ")}</span>
+              </div>
+              <span className={`rounded-full px-2 py-0.5 text-xs ${t.active ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+                {t.active ? "Active" : "Suspended"}
+              </span>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      <Link href="/dashboard/platform/tenants/new" className="inline-block rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)]">
+        + Create tenant
+      </Link>
+    </div>
+  );
+}
+
+function TenantDashboard({ data }) {
+  const has = (k) => data.widgets.includes(k);
+  const failed = (k) => data.failedWidgets?.includes(k);
+  const money = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold">{data.tenant.name}</h1>
+        <p className="text-sm text-slate-500">
+          {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · Signed in as{" "}
+          {data.role.replace(/_/g, " ").toLowerCase()}
+        </p>
+      </div>
+
+      {has("kpis") && data.kpis && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <KpiCard label="Today's patients" value={data.kpis.patientsToday} href="/dashboard/registration" />
+          {data.kpis.appointmentsToday !== undefined && <KpiCard label="Today's appointments" value={data.kpis.appointmentsToday} href="/dashboard/appointments" />}
+          <KpiCard label="OPD visits" value={data.kpis.opdVisitsToday} href="/dashboard/opd" />
+          <KpiCard label="Emergency visits" value={data.kpis.emergencyVisitsToday} />
+          {data.kpis.currentAdmissions !== undefined && <KpiCard label="Current admissions" value={data.kpis.currentAdmissions} href="/dashboard/ipd" />}
+          {data.kpis.availableBeds !== undefined && <KpiCard label="Available beds" value={data.kpis.availableBeds} href="/dashboard/ipd" />}
+          {data.kpis.pendingLabOrders !== undefined && <KpiCard label="Pending lab orders" value={data.kpis.pendingLabOrders} href="/dashboard/lab" />}
+          {data.kpis.todaysCollection !== undefined && <KpiCard label="Today's collection" value={money(data.kpis.todaysCollection)} href="/dashboard/billing" />}
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {has("patientFlow") && data.patientFlow && (
+          <SectionCard title="Patient Flow" href="/dashboard/registration">
+            <Metric label="Registrations" value={data.patientFlow.registrations} />
+            <Metric label="OPD" value={data.patientFlow.opd} />
+            <Metric label="Emergency" value={data.patientFlow.emergency} />
+            <Metric label="Direct admissions" value={data.patientFlow.admissions} />
+          </SectionCard>
+        )}
+        {has("patientFlow") && !data.patientFlow && failed("patientFlow") && <FailedCard title="Patient Flow" />}
+
+        {has("appointments") && data.appointments && (
+          <SectionCard title="Appointments Today" href="/dashboard/appointments">
+            <Metric label="Scheduled" value={data.appointments.scheduled} />
+            <Metric label="Completed" value={data.appointments.completed} />
+            <Metric label="Cancelled" value={data.appointments.cancelled} />
+            <Metric label="No-show" value={data.appointments.noShow} />
+          </SectionCard>
+        )}
+        {has("appointments") && !data.appointments && failed("appointments") && <FailedCard title="Appointments Today" />}
+
+        {has("ipd") && data.ipd && (
+          <SectionCard title="IPD / Beds" href="/dashboard/ipd">
+            <Metric label="Occupied" value={data.ipd.occupied} />
+            <Metric label="Available" value={data.ipd.available} />
+            <Metric label="Maintenance" value={data.ipd.maintenance} tone={data.ipd.maintenance > 0 ? "warn" : undefined} />
+            <Metric label="Admitted today" value={data.ipd.admissionsToday} />
+            <Metric label="Discharged today" value={data.ipd.dischargesToday} />
+          </SectionCard>
+        )}
+        {has("ipd") && !data.ipd && failed("ipd") && <FailedCard title="IPD / Beds" />}
+
+        {has("pharmacy") && data.pharmacy && (
+          <SectionCard title={`Pharmacy — ${data.pharmacy.instanceName}`} href="/dashboard/pharmacy">
+            <Metric label="Low stock medicines" value={data.pharmacy.lowStock} tone={data.pharmacy.lowStock > 0 ? "warn" : undefined} />
+            <Metric label="Near expiry" value={data.pharmacy.nearExpiry} tone={data.pharmacy.nearExpiry > 0 ? "warn" : undefined} />
+            <Metric label="Dispensed today" value={data.pharmacy.dispensedToday} />
+            <Metric label="Pending fulfillment" value={data.pharmacy.pendingFulfillment} />
+          </SectionCard>
+        )}
+        {has("pharmacy") && !data.pharmacy && (failed("pharmacy") ? <FailedCard title="Pharmacy" /> : <SectionCard title="Pharmacy" empty="No pharmacy instance configured yet." />)}
+
+        {has("lab") && data.lab && (
+          <SectionCard title="Laboratory" href="/dashboard/lab">
+            <Metric label="Pending orders" value={data.lab.pendingOrders} />
+            <Metric label="Results pending" value={data.lab.resultsPending} />
+            <Metric label="Completed today" value={data.lab.completedToday} />
+          </SectionCard>
+        )}
+        {has("lab") && !data.lab && failed("lab") && <FailedCard title="Laboratory" />}
+
+        {has("billing") && data.billing && (
+          <SectionCard title="Billing" href="/dashboard/billing">
+            <Metric label="Bills created today" value={data.billing.billsCreatedToday} />
+            <Metric label="Payments today" value={data.billing.paymentsToday} />
+            <Metric label="Today's collection" value={money(data.billing.todaysCollection)} />
+            <Metric label="Pending amount" value={money(data.billing.pendingAmount)} tone={data.billing.pendingAmount > 0 ? "warn" : undefined} />
+          </SectionCard>
+        )}
+        {has("billing") && !data.billing && failed("billing") && <FailedCard title="Billing" />}
+      </div>
+
+      {has("charts") && data.charts && (
+        <div className="grid gap-4 md:grid-cols-3">
+          <SectionCard title="Patient Visits">
+            <MiniBarChart data={data.charts.patientVisits} />
+          </SectionCard>
+          {data.charts.appointments && (
+            <SectionCard title="Appointments">
+              <MiniBarChart data={data.charts.appointments} />
+            </SectionCard>
+          )}
+          {data.charts.revenue && (
+            <SectionCard title="Revenue">
+              <MiniBarChart data={data.charts.revenue} formatValue={money} />
+            </SectionCard>
+          )}
+        </div>
+      )}
+      {has("charts") && !data.charts && failed("charts") && <FailedCard title="Last 7 days" />}
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {has("recentActivity") && data.recentActivity && (
+          <div className="lg:col-span-2">
+            <SectionCard title="Recent Activity" empty={!data.recentActivity.length ? "No recent activity." : null}>
+              <div className="max-h-80 space-y-1 overflow-y-auto">
+                {data.recentActivity.map((a, i) => (
+                  <div key={i} className="flex items-center justify-between border-b border-slate-100 py-1.5 text-sm last:border-0">
+                    <span className="text-slate-700">
+                      <span className="mr-1.5">{ACTIVITY_ICON[a.type] || "•"}</span>
+                      {a.label}
+                    </span>
+                    <span className="shrink-0 text-xs text-slate-400">{timeAgo(a.at)}</span>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
+        )}
+        {has("recentActivity") && !data.recentActivity && failed("recentActivity") && (
+          <div className="lg:col-span-2">
+            <FailedCard title="Recent Activity" />
+          </div>
+        )}
+
+        {has("quickActions") && data.quickActions?.length > 0 && (
+          <SectionCard title="Quick Actions">
+            <div className="flex flex-wrap gap-2">
+              {data.quickActions.map((a) => (
+                <Link
+                  key={a.href}
+                  href={a.href}
+                  className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                >
+                  {a.label}
+                </Link>
+              ))}
+            </div>
+          </SectionCard>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-5">
+        <h2 className="text-sm font-semibold text-slate-700">{data.tenant.solo ? "Your module" : "Active modules"}</h2>
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {data.activeModules.length === 0 && <li className="text-sm text-slate-400">None</li>}
+          {data.activeModules.map((m) => (
+            <li key={m} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+              {m.replace(/_/g, " ")}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
