@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiGet, apiSend } from "@/components/hms/api";
 
 // Basic foundation only — Phase 2 of the platform rebuild (see CLAUDE.md
@@ -23,7 +24,13 @@ const STATUS_STYLE = {
 };
 
 export default function ModuleInstancesClient() {
-  const [moduleName, setModuleName] = useState("PHARMACY");
+  // Deep-linked from the Modules page's "Configure" button
+  // (?module=PHARMACY) — CLAUDE.md Phase 8A "Module Management". Falls
+  // back to the original default when absent or unrecognized.
+  const searchParams = useSearchParams();
+  const requestedModule = searchParams.get("module");
+  const initialModule = MODULES.some((m) => m.key === requestedModule) ? requestedModule : "PHARMACY";
+  const [moduleName, setModuleName] = useState(initialModule);
   const [instances, setInstances] = useState(null);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);

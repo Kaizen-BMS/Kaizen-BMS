@@ -65,10 +65,82 @@ const CONNECTION_TYPES = {
     restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
     defaultActions: ["view", "create"],
   },
+  // Phase 8A additions (CLAUDE.md "Module Selection + Connection Center") —
+  // the same catalog, extended to the other module pairs the Connection
+  // Center's own product vision names, covering only modules that actually
+  // exist in MODULE_NAMES (modules.js). "Patient" and "Emergency" in that
+  // vision's diagram aren't real rentable modules (Emergency is a
+  // visits.entry_type value handled inside OPD/IPD; core patient records
+  // aren't module-gated at all) — no contract invents them.
+  OPD_BILLING_SYNC: {
+    label: "OPD Billing Sync",
+    sourceModule: "DOCTOR_OPD",
+    targetModule: "BILLING",
+    description: "An OPD visit's consultation/service charges, sent to Billing for invoicing.",
+    fields: ["visitId", "patientId", "patientName", "consultationId", "doctorId", "fee"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view", "create"],
+  },
+  IPD_PRESCRIPTION_FULFILLMENT: {
+    label: "IPD Prescription Fulfillment",
+    sourceModule: "IPD",
+    targetModule: "PHARMACY",
+    description: "An admitted patient's prescription line, sent to a pharmacy instance to be dispensed.",
+    fields: [
+      "prescriptionId",
+      "patientId",
+      "patientName",
+      "admissionId",
+      "doctorId",
+      "doctorName",
+      "medicineId",
+      "medicineName",
+      "dose",
+      "frequency",
+      "quantity",
+    ],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view", "create"],
+  },
+  IPD_LAB_ORDER_ROUTING: {
+    label: "IPD Lab Order Routing",
+    sourceModule: "IPD",
+    targetModule: "LAB",
+    description: "An admitted patient's lab order, sent to a lab instance for sample collection and results.",
+    fields: ["labOrderId", "patientId", "patientName", "admissionId", "doctorId", "doctorName", "testsRequested"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view", "create"],
+  },
+  IPD_BILLING_SYNC: {
+    label: "IPD Billing Sync",
+    sourceModule: "IPD",
+    targetModule: "BILLING",
+    description: "An admission's room/service charges, sent to Billing for the running IPD bill.",
+    fields: ["admissionId", "patientId", "patientName", "bedId", "wardType"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view", "create"],
+  },
+  APPOINTMENT_TO_CONSULTATION: {
+    label: "Appointment to Consultation",
+    sourceModule: "APPOINTMENTS",
+    targetModule: "DOCTOR_OPD",
+    description: "A booked appointment's details, made available to OPD when the patient is seen.",
+    fields: ["appointmentId", "patientId", "patientName", "doctorId", "slotTime", "reason"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view"],
+  },
 };
 
 function getContract(connectionType) {
   return CONNECTION_TYPES[connectionType] || null;
+}
+
+/** Which contract type (if any) governs a connection from this source module to this target module — the Connection Center's create flow derives connectionType from a plain module pair rather than asking an admin to know contract names. */
+function findContractForModulePair(sourceModule, targetModule) {
+  const entry = Object.entries(CONNECTION_TYPES).find(
+    ([, c]) => c.sourceModule === sourceModule && c.targetModule === targetModule,
+  );
+  return entry ? entry[0] : null;
 }
 
 /** Every field/action a caller asked to enable, restricted to what the contract actually declares — never trusted bare. */
@@ -99,6 +171,7 @@ module.exports = {
   CONNECTION_ACTIONS,
   CONNECTION_TYPES,
   getContract,
+  findContractForModulePair,
   sanitizeGrant,
   connectionGrantSchema,
 };

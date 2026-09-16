@@ -52,7 +52,7 @@ async function requireOwnInstance(db, tenantId, instanceId) {
  * sanitized down to what the contract actually declares before they're
  * ever written — a caller cannot smuggle an unlisted field or action in.
  */
-async function requestConnection(db, { tenantId, sourceInstanceId, targetInstanceId, connectionType, allowedFields, permissions, createdBy }) {
+async function requestConnection(db, { tenantId, sourceInstanceId, targetInstanceId, connectionType, allowedFields, permissions, createdBy, purpose }) {
   const contract = getContract(connectionType);
   if (!contract) throw new HttpError(400, "unknown_connection_type");
 
@@ -61,6 +61,13 @@ async function requestConnection(db, { tenantId, sourceInstanceId, targetInstanc
   if (source.module_name !== contract.sourceModule) throw new HttpError(400, "source_module_mismatch");
   if (target.module_name !== contract.targetModule) throw new HttpError(400, "target_module_mismatch");
   if (source.id === target.id) throw new HttpError(400, "source_equals_target");
+  // Both instances must be ACTIVE — CLAUDE.md Phase 8A "Connection rules"
+  // #2. A real gap found while testing this phase: this check never
+  // existed before (only tenant ownership was verified), so a suspended
+  // or archived instance could be connected. Fixed here, the one place
+  // every connection request goes through.
+  if (source.status !== "ACTIVE") throw new HttpError(409, "source_instance_not_active");
+  if (target.status !== "ACTIVE") throw new HttpError(409, "target_instance_not_active");
 
   const grant = sanitizeGrant(connectionType, { allowedFields, permissions });
 
@@ -78,13 +85,20 @@ async function requestConnection(db, { tenantId, sourceInstanceId, targetInstanc
           created_by: toId(createdBy),
         },
       });
+      // The connection's "purpose/description" (Phase 8A — CLAUDE.md
+      // "Module Selection + Connection Center") has nowhere of its own to
+      // live on `module_connections` — reusing the existing audit event's
+      // `note` field instead of adding a column: the request event already
+      // records who/when, so recording *why* alongside it is the same
+      // "one place this can drift" reasoning as everywhere else, not a
+      // new concept.
       await tx.module_connection_events.create({
         data: {
           connection_id: connection.id,
           from_status: null,
           to_status: "PENDING",
           actor_user_id: toId(createdBy),
-          note: "Connection requested.",
+          note: (purpose || "").trim() ? purpose.trim().slice(0, 500) : "Connection requested.",
         },
       });
       return connection;
@@ -126,23 +140,58 @@ async function setConnectionStatus(db, { tenantId, connectionId, toStatus, actor
   });
 }
 
+const CONNECTION_INCLUDE = {
+  module_instances_module_connections_source_instance_idTomodule_instances: true,
+  module_instances_module_connections_target_instance_idTomodule_instances: true,
+};
+
+/** One connection by id, tenant-scoped — null if it doesn't exist or belongs to another tenant (never a distinct "wrong tenant" response). */
+async function getConnection(db, tenantId, connectionId) {
+  const row = await db.module_connections.findFirst({
+    where: { id: toId(connectionId), tenant_id: toId(tenantId) },
+    include: CONNECTION_INCLUDE,
+  });
+  return row ? unwrapConnection(row) : null;
+}
+
+function unwrapConnection(r) {
+  const {
+    module_instances_module_connections_source_instance_idTomodule_instances: source,
+    module_instances_module_connections_target_instance_idTomodule_instances: target,
+    ...rest
+  } = r;
+  return { ...rest, source, target };
+}
+
 async function listConnections(db, tenantId) {
   const rows = await db.module_connections.findMany({
     where: { tenant_id: toId(tenantId) },
-    include: {
-      module_instances_module_connections_source_instance_idTomodule_instances: true,
-      module_instances_module_connections_target_instance_idTomodule_instances: true,
-    },
+    include: CONNECTION_INCLUDE,
     orderBy: { created_at: "desc" },
   });
-  return rows.map((r) => {
-    const {
-      module_instances_module_connections_source_instance_idTomodule_instances: source,
-      module_instances_module_connections_target_instance_idTomodule_instances: target,
-      ...rest
-    } = r;
-    return { ...rest, source, target };
+  return rows.map(unwrapConnection);
+}
+
+/** The append-only audit trail for one connection — CLAUDE.md Phase 3's "the log IS the audit trail" (Part 13, Phase 8A: reused, not duplicated). */
+async function listConnectionEvents(db, tenantId, connectionId) {
+  const connection = await db.module_connections.findFirst({
+    where: { id: toId(connectionId), tenant_id: toId(tenantId) },
+    select: { id: true },
   });
+  if (!connection) throw new HttpError(404, "connection_not_found");
+  const events = await db.module_connection_events.findMany({
+    where: { connection_id: connection.id },
+    orderBy: { created_at: "asc" },
+    include: { users: { select: { name: true } } },
+  });
+  return events.map((e) => ({
+    id: Number(e.id),
+    fromStatus: e.from_status,
+    toStatus: e.to_status,
+    actorName: e.users?.name || null,
+    note: e.note,
+    createdAt: e.created_at,
+  }));
 }
 
 function parseJsonArray(v) {
@@ -182,6 +231,8 @@ module.exports = {
   ALLOWED_TRANSITIONS,
   requestConnection,
   setConnectionStatus,
+  getConnection,
   listConnections,
+  listConnectionEvents,
   serializeConnection,
 };

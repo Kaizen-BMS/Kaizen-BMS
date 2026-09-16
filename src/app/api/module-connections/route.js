@@ -25,6 +25,9 @@ const createSchema = z.object({
   connectionType: z.enum(Object.keys(CONNECTION_TYPES)),
   allowedFields: z.array(z.string()).optional(),
   permissions: z.array(z.string()).optional(),
+  // Free-text "why" — CLAUDE.md Phase 8A "Connection Center — create
+  // connection". Stored on the request's own audit event, not a new column.
+  purpose: z.string().trim().max(500).optional(),
 });
 
 export const POST = apiRoute("moduleconnection:manage", async (request, { session }) => {
@@ -37,6 +40,7 @@ export const POST = apiRoute("moduleconnection:manage", async (request, { sessio
     allowedFields: body.allowedFields,
     permissions: body.permissions,
     createdBy: session.userId,
+    purpose: body.purpose,
   });
   const out = serializeConnection(connection);
   emitToTenant(session.tenantId, "module_connection:requested", { connection: out });

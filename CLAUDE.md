@@ -2172,6 +2172,147 @@ string) at billing time. Migrations 028 + 029.
   components already support; any change to FEFO, appointment
   concurrency, or Outbox.
 
+## Module Management + Connection Center UI (Phase 8A, 2026-09-16)
+
+A polished, enterprise-SaaS front end over the Phase 2/3 platform-rebuild
+backend (`module_instances`, `module_connections`, `module_connection_events`,
+`dataContracts.js`) — **zero database migrations this phase**: every
+change is additive at the application layer, reusing that schema exactly
+as it already stood (`module_connections.connection_type` is a plain
+`VARCHAR(64)`, not an ENUM, so new contract types need no schema change
+at all).
+
+- **`(app)/dashboard/admin/modules`** (new) — "Modules": one card per
+  `MODULE_REGISTRY` entry (now carrying a `category` field — Clinical/
+  Operations/Business — purely descriptive metadata added to that
+  already-static registry, not a new concept), grouped by category,
+  showing active/instance-count/connected-modules via one new composition
+  endpoint, `GET /api/modules` (action `module:read`, satisfied only by
+  the `"*"` wildcard — no rbac.js changes needed, same shape as
+  `moduleinstance:read`). `tenant_modules` stays the sole source of truth
+  for "is this module active" — the endpoint only reads it, three
+  Promise.all calls over already-tenant-scoped tables, never a second
+  activation system.
+- **Deliberate, load-bearing design decision: no self-service module
+  enable/disable for `HOSPITAL_ADMIN` on this page.** Renting a module
+  (`tenant_modules.is_active`) has been `SUPER_ADMIN`-only since the
+  2026-09-15 RBAC hardening pass — `PATCH /api/admin/tenants/[id]/modules`
+  requires `tenant:manage`, one of exactly two `PLATFORM_ONLY_ACTIONS`.
+  Phase 8A's own brief pictures an "Enable/Disable" control per module
+  card, but wiring it to that route (or relaxing the route's gate) would
+  reopen precisely the vulnerability that hardening pass fixed —
+  explicitly forbidden by this phase's own "do not weaken existing RBAC"
+  instruction. Resolved by reading "module activation" for a
+  `HOSPITAL_ADMIN` as the capability that actually already exists at
+  their level: managing **instances** within a module Kaizen has rented
+  them. An inactive/not-yet-rented module's card shows its status
+  read-only ("Not enabled — contact your Kaizen account manager") with no
+  button; an active module's "Configure" link deep-links to
+  `module-instances?module=<key>` (that existing page now reads the
+  `module` query param, wrapped in `<Suspense>` per Next's
+  `useSearchParams()` requirement — the one small addition to an
+  otherwise-untouched Phase 2 file). If self-service tenant-level
+  activation is genuinely wanted, that is a deliberate business-model
+  change for the owner to confirm explicitly, not something to infer from
+  a UI mockup detail.
+- **Connection Center** (`(app)/dashboard/admin/module-connections`,
+  same route, relabeled from "Module Connections" — rebuilt in place
+  rather than duplicated at the Phase 8A brief's suggested
+  `/dashboard/admin/connections`, since that would have fragmented
+  navigation around an identical concept). Adds, over the Phase 3
+  foundation: an active-connections relationship diagram (module → the
+  modules it's currently connected to — plain flexbox, not a graph
+  library, per this phase's explicit "no workflow-graph editor yet"),
+  a real table (Source/Target/Status/Created/Updated/Actions), a
+  "Connect Modules" modal where an admin picks **Source Module → Target
+  Module** (never a raw "connection type" name — the modal derives
+  `connectionType` from whichever contract's `sourceModule`/`targetModule`
+  matches the picked pair, using the exact `contracts` object
+  `GET /api/module-connections` already returns), a connection Details
+  view (status/timestamps/Data References — the contract's real
+  `allowedFields`/`restrictedFields` — plus the full
+  `module_connection_events` audit trail), and confirmation dialogs for
+  the one destructive action (Revoke). Pause/Resume/Revoke/Approve all
+  call the exact same pre-existing `PATCH /api/module-connections/[id]`
+  — no new lifecycle code. No shared Modal/Toast component library existed
+  in this project before; both are small, self-contained, Tailwind-only
+  components local to this one file, not a new app-wide system (this
+  product's established "plain, fast, functional" style, not a redesign).
+- **Connection "purpose"** (Part 7's create-flow field) has nowhere of
+  its own to live on `module_connections` — reused the existing
+  `module_connection_events.note` field instead of adding a column:
+  `requestConnection()`'s initial PENDING event already recorded a fixed
+  string ("Connection requested."); it now records the caller's purpose
+  text there when given. One more example of "the log IS the audit
+  trail" rather than inventing new storage for it.
+- **Data contract catalog extended** (`dataContracts.js`): 5 new
+  contract types — `OPD_BILLING_SYNC`, `IPD_PRESCRIPTION_FULFILLMENT`,
+  `IPD_LAB_ORDER_ROUTING`, `IPD_BILLING_SYNC`,
+  `APPOINTMENT_TO_CONSULTATION` — alongside the 2 already built
+  (`PRESCRIPTION_FULFILLMENT`, `LAB_ORDER_ROUTING`), covering the module
+  pairs the Phase 8A product-vision diagram names **that correspond to
+  real, registered modules** (`modules.js`'s `MODULE_NAMES`). The vision
+  diagram's "Patient" and "Emergency" nodes are deliberately not modeled
+  as connectable modules — neither is a real rentable module in this
+  system (core patient records aren't module-gated at all; Emergency is
+  a `visits.entry_type` value handled inside the existing OPD/IPD code,
+  not a separate module) — inventing either would have meant designing a
+  new module type this phase never asked for. `findContractForModulePair()`
+  is the one new lookup the create-connection modal relies on.
+- **A real, pre-existing gap found and fixed while testing this phase's
+  own required connection rules**: `requestConnection()` never actually
+  checked that the source/target **instance** was `ACTIVE` — only that it
+  belonged to the caller's tenant. A suspended instance could be
+  connected. Found live (suspended an OPD instance, connection request
+  still succeeded) while verifying Phase 8A's own instruction #2 ("Both
+  modules must be active"). Fixed with two guard clauses in
+  `requestConnection()` — `409 source_instance_not_active` /
+  `409 target_instance_not_active` — the one place every connection
+  request already passes through.
+- **A known, pre-existing limitation, documented rather than fixed this
+  phase** (out of scope — not something Phase 8A's test list actually
+  requires): `module_connections`'s unique key
+  (`uq_module_connections_pair_type` on `source_instance_id,
+  target_instance_id, connection_type`) has no status dimension, so once
+  a specific instance-pair+type connection is `REVOKED` (a terminal
+  state — `ALLOWED_TRANSITIONS.REVOKED = []`), that *exact* pair can
+  never be reconnected via `requestConnection()` again — the row still
+  exists and blocks a new `INSERT`. Revoking and reconnecting a
+  *different* instance pair (e.g. a new Pharmacy instance) works fine;
+  only the identical pair is affected. A real fix would need the same
+  NULL-≠-NULL generated-column technique already used elsewhere
+  (`module_instances.default_slot`, `appointments.active_slot_time`) to
+  scope the uniqueness to non-terminal statuses only — flagged for a
+  future phase if reconnecting an identical revoked pair turns out to be
+  a real need, not built speculatively here.
+- **RBAC**: `module:read` (new, wildcard-only, zero rbac.js changes) for
+  the Modules page; `moduleinstance:read`/`:manage` and
+  `moduleconnection:read`/`:manage` unchanged from Phase 2/3.
+  `canPlatform()`/`PLATFORM_ONLY_ACTIONS` untouched. Verified live: doctor
+  → `/api/modules` and `/api/module-connections` (GET and POST) → all
+  403; `HOSPITAL_ADMIN` → platform tenants list → still 403; tenant 2's
+  context sees zero of tenant 1's `module_instances`/connections.
+- **Verified live**: the new `OPD_BILLING_SYNC` contract end-to-end
+  (request → approve → pause → resume → revoke, full audit trail with
+  the purpose note intact at every step); duplicate active connection
+  → clean 409; `GET /api/modules`'s `connectedModules` correctly updates
+  the moment a connection goes `ACTIVE`. Regression: existing
+  dashboard/Outbox/pharmacy/lab/OPD/billing/reports/appointments routes
+  all still 200 (one batch of transient `P1001` "can't reach database
+  server" errors mid-testing was a genuine remote-DB blip — same
+  documented Hostinger instability noted elsewhere in this file, resolved
+  on retry, not a code regression).
+- **Deliberately not built this phase** (explicit scope cut): a
+  drag-and-drop workflow/graph editor, a Data Contract designer UI (field
+  toggles beyond what a contract already declares), Events/Workflows tab
+  content (both show "Configuration available in the next integration
+  phase" — honest, not fake, since no per-connection event/workflow
+  metadata exists in this architecture yet), self-service module
+  enable/disable for `HOSPITAL_ADMIN` (see above), cross-tenant
+  connections (the schema's `tenant_id` on `module_connections` already
+  allows for this later, per migration 024's own comment — no route
+  creates one yet).
+
 ## Patient safety & queue display
 
 - **Allergies** (`patients.allergies` JSON): a chip/tag input, never a

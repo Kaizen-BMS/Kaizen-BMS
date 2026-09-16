@@ -2,10 +2,28 @@ import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
-import { setConnectionStatus, serializeConnection } from "@/lib/moduleConnections";
+import { setConnectionStatus, getConnection, listConnectionEvents, serializeConnection } from "@/lib/moduleConnections";
+import { CONNECTION_TYPES } from "@/lib/dataContracts";
 import { emitToTenant } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
+
+// Connection details view (Phase 8A — CLAUDE.md "Module Selection +
+// Connection Center"): the connection itself plus its full
+// module_connection_events audit trail (status history + the purpose note
+// recorded at request time). No new storage — same rows listConnections()
+// and requestConnection() already read/write.
+export const GET = apiRoute("moduleconnection:read", async (_request, ctx) => {
+  const { id } = await ctx.params;
+  const connection = await getConnection(tenantDb, ctx.session.tenantId, id);
+  if (!connection) return json({ error: "not_found" }, 404);
+  const events = await listConnectionEvents(tenantDb, ctx.session.tenantId, id);
+  return json({
+    connection: serializeConnection(connection),
+    events,
+    contract: CONNECTION_TYPES[connection.connection_type] || null,
+  });
+});
 
 const patchSchema = z.object({
   status: z.enum(["ACTIVE", "PAUSED", "SUSPENDED", "REVOKED"]),
