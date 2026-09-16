@@ -79,6 +79,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "bills",
   "consent_forms",
   "consultations",
+  "departments",
   "doctor_slots",
   "duty_shifts",
   "feedback",

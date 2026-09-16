@@ -2313,6 +2313,115 @@ at all).
   allows for this later, per migration 024's own comment — no route
   creates one yet).
 
+## Master data + data contract foundation (Phase 8B, 2026-09-16)
+
+Full architecture doc: `docs/hms-master-data-phase8b.md`. The headline
+finding, from auditing every candidate master-data entity before writing
+any code: **only one was genuinely missing** — Department. Patient,
+Doctor/Staff, Service, Medicine/Product, and Lab Test all already had a
+real, sufficient model (the last two specifically because Phase 7's
+explicit-`service_id`-mapping design already made `services` the
+reusable pharmacy/lab identity — confirmed, not assumed, before deciding
+not to duplicate it).
+
+- **`departments`** (migration 030) — the one new table this phase adds:
+  `code`/`name`/`active` only, tenant-scoped, unique per
+  `(tenant_id, code)`. **Deliberately not wired into any other table
+  yet** — no `department_id` added to `services`/`staff_profiles`/`beds`
+  this phase, per the explicit "do not multiply database entities"
+  instruction; a future phase adds that FK once a real cross-cutting need
+  exists. Minimal CRUD at `GET`/`POST /api/departments`,
+  `PATCH /api/departments/[id]` (actions `department:read`/`:manage`,
+  wildcard-only, zero `rbac.js` changes — same shape as
+  `moduleinstance:read`/`:manage`), UI at `/dashboard/admin/master-data`
+  (Departments tab has real CRUD; Services/Pharmacy Products/Lab Tests
+  tabs are **read-only previews** of the existing `services` catalog,
+  filtered by `serviceType`, linking to the Service Master at
+  `/dashboard/admin/pricing` for anything beyond viewing — one source of
+  truth, not a duplicated screen).
+- **Contract catalog extended** (`dataContracts.js`): every existing
+  entry gained `version`/`status` fields (additive — `version: 1,
+  status: "ACTIVE"` on all 7 Phase 3/8A contracts, nothing that reads a
+  `CONNECTION_TYPES` entry broke) plus `requiredFields` (the ID-first
+  subset a payload cannot be missing) and `purpose`. 6 new entries fill
+  the real gaps in Part 6's "minimum contract catalog" that correspond to
+  actual registered module pairs: `LAB_RESULT_TO_CLINICAL` (LAB→
+  DOCTOR_OPD), `LAB_RESULT_TO_BILLING` (LAB→BILLING), `DISPENSE_TO_BILLING`
+  (PHARMACY→BILLING) are real, **connectable** contracts (a
+  `module_connections` row can use them, same as any Phase 3/8A
+  contract); `PATIENT_REFERENCE`, `VISIT_REFERENCE`, `PAYMENT_REFERENCE`
+  are `connectable: false` — pure ID-first field-whitelist shapes with no
+  `module_connections` counterpart, because "Patient"/"Visit"/"Payment"
+  aren't rentable modules with instances to connect (same reasoning
+  Phase 8A already documented for excluding "Patient"/"Emergency" as
+  diagram nodes) — they exist only for
+  `dataContractValidator.js`/`checkContractAccess()` to check a payload
+  against. **Existing contract KEYS were never renamed** even where a
+  Phase 8B concept name overlaps in spirit (e.g. `APPOINTMENT_TO_
+  CONSULTATION` already covers "AppointmentReference") — renaming a
+  stored `module_connections.connection_type` string would be exactly the
+  breaking change Part 10 forbids.
+- **`findContractForModulePair()` extended** (Part 12) to accept either
+  its original positional form or a richer options object
+  (`{ sourceModule, targetModule, contractType, version }`) — backward
+  compatible, the Connection Center's create-modal still calls the
+  original form unchanged.
+- **`src/lib/dataContractValidator.js`** (new) — `validateContractPayload
+  (contractType, payload, { sourceModule, targetModule, version })`, a
+  small explicit validator (not a JSON-schema framework): contract
+  exists → active → version matches → module pair matches → every
+  `requiredFields` entry present → every payload key is in the contract's
+  own `fields` whitelist. Returns `{ valid, errors: [...] }`, string
+  error codes, never throws.
+- **`checkContractAccess()`** (new, in `moduleConnections.js`) — the full
+  Part 13 checklist a future real consumer (a Workflow Engine step — not
+  built yet) would call before actually moving data between two modules:
+  both instances belong to the tenant → both `ACTIVE` → a connection
+  exists between them → that connection is `ACTIVE` → the contract
+  exists/is active/matches → the payload validates. Returns
+  `{ ok: true, contract, connection }` or `{ ok: false, status, error }`
+  (403/404/409/422 per this project's existing conventions — 422 is new
+  to this codebase, used specifically for "well-formed request, payload
+  fails contract validation," distinct from 400/404/409's existing
+  meanings). No route calls this yet — nothing in this phase needed a
+  real cross-module data exchange to happen; it's a tested, ready library
+  function, not fake functionality wired to a route for its own sake.
+  **Verified live**: valid payload succeeds; a forbidden field, a missing
+  required id, an unknown contract version, a paused connection, a
+  revoked connection, a suspended instance, and a cross-tenant instance
+  id are each rejected with the correct status/error — the cross-tenant
+  case returns `404 source_instance_not_found`, never a distinct
+  "wrong tenant" response, same no-enumeration discipline as everywhere
+  else in this codebase.
+- **`GET /api/data-contracts`** (new) — read-only catalog view, reuses
+  the existing `moduleconnection:read` action rather than introducing a
+  new one (contracts are conceptually part of the connection system).
+  Feeds `/dashboard/admin/contracts` — **view-only, by design**: Phase 8B
+  keeps contracts system-defined, no "create a contract" form exists.
+- **Connection Details extended** (Part 20): `GET /api/module-connections/
+  [id]` now also returns `availableContracts` — every connectable
+  contract registered for that connection's specific source/target
+  module pair (not just the one contract type this connection happens to
+  use), so the UI can show "which data relationships exist for OPD →
+  Pharmacy" generally. No new storage; derived from the same
+  `CONNECTION_TYPES` catalog already loaded.
+- **RBAC**: `department:read`/`:manage` (new, wildcard-only, zero
+  `rbac.js` changes). `moduleconnection:read` reused for the contracts
+  catalog view — no new action. `canPlatform()`/`PLATFORM_ONLY_ACTIONS`
+  untouched.
+- **Migration**: exactly one — `030_departments.sql`. Every other Phase
+  8B change (contract catalog entries, the validator, `checkContractAccess()`)
+  is application-layer only, per the explicit "ask: can an existing model
+  safely represent this?" instruction — the answer was yes for every
+  master-data entity except Department.
+- **Deliberately not built this phase**: Workflow Engine, arbitrary
+  user-created contracts, a contract-editing UI, department wired into
+  any other table, event↔contract metadata beyond documentation (Part 21
+  — the relationship is documented in `docs/hms-master-data-phase8b.md`
+  and this section, not implemented as new code; the 3 existing durable
+  Outbox events — `AppointmentBooked`/`PrescriptionCreated`/
+  `PaymentReceived` — are unchanged).
+
 ## Patient safety & queue display
 
 - **Allergies** (`patients.allergies` JSON): a chip/tag input, never a

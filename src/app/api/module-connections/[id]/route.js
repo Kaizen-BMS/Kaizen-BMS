@@ -9,19 +9,33 @@ import { emitToTenant } from "@/lib/realtime";
 export const dynamic = "force-dynamic";
 
 // Connection details view (Phase 8A — CLAUDE.md "Module Selection +
-// Connection Center"): the connection itself plus its full
+// Connection Center"; Part 20 extended in Phase 8B "Master data + data
+// contract foundation"): the connection itself, its full
 // module_connection_events audit trail (status history + the purpose note
-// recorded at request time). No new storage — same rows listConnections()
-// and requestConnection() already read/write.
+// recorded at request time), the ONE contract this connection actually
+// uses, and — new in Phase 8B — every OTHER connectable contract
+// available for this same source/target module pair, so an admin can see
+// "which data relationships exist" for OPD -> Pharmacy generally, not
+// just the one this particular connection happens to use. No new
+// storage — same rows listConnections()/requestConnection() already
+// read/write, plus the CONNECTION_TYPES catalog already loaded.
 export const GET = apiRoute("moduleconnection:read", async (_request, ctx) => {
   const { id } = await ctx.params;
   const connection = await getConnection(tenantDb, ctx.session.tenantId, id);
   if (!connection) return json({ error: "not_found" }, 404);
   const events = await listConnectionEvents(tenantDb, ctx.session.tenantId, id);
+
+  const sourceModule = connection.source?.module_name;
+  const targetModule = connection.target?.module_name;
+  const availableContracts = Object.entries(CONNECTION_TYPES)
+    .filter(([, c]) => c.connectable !== false && c.sourceModule === sourceModule && c.targetModule === targetModule)
+    .map(([key, c]) => ({ key, ...c }));
+
   return json({
     connection: serializeConnection(connection),
     events,
     contract: CONNECTION_TYPES[connection.connection_type] || null,
+    availableContracts,
   });
 });
 

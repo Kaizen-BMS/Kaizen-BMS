@@ -2,6 +2,7 @@
 
 const { HttpError } = require("./apiRoute");
 const { getContract, sanitizeGrant } = require("./dataContracts");
+const { validateContractPayload } = require("./dataContractValidator");
 
 /**
  * Module Connection Center — data/service layer, Phase 3 of the platform
@@ -107,6 +108,53 @@ async function requestConnection(db, { tenantId, sourceInstanceId, targetInstanc
     if (err && err.code === "P2002") throw new HttpError(409, "connection_already_exists");
     throw err;
   }
+}
+
+/**
+ * The full Part 13 contract-access checklist (CLAUDE.md "Master data +
+ * data contract foundation") — the one function a future real consumer
+ * (a Workflow Engine step, a webhook handler — none exists yet) would
+ * call before actually using a contract to move data between two
+ * modules. Checks, in order: both instances belong to this tenant, both
+ * are ACTIVE, a connection exists between them, that connection is
+ * ACTIVE, the contract exists/is active/matches the module pair, and the
+ * payload passes `validateContractPayload()`. Authentication and RBAC
+ * are the CALLER's responsibility (every route already goes through
+ * `apiRoute()`) — this function only ever runs inside an already-
+ * authenticated, already-tenant-scoped request.
+ *
+ * Returns `{ ok: true, contract, connection }` or
+ * `{ ok: false, status, error }` — never throws, so a caller can decide
+ * exactly how to respond (this project's existing 403/404/409/422
+ * conventions) without a generic try/catch.
+ */
+async function checkContractAccess(db, { tenantId, sourceInstanceId, targetInstanceId, contractType, version, payload }) {
+  const source = await db.module_instances.findFirst({ where: { id: toId(sourceInstanceId), tenant_id: toId(tenantId) } });
+  if (!source) return { ok: false, status: 404, error: "source_instance_not_found" };
+  const target = await db.module_instances.findFirst({ where: { id: toId(targetInstanceId), tenant_id: toId(tenantId) } });
+  if (!target) return { ok: false, status: 404, error: "target_instance_not_found" };
+
+  if (source.status !== "ACTIVE") return { ok: false, status: 409, error: "source_instance_not_active" };
+  if (target.status !== "ACTIVE") return { ok: false, status: 409, error: "target_instance_not_active" };
+
+  const connection = await db.module_connections.findFirst({
+    where: { tenant_id: toId(tenantId), source_instance_id: source.id, target_instance_id: target.id, connection_type: contractType },
+  });
+  if (!connection) return { ok: false, status: 404, error: "connection_not_found" };
+  if (connection.status !== "ACTIVE") return { ok: false, status: 409, error: "connection_not_active" };
+
+  const contract = getContract(contractType, version);
+  if (!contract) return { ok: false, status: 404, error: version != null ? "unknown_contract_version" : "unknown_contract" };
+  if (contract.status !== "ACTIVE") return { ok: false, status: 409, error: "contract_inactive" };
+
+  const validation = validateContractPayload(contractType, payload, {
+    sourceModule: source.module_name,
+    targetModule: target.module_name,
+    version,
+  });
+  if (!validation.valid) return { ok: false, status: 422, error: "invalid_payload", errors: validation.errors };
+
+  return { ok: true, contract, connection };
 }
 
 /** ACTIVE/PAUSED/SUSPENDED/REVOKED transitions — every change is logged, nothing is ever silently overwritten or deleted. */
@@ -231,6 +279,7 @@ module.exports = {
   ALLOWED_TRANSITIONS,
   requestConnection,
   setConnectionStatus,
+  checkContractAccess,
   getConnection,
   listConnections,
   listConnectionEvents,

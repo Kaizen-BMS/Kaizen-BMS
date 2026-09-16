@@ -440,6 +440,7 @@ model tenants {
   bills                    bills[]
   consent_forms            consent_forms[]
   consultations            consultations[]
+  departments              departments[]
   doctor_slots             doctor_slots[]
   duty_shifts              duty_shifts[]
   feedback                 feedback[]
@@ -487,6 +488,8 @@ model users {
   bills                                                    bills[]
   consent_forms                                            consent_forms[]
   consultations                                            consultations[]
+  departments_departments_created_byTousers                departments[]              @relation("departments_created_byTousers")
+  departments_departments_updated_byTousers                departments[]              @relation("departments_updated_byTousers")
   discounts                                                discounts[]
   doctor_slots                                             doctor_slots[]
   duty_shifts_duty_shifts_created_byTousers                duty_shifts[]              @relation("duty_shifts_created_byTousers")
@@ -1038,6 +1041,27 @@ model lab_order_items {
   @@index([lab_order_id], map: "idx_lab_order_items_order")
   @@index([service_id], map: "idx_lab_order_items_service")
   @@index([tenant_id], map: "idx_lab_order_items_tenant")
+}
+
+model departments {
+  id                                  BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                           BigInt   @db.UnsignedBigInt
+  code                                String   @db.VarChar(50)
+  name                                String
+  active                              Boolean  @default(true)
+  created_by                          BigInt?  @db.UnsignedBigInt
+  updated_by                          BigInt?  @db.UnsignedBigInt
+  created_at                          DateTime @default(now())
+  updated_at                          DateTime @default(now())
+  users_departments_created_byTousers users?   @relation("departments_created_byTousers", fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_departments_created_by")
+  tenants                             tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_departments_tenant")
+  users_departments_updated_byTousers users?   @relation("departments_updated_byTousers", fields: [updated_by], references: [id], onUpdate: Restrict, map: "fk_departments_updated_by")
+
+  @@unique([tenant_id, code], map: "uq_departments_tenant_code")
+  @@index([created_by], map: "fk_departments_created_by")
+  @@index([updated_by], map: "fk_departments_updated_by")
+  @@index([tenant_id], map: "idx_departments_tenant")
+  @@index([tenant_id, active], map: "idx_departments_tenant_active")
 }
 
 enum beds_ward_type {

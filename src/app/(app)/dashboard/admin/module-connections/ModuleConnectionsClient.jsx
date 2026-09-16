@@ -310,12 +310,16 @@ function CreateConnectionModal({ instances, contracts, onClose, onCreated, onErr
   // contract catalog (GET /api/module-connections already returns it) —
   // an admin picks Source Module / Target Module, never a "connection
   // type" name, per CLAUDE.md Phase 8A "Connection Center — create
-  // connection". Only module pairs a contract actually declares appear.
-  const sourceModules = Array.from(new Set(Object.values(contracts).map((c) => c.sourceModule)));
+  // connection". Only module pairs a CONNECTABLE contract declares appear
+  // — Phase 8B's reference-only shapes (PatientReference etc., `sourceModule:
+  // null`) are field-whitelists for the validator, not connectable pairs,
+  // so they're excluded here.
+  const connectableContracts = Object.entries(contracts).filter(([, c]) => c.connectable !== false);
+  const sourceModules = Array.from(new Set(connectableContracts.map(([, c]) => c.sourceModule)));
   const targetModules = Array.from(
-    new Set(Object.values(contracts).filter((c) => c.sourceModule === sourceModule).map((c) => c.targetModule)),
+    new Set(connectableContracts.filter(([, c]) => c.sourceModule === sourceModule).map(([, c]) => c.targetModule)),
   );
-  const connectionType = Object.entries(contracts).find(
+  const connectionType = connectableContracts.find(
     ([, c]) => c.sourceModule === sourceModule && c.targetModule === targetModule,
   )?.[0];
   const contract = connectionType ? contracts[connectionType] : null;
@@ -496,6 +500,27 @@ function ConnectionDetailsModal({ connectionId, moduleLabel, onClose }) {
               <p className="text-xs uppercase text-slate-400">Updated</p>
               <p className="mt-1 text-slate-600">{fmt(data.connection.updatedAt)}</p>
             </div>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs font-semibold uppercase text-slate-400">Available contracts</p>
+            {data.availableContracts && data.availableContracts.length > 0 ? (
+              <div className="space-y-1.5">
+                {data.availableContracts.map((c) => (
+                  <div key={c.key} className="flex items-center justify-between rounded-md border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-xs">
+                    <span className="text-slate-600">
+                      {c.key === data.connection.connectionType ? "✓ " : ""}
+                      {c.label} v{c.version}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 ${c.status === "ACTIVE" ? "border border-green-300 bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+                      {c.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">No contracts registered for this module pair yet.</p>
+            )}
           </div>
 
           <div>

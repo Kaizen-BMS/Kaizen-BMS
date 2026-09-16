@@ -53,6 +53,8 @@ const NAV = [
   { key: "modules", label: "Modules", section: "ADMINISTRATION", route: "/dashboard/admin/modules", icon: "registry", action: "module:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "moduleInstances", label: "Module Instances", section: "ADMINISTRATION", route: "/dashboard/admin/module-instances", icon: "registry", action: "moduleinstance:manage", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "moduleConnections", label: "Connection Center", section: "ADMINISTRATION", route: "/dashboard/admin/module-connections", icon: "registry", action: "moduleconnection:manage", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
+  { key: "masterData", label: "Master Data", section: "ADMINISTRATION", route: "/dashboard/admin/master-data", icon: "registry", action: "department:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
+  { key: "contracts", label: "Data Contracts", section: "ADMINISTRATION", route: "/dashboard/admin/contracts", icon: "registry", action: "moduleconnection:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "pricing", label: "Pricing", section: "ADMINISTRATION", route: "/dashboard/admin/pricing", icon: "billing", action: "service:manage", modules: ["BILLING"], adminOnly: true, status: "live" },
   { key: "branding", label: "Branding", section: "ADMINISTRATION", route: "/dashboard/branding", icon: "branding", action: "branding:read", adminOnly: false, status: "live" },
 
