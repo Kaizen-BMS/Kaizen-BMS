@@ -2422,6 +2422,138 @@ not to duplicate it).
   Outbox events — `AppointmentBooked`/`PrescriptionCreated`/
   `PaymentReceived` — are unchanged).
 
+## First real cross-module data exchange — Prescription → Pharmacy (Phase 8C, 2026-09-17)
+
+`checkContractAccess()` (Phase 8B) went from a tested-but-unused library
+function to an actual security gate: `GET /api/pharmacy/prescriptions/
+[prescriptionId]/availability` is the first real consumer of the whole
+Data Contract system built since Phase 3. Read-only, ID-first, and
+strictly additive — it does not touch dispensing, FEFO, or stock at all;
+it only answers "given the PrescriptionReference contract, what could a
+connected pharmacy instance currently fulfill."
+
+- **The contract reused, not duplicated**: `PRESCRIPTION_FULFILLMENT`
+  (DOCTOR_OPD → PHARMACY, existing since Phase 3). Gained two more
+  whitelisted fields, `status`/`createdAt` (additive to the v1 field
+  list, not a version bump — see `dataContracts.js`'s own versioning
+  comment for why this is safe), so the header-level reference this
+  phase sends (`{prescriptionId, patientId, visitId, doctorId, status,
+  createdAt}`) validates cleanly against the same contract Phase 3's
+  per-line fields already lived on.
+- **Pharmacy instance resolution is connection-driven, never a silent
+  default** (Part 4): the endpoint resolves the tenant's default
+  DOCTOR_OPD instance as the source, then looks up every ACTIVE
+  `PRESCRIPTION_FULFILLMENT` connection FROM it — zero connected Pharmacy
+  instances is a clean `409 no_active_connection`; exactly one
+  auto-resolves; more than one returns `409 pharmacy_instance_required`
+  with the real list of connected instances (id + name) for the caller
+  to choose from. The tenant's default Pharmacy instance is **never**
+  used as a fallback here — only an instance the connection actually
+  names is ever a valid target, which is the entire point of requiring a
+  real connection in the first place.
+- **`checkContractAccess()` is the real gate, not a formality** —
+  verified live that a `PENDING` (not yet approved) connection is
+  rejected exactly like no connection at all, and that pausing/revoking
+  an already-`ACTIVE` connection immediately blocks the same prescription
+  that worked a moment before. Suspending either the source (OPD) or
+  target (Pharmacy) instance is independently rejected too, one layer
+  deeper than the instance-resolution step (which only filters by
+  status when *listing* candidates) — `checkContractAccess()`'s own
+  `source_instance_not_active`/`target_instance_not_active` checks are
+  what actually catch a source instance suspended out from under an
+  already-resolved target.
+- **Medicine/service mapping reused exactly as Phase 7 built it**
+  (Part 7): `prescription_items.service_id` — set, or not, at
+  prescribing time; never inferred from `medicine_name` text here.  An
+  item with no mapping returns `status: "UNMAPPED"` with `availableQuantity:
+  null`, distinct from a mapped item that's genuinely out of stock. Per-
+  item status: `UNMAPPED` (no service_id) → `FULFILLED` (nothing
+  outstanding) → `OUT_OF_STOCK` (0 available) → `PARTIAL` (some but not
+  enough) → `AVAILABLE`.
+- **One aggregate query for the whole prescription's inventory check**,
+  not one per line (`pharmacy_stock.groupBy` over every distinct medicine
+  name at once, scoped to the ONE resolved pharmacy instance and the
+  non-expired-batch filter this project already uses for FEFO) — Part 22's
+  "avoid N+1" requirement.
+- **Availability never touches stock, verified by direct measurement**:
+  checked a batch's quantity before and after calling the endpoint
+  (unchanged), then again after a real dispense against the same item
+  (correctly decremented) — the availability number is a live snapshot,
+  never a reservation, matching Part 16's explicit "do not rely on this
+  as a reservation" instruction.
+- **A real, serious pre-existing concurrency bug found and fixed while
+  verifying Part 16's own requirement** ("the final inventory deduction
+  must continue to be protected by the existing transaction/concurrency
+  implementation"): `POST /api/pharmacy/dispense/[itemId]` read
+  `prescription_items.dispensed_quantity` *outside* any lock, then wrote
+  a freshly-computed absolute value back inside the transaction. Two
+  genuinely concurrent dispense requests on the SAME item both read the
+  same stale `dispensed_quantity`, both computed their own "new total"
+  from it, and the transaction that committed second silently overwrote
+  the first's contribution — a classic lost update. Verified live before
+  the fix: two concurrent requests for 2 units each against an item with
+  4 outstanding correctly deducted 4 units of real stock, but
+  `dispensed_quantity` only advanced by 2 — stock and bookkeeping had
+  gone out of sync. **Fixed** by locking the `prescription_items` row
+  itself with `SELECT ... FOR UPDATE` at the start of the transaction
+  (the same technique this route already used for `pharmacy_stock`
+  batches) and deriving every downstream value —
+  `outstanding`/`requested`/`newDispensed`/`itemStatus` — from that fresh,
+  locked read, never the pre-transaction snapshot. Re-verified live: a
+  2-way race (exactly the failing case) and a 5-way stress test (5
+  concurrent requests for 2 units each against an outstanding balance of
+  10) both now leave `dispensed_quantity` and the stock ledger in perfect
+  agreement, every time.
+- **A second bug caught immediately after the first fix, before either
+  shipped**: MariaDB `INT UNSIGNED` columns (`prescription_items.
+  quantity`/`dispensed_quantity`) come back as `BigInt` from a raw
+  `$queryRawUnsafe` result — unlike the plain signed `INT`
+  `pharmacy_stock.quantity` in the very same file, which comes back as a
+  `Number`. `Math.min()` throws on a bare `BigInt` argument. Fixed with
+  an explicit `Number(...)` conversion on the two locked-row fields
+  immediately after the raw query — real quantities here are always
+  tiny, nowhere near a range where that conversion could lose precision.
+  **Worth remembering for any future raw SQL in this codebase**: whether
+  a raw-query integer column comes back as `Number` or `BigInt` depends
+  on its exact SQL type (signed vs `UNSIGNED`), not just "is it an
+  integer" — check both, don't assume.
+- **Pharmacy UI** (`(app)/dashboard/pharmacy`'s existing prescription
+  queue tab): a small "Check pharmacy availability" toggle per
+  prescription card, expanding into exactly the table Part 13 asked for
+  (Medicine / Requested / Available / Status), with a pharmacy-instance
+  picker that only appears when the endpoint actually reports more than
+  one connected instance. The existing "Dispense" buttons in the same
+  card are untouched and remain the only real dispensing action — the
+  panel explicitly says so rather than duplicating that control.
+- **Doctor-side UI deliberately not touched** — Part 14 itself frames
+  this as optional ("may optionally show…"); given the phase's real
+  weight was the contract-enforcement backend and the concurrency bug it
+  surfaced, this was left for a later pass rather than adding an
+  under-tested UI change to an already-large phase.
+- **Security, verified live**: connected+active succeeds; no connection,
+  paused, and revoked are each rejected the same way (`409`); a
+  suspended source or target instance is rejected independently; an
+  unknown prescription id is a safe `404`; a doctor (no `dispense:read`)
+  gets `403`; a cross-tenant instance id resolves to `404
+  source_instance_not_found` via `checkContractAccess()` — verified
+  directly, since a real second-tenant Clinical↔Pharmacy connection
+  wasn't available to exercise end-to-end through the HTTP route itself.
+  Forbidden payload fields, missing required ids, and an unknown contract
+  version were all re-verified directly against `checkContractAccess()`
+  too, matching Phase 8B's own verification method for the same checks.
+- **Regression, unaffected**: appointment double-booking concurrency
+  (10 simultaneous requests → 1×201/9×409, unchanged), Outbox
+  (`PrescriptionCreated` still fires, unchanged envelope), dashboard,
+  existing reports/services/tariffs/modules/connections/departments/
+  contracts routes, and the solo Pharmacy tenant's own inventory —
+  the dispense-route fix is tenant-generic by construction (same
+  `tenant_id`-scoped tables, same code path for every tenant type), not
+  something that needed separate solo-tenant verification to trust.
+- **Deliberately not built this phase** (explicit scope cut): Workflow
+  Engine, any drug-interaction/substitution logic, an availability
+  "reservation" mechanism, external pharmacy integrations, and Doctor-side
+  prescribing UI changes (see above).
+
 ## Patient safety & queue display
 
 - **Allergies** (`patients.allergies` JSON): a chip/tag input, never a

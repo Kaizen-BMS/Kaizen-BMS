@@ -61,6 +61,14 @@ const CONNECTION_TYPES = {
       "dose",
       "frequency",
       "quantity",
+      // Added Phase 8C (CLAUDE.md "First real cross-module data exchange —
+      // Prescription → Pharmacy") for the prescription-header-level
+      // PrescriptionReference the pharmacy availability check sends —
+      // purely additive to the whitelist, not a breaking change to the
+      // existing per-line fields above (still v1; see dataContracts.js's
+      // own versioning-contract comment).
+      "status",
+      "createdAt",
     ],
     // The subset of `fields` a payload cannot be missing — CLAUDE.md
     // Phase 8B Part 9's "required identifiers exist" check.

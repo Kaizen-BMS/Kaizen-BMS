@@ -33,12 +33,47 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
   if (!item) return json({ error: "not_found" }, 404);
 
   const body = await parseBody(request, dispenseSchema);
-  const outstanding = item.quantity - item.dispensed_quantity;
-  if (outstanding <= 0) throw new HttpError(400, "already fully dispensed");
-  const requested = Math.min(body.quantity ?? outstanding, outstanding);
+  // Fast, friendly pre-check only — NOT the authoritative one. The real
+  // guarantee comes from the locked re-read inside the transaction below
+  // (same "pre-check for a clean message, the lock is what's actually
+  // safe under a race" shape as this project's token-override/tariff
+  // versioning code).
+  if (item.quantity - item.dispensed_quantity <= 0) throw new HttpError(400, "already fully dispensed");
   const instance = await resolveInstance(tenantDb, ctx.session.tenantId, "PHARMACY", body.moduleInstanceId);
 
   const result = await tenantDb.$transaction(async (tx) => {
+    // Lock the prescription_items row itself, not just the stock batches
+    // — a REAL bug, found live while testing Phase 8C's own availability
+    // endpoint: two concurrent dispense requests on the SAME item both
+    // read `dispensed_quantity` before either committed, both computed
+    // `newDispensed` from that same stale value, and the second write
+    // silently overwrote the first's contribution (a lost update) even
+    // though the STOCK deduction itself was correctly serialized by the
+    // FOR UPDATE below. Locking this row too forces concurrent requests
+    // on the same item to serialize, so every read after this point is
+    // guaranteed fresh — see CLAUDE.md "First real cross-module data
+    // exchange — Prescription → Pharmacy" Part 16.
+    const [rawLockedItem] = await tx.$queryRawUnsafe(
+      `SELECT * FROM prescription_items WHERE id = ? AND tenant_id = ? FOR UPDATE`,
+      id,
+      BigInt(tid),
+    );
+    if (!rawLockedItem) throw new HttpError(404, "not_found");
+    // `quantity`/`dispensed_quantity` are INT UNSIGNED columns — Prisma's
+    // raw-query deserializer maps those to BigInt (unlike the plain
+    // signed INT `pharmacy_stock.quantity` below, which comes back as a
+    // Number), so they need an explicit, safe conversion before any
+    // arithmetic — real quantities here are always tiny, nowhere near
+    // BigInt range. Caught live: `Math.min()` throws on a bare BigInt.
+    const lockedItem = {
+      ...rawLockedItem,
+      quantity: Number(rawLockedItem.quantity),
+      dispensed_quantity: Number(rawLockedItem.dispensed_quantity),
+    };
+    const outstanding = lockedItem.quantity - lockedItem.dispensed_quantity;
+    if (outstanding <= 0) throw new HttpError(400, "already fully dispensed");
+    const requested = Math.min(body.quantity ?? outstanding, outstanding);
+
     const batches = await tx.$queryRawUnsafe(
       `SELECT * FROM pharmacy_stock
         WHERE tenant_id = ? AND module_instance_id = ? AND medicine_name = ? AND quantity > 0
@@ -47,7 +82,7 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
         FOR UPDATE`,
       BigInt(tid),
       instance.id,
-      item.medicine_name,
+      lockedItem.medicine_name,
     );
 
     let remaining = requested;
@@ -74,10 +109,10 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
     }
 
     const dispensedNow = requested - remaining;
-    const newDispensed = item.dispensed_quantity + dispensedNow;
+    const newDispensed = lockedItem.dispensed_quantity + dispensedNow;
     const itemStatus =
-      newDispensed >= item.quantity ? "DISPENSED" : dispensedNow > 0 ? "PENDING" : "OUT_OF_STOCK";
-    const primaryBatch = consumed[consumed.length - 1]?.batchNumber ?? item.batch_number;
+      newDispensed >= lockedItem.quantity ? "DISPENSED" : dispensedNow > 0 ? "PENDING" : "OUT_OF_STOCK";
+    const primaryBatch = consumed[consumed.length - 1]?.batchNumber ?? lockedItem.batch_number;
 
     await tx.prescription_items.update({
       where: { id },
@@ -85,7 +120,7 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
     });
 
     const allItems = await tx.prescription_items.findMany({
-      where: { prescription_id: item.prescription_id },
+      where: { prescription_id: lockedItem.prescription_id },
       select: { quantity: true, dispensed_quantity: true },
     });
     const allDone = allItems.every((i) => i.dispensed_quantity >= i.quantity);
@@ -94,12 +129,12 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
 
     if (prescriptionStatus === "FULFILLED") {
       await tx.prescriptions.update({
-        where: { id: item.prescription_id },
+        where: { id: lockedItem.prescription_id },
         data: { status: prescriptionStatus, fulfilled_by: BigInt(ctx.session.userId), fulfilled_at: new Date() },
       });
     } else {
       await tx.prescriptions.update({
-        where: { id: item.prescription_id },
+        where: { id: lockedItem.prescription_id },
         data: { status: prescriptionStatus },
       });
     }
