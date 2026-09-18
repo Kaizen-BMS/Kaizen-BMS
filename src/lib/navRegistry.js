@@ -37,7 +37,7 @@ const NAV = [
   { key: "pharmacy", label: "Pharmacy", section: "CLINICAL", route: "/dashboard/pharmacy", icon: "pharmacy", action: "stock:read", modules: ["PHARMACY"], badge: "pharmacy", status: "live" },
   { key: "lab", label: "Lab", section: "CLINICAL", route: "/dashboard/lab", icon: "lab", action: "lab:read", modules: ["LAB"], badge: "lab", status: "live" },
   { key: "ipd", label: "IPD / Beds", section: "CLINICAL", route: "/dashboard/ipd", icon: "ipd", action: "bed:read", modules: ["IPD"], tenantTypes: ["HOSPITAL"], badge: "ipd", status: "live" },
-  { key: "radiology", label: "Radiology", section: "CLINICAL", icon: "radiology", action: null, modules: ["RADIOLOGY"], status: "soon" },
+  { key: "radiology", label: "Radiology", section: "CLINICAL", route: "/dashboard/radiology", icon: "radiology", action: "radiology:read", modules: ["RADIOLOGY"], status: "live" },
 
   // ── Operations ──
   { key: "attendance", label: "Attendance", section: "OPERATIONS", route: "/dashboard/attendance", icon: "attendance", action: "attendance:self", tenantTypes: ["HOSPITAL"], status: "live" },
@@ -45,6 +45,7 @@ const NAV = [
   { key: "billing", label: "Billing", section: "OPERATIONS", route: "/dashboard/billing", icon: "billing", action: "bill:create", modules: ["BILLING"], status: "live" },
   { key: "appointments", label: "Appointments", section: "OPERATIONS", route: "/dashboard/appointments", icon: "appointments", action: "appointment:read", modules: ["APPOINTMENTS"], status: "live" },
   { key: "reports", label: "Reports", section: "OPERATIONS", route: "/dashboard/reports", icon: "reports", action: "reports:view", modules: ["BILLING"], status: "live" },
+  { key: "analytics", label: "Analytics", section: "OPERATIONS", route: "/dashboard/analytics", icon: "reports", action: "analytics:view", status: "live" },
 
   // ── Administration (admin / owner only) ──
   { key: "staff", label: "Staff Management", section: "ADMINISTRATION", route: "/dashboard/staff", icon: "staff", action: "staffroster:read", tenantTypes: ["HOSPITAL"], status: "live" },
@@ -55,13 +56,16 @@ const NAV = [
   { key: "moduleConnections", label: "Connection Center", section: "ADMINISTRATION", route: "/dashboard/admin/module-connections", icon: "registry", action: "moduleconnection:manage", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "masterData", label: "Master Data", section: "ADMINISTRATION", route: "/dashboard/admin/master-data", icon: "registry", action: "department:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "contracts", label: "Data Contracts", section: "ADMINISTRATION", route: "/dashboard/admin/contracts", icon: "registry", action: "moduleconnection:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
+  { key: "workflows", label: "Workflows", section: "ADMINISTRATION", route: "/dashboard/admin/workflows", icon: "registry", action: "workflow:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "pricing", label: "Pricing", section: "ADMINISTRATION", route: "/dashboard/admin/pricing", icon: "billing", action: "service:manage", modules: ["BILLING"], adminOnly: true, status: "live" },
+  { key: "externalIntegrations", label: "External Integrations", section: "ADMINISTRATION", route: "/dashboard/admin/external", icon: "registry", action: "external:manage", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "branding", label: "Branding", section: "ADMINISTRATION", route: "/dashboard/branding", icon: "branding", action: "branding:read", adminOnly: false, status: "live" },
 
   // ── Platform (SUPER_ADMIN only) ──
   { key: "tenants", label: "Tenants", section: "PLATFORM", route: "/dashboard/platform/tenants", icon: "tenants", action: "tenant:read", status: "live" },
   { key: "createTenant", label: "Create Tenant", section: "PLATFORM", route: "/dashboard/platform/tenants/new", icon: "createTenant", action: "tenant:manage", status: "live" },
   { key: "registry", label: "Module Registry", section: "PLATFORM", route: "/dashboard/platform/modules", icon: "registry", action: "tenant:read", status: "live" },
+  { key: "platformAnalytics", label: "Platform Analytics", section: "PLATFORM", route: "/dashboard/platform/analytics", icon: "reports", action: "analytics:platform", status: "live" },
 ];
 
 /**

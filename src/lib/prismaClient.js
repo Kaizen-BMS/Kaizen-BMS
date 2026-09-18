@@ -101,6 +101,15 @@ const TENANT_SCOPED_MODELS = new Set([
   "prescription_items",
   "prescriptions",
   "print_branding",
+  "radiology_orders",
+  "external_providers",
+  "external_credentials",
+  "external_connections",
+  "external_identifiers",
+  "external_orders",
+  "webhook_events",
+  "analytics_daily_tenant",
+  "analytics_daily_dimension",
   "referral_sources",
   "services",
   "staff_members",
@@ -109,6 +118,8 @@ const TENANT_SCOPED_MODELS = new Set([
   "tenant_modules",
   "token_overrides",
   "visits",
+  "workflow_instances",
+  "workflow_instance_steps",
 ]);
 
 const READ_OPS = new Set([

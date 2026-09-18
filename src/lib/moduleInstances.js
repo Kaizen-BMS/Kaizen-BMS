@@ -32,6 +32,7 @@ const MODULE_LABEL = {
   BILLING: "Billing",
   IPD: "IPD / Beds",
   APPOINTMENTS: "Appointments",
+  RADIOLOGY: "Radiology",
 };
 
 function toId(v) {

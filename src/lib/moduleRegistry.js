@@ -51,9 +51,9 @@ const MODULE_REGISTRY = [
   {
     key: "RADIOLOGY",
     label: "Radiology",
-    description: "Planned — not built yet, cannot be rented to a tenant.",
+    description: "Imaging orders, scheduling/status, structured reports, billing integration.",
     category: "Clinical",
-    rentable: false,
+    rentable: true,
   },
   {
     key: "APPOINTMENTS",

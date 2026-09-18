@@ -2554,6 +2554,414 @@ connected pharmacy instance currently fulfill."
   "reservation" mechanism, external pharmacy integrations, and Doctor-side
   prescribing UI changes (see above).
 
+## Workflow Automation (Phase 9, 2026-09-17) — IMPLEMENTATION COMPLETE, LIVE VERIFICATION PENDING
+
+**Status flag, read this before touching workflow code**: every file below
+was written, migrated, built, and lint-checked — but a Hostinger remote-DB
+outage (far longer than this project's previously-documented blips — over
+30 minutes continuous, still ongoing when this was written) cut live HTTP
+testing short partway through the very first end-to-end run. Two real bugs
+were already found and fixed during that partial run (see below). **Do not
+treat this phase as fully verified** until the consolidated full-system
+pass (see "Final verification strategy," tracked outside this file for
+now) actually exercises: OPD→Pharmacy→Billing end-to-end, Lab workflow,
+IPD workflow, retry, duplicate-event idempotency, concurrency, RBAC,
+tenant isolation, connection/contract enforcement, realtime updates, and
+regression on Pharmacy concurrency / Billing / Outbox / Dashboard.
+
+- **Architecture**: MODULES → CONNECTIONS → DATA CONTRACTS → EVENTS →
+  WORKFLOWS → BUSINESS ACTIONS. A workflow never performs a business
+  action itself (dispensing/billing/discharge stay exactly where they
+  already live) — it only observes existing routes' realtime events +
+  Outbox events and records progress. Definitions are a small, code-defined
+  catalog (`src/lib/workflows/definitions.js`, mirrors
+  `moduleRegistry.js`/`dataContracts.js`'s "catalog is code" split) — no
+  arbitrary user-written executable code, no BPMN, no drag-drop editor.
+- **Schema** (migration 031, applied successfully before the outage began):
+  `workflow_instances` (tenant/definition/reference-scoped, `status`
+  PENDING/RUNNING/WAITING/COMPLETED/FAILED/CANCELLED, `current_step`,
+  timestamps) + `workflow_instance_steps` (one row per step, created
+  PENDING up front for the whole checklist; `status`
+  PENDING/RUNNING/COMPLETED/FAILED/SKIPPED, `attempts`, `last_error`,
+  `detail` JSON). No separate append-only events table — the steps table's
+  own status/attempts/timestamps IS the audit trail, same "the log IS the
+  audit trail" principle as `bed_transfers`/`module_connection_events`,
+  applied per-step instead of a parallel table.
+- **Idempotency**: `uq_workflow_instances_reference
+  (tenant_id, definition_code, reference_type, reference_id)` — a real DB
+  constraint, not just a pre-check (same discipline as
+  `uq_tariffs_open_slot`/`uq_appointments_doctor_active_slot`).
+  `startOrGetInstance()` tries `create()`, catches `P2002`, finds the
+  existing row — a redelivered `PrescriptionCreated` Outbox event or a
+  duplicate realtime trigger can never create a second instance.
+- **The idempotent-advance pattern** (`src/lib/workflows/engine.js` +
+  three domain modules): every workflow's `advance(tenantId, referenceId)`
+  re-derives the CURRENT real state of the world from the actual domain
+  tables every time it runs — never a cached flag — under a
+  `SELECT ... FOR UPDATE` lock on the `workflow_instances` row (same
+  technique as Pharmacy's FEFO dispense / the Outbox processor's claim
+  query). This makes it safe to call redundantly from any trigger
+  (Outbox redelivery, a realtime event, a manual retry) and is the one
+  design choice that makes concurrency-safety and idempotency fall out for
+  free rather than needing bespoke dedup logic per trigger.
+- **Workflow 1 — OPD_PHARMACY_BILLING** (7 steps: PRESCRIPTION_CREATED →
+  CONNECTION_VALIDATED → CONTRACT_VALIDATED → AVAILABILITY_CHECK →
+  DISPENSING → BILLING → COMPLETED). Started durably via the Outbox's
+  `PrescriptionCreated` event (the exact worked example CLAUDE.md's own
+  Outbox section already showed); connection/contract steps reuse Phase
+  8C's `PRESCRIPTION_FULFILLMENT` contract and `checkContractAccess()`
+  for real — no active connection → WAITING (recoverable); REVOKED →
+  FAILED (terminal); more than one connected pharmacy with none
+  preferred → WAITING (never silently guesses, per Phase 8C's own rule).
+  DISPENSING/BILLING steps are derived live from
+  `prescription_items.dispensed_quantity` and `bill_items` — never a
+  separate calculation, both re-checked on every `advance()` call.
+- **Workflow 2 — LAB_RESULT_BILLING** (5 steps: ORDER_CREATED →
+  RESULT_ENTERED → CLINICAL_NOTIFIED → BILLING_SYNCED → COMPLETED).
+  CLINICAL_NOTIFIED is deliberately best-effort: uses
+  `checkContractAccess()` against `LAB_RESULT_TO_CLINICAL` when a real
+  LAB→DOCTOR_OPD connection exists, else SKIPPED (not a fabricated
+  blocking dependency — no route creates that connection by default).
+- **Workflow 3 — IPD_ADMISSION_TO_DISCHARGE** (7 steps: ADMITTED →
+  NURSING_RECORDED → PHARMACY_SYNCED → LAB_SYNCED → DISCHARGED →
+  FINAL_BILL_GENERATED → COMPLETED). The three middle steps are optional
+  in real life (a short stay may have none) — completed the moment
+  observed, SKIPPED (not FAILED) once discharged if never observed.
+  FINAL_BILL_GENERATED just confirms `billingEvents.js`'s existing
+  discharge-time room-charge/finalize behavior — never a second billing
+  path.
+- **`src/lib/moduleConnectionResolver.js`** (new, shared) — the
+  connection-resolution rule (only an ACTIVE connection to an ACTIVE
+  target instance is ever valid; 0 → `no_connection`, revoked → terminal,
+  >1 with no preference → `needs_selection`) was factored out of Phase
+  8C's availability route so the Workflow Engine reuses the exact same
+  rule instead of a second copy — the availability route was refactored
+  to call it too, same output shape, zero behavior change.
+- **Outbox upgraded to fan out to multiple consumers per event type**
+  (`src/lib/outboxProcessor.js`) — Phase 4 shipped "one handler per type,
+  last registration wins, no fan-out needed yet"; Phase 9 is the first
+  real need for two independent consumers of `PrescriptionCreated`
+  (the existing observability logger + the new workflow starter), so
+  `registerConsumer()` now appends to a list instead of overwriting.
+- **RBAC**: `workflow:read`/`workflow:manage` — wildcard-only
+  (SUPER_ADMIN/HOSPITAL_ADMIN), zero `rbac.js` changes, same shape as
+  every other Phase 8A/8B admin-tooling action. Deliberately not extended
+  to clinical/pharmacy/billing staff — retry is an administrative action.
+- **APIs**: `GET /api/workflows` (list, `?status=`/`?definitionCode=`
+  filters), `GET /api/workflows/[id]` (detail incl. full step checklist),
+  `POST /api/workflows/[id]/retry` (bounded — `MAX_STEP_ATTEMPTS=5`,
+  matching the Outbox's own retry-cap convention; resets the current
+  FAILED/WAITING step to PENDING and immediately re-runs that workflow's
+  `advance()`).
+- **UI**: `/dashboard/admin/workflows` — status cards (RUNNING/WAITING/
+  FAILED/COMPLETED, click to filter), a table, and a details panel with
+  the full step checklist + Retry button when applicable. Realtime via
+  `workflow:updated`, emitted to the whole tenant room (same broad-
+  audience pattern as `bed:updated`/`bill:updated`) every time an
+  instance's status/step changes.
+- **Dashboard widget**: a small "Workflows" card (Running/Waiting/Failed
+  counts, HOSPITAL_ADMIN + HOSPITAL tenants only) — real counts from
+  `workflow_instances`, zero fabricated numbers, same discipline as every
+  other widget in `src/lib/dashboard/queries.js`.
+- **Two real bugs found and fixed during the partial live run, before the
+  outage cut it short**:
+  1. **A load-order bug**: the new workflow modules transitively require
+     `src/lib/apiRoute.js` (for a `HttpError`-shaped class, via
+     `moduleConnections.js`/`moduleInstances.js`) which imports
+     `next/server` — this is the FIRST time anything in `server.js`'s own
+     synchronous top-level require chain reached that far (billingEvents.js
+     / outboxConsumers.js never happened to). Requiring `next/server`
+     before `app.prepare()` initializes Next's runtime throws
+     `Invariant: AsyncLocalStorage accessed in runtime where it is not
+     available`, crashing the whole server on boot. **Fixed** by moving
+     `require("./src/lib/workflows")` from the top of `server.js` into the
+     `app.prepare().then(...)` callback, alongside where
+     `outboxProcessor.start()` already lives.
+  2. **A genuine tenant-context bug**: `ensureStarted()` (which calls
+     `tenantDb`) was invoked directly from the Outbox consumer without its
+     own `runWithContext()` wrapper — `advance()` wraps itself correctly,
+     but `ensureStarted()` ran before that, outside any context, and
+     failed with "No tenant context" on the very first real
+     `PrescriptionCreated` event. **Fixed** in all three workflow modules
+     by wrapping the `ensureStarted()` call in its own `runWithContext()`
+     (nesting with the same tenantId is safe, per `prismaClient.js`'s own
+     context-propagation note).
+- **What was actually confirmed live before the outage**: a real
+  connection (OPD→Pharmacy, `PRESCRIPTION_FULFILLMENT`) was created and
+  approved to ACTIVE via the real API; a real test patient/visit/
+  consultation/prescription/pharmacy-stock batch were created via the
+  real HTTP routes; the `PrescriptionCreated` Outbox event was correctly
+  written and (after both fixes above) the server booted cleanly and
+  reached the point of re-attempting workflow start when the DB went
+  unreachable. **The actual step-by-step progression through
+  CONNECTION_VALIDATED → CONTRACT_VALIDATED → AVAILABILITY_CHECK →
+  DISPENSING → BILLING → COMPLETED was never observed live** — this is
+  exactly what the pending consolidated verification pass must confirm,
+  not something to assume from the code reading correct.
+- **Build**: `npm run build` — succeeded (multiple times, after each
+  fix). **Lint**: targeted `npx eslint` on every Phase 9 file — zero
+  errors/warnings.
+- **Deliberately not built this phase** (explicit scope cut, per the
+  brief): FHIR/ABDM/HL7/PACS, microservices, a BPMN/drag-drop editor, AI
+  workflow generation, an external integration marketplace, a
+  Redis-based distributed engine, Kubernetes, a complex event mesh.
+
+## Alerts & Notifications Center (2026-09-17)
+
+Built immediately after Phase 9, while the Hostinger outage was still
+ongoing — chosen specifically because it needs **zero new migrations**
+(no schema risk while the DB was unreachable) and directly completes
+Phase 9's own workflow-status work: a FAILED/WAITING workflow now
+actually surfaces somewhere an admin will see it, instead of only
+existing as a row in a list screen nobody's looking at yet.
+
+- **A genuinely different concept from the pre-existing live "Activity"
+  feed** (`NotificationBell.jsx`, built earlier — an ephemeral list of
+  "something just happened" socket events, resets on reload, no
+  persistence, no "this needs attention" concept). Alerts are always
+  re-fetched fresh from `GET /api/alerts`, so they're correct even
+  immediately after a page load — the bell now has two tabs, Alerts and
+  Activity, both under the same icon.
+- **Zero new tables, by design**: every number is a live query against
+  data this product already computes and already trusts — Pharmacy's
+  existing low-stock/expiry logic, Phase 9's `workflow_instances`, Staff
+  Management's `leave_requests` — the same "zero fabricated numbers"
+  discipline the Dashboard widgets already follow. This was the deciding
+  factor in choosing this phase over the other clear candidate
+  (a Radiology module, still genuinely the next planned rentable module
+  per `moduleRegistry.js`'s own "planned" list) — Radiology would need a
+  real schema migration that could not be applied while the database was
+  unreachable, and would have left the phase in an unusable half-shipped
+  state until someone remembered to run it later. Flagged here as the
+  recommended next major phase once the DB is reliably back.
+- **`src/lib/pharmacyAlerts.js`** (new) — `computeMedicineAlerts()`
+  extracted out of the pre-existing `GET /api/pharmacy/inventory` route
+  (unchanged output shape/behavior there, verified by inspection since
+  live testing wasn't possible) so the new Alerts Center reuses the exact
+  same low-stock/expiry rule instead of a second, possibly-drifting copy.
+- **`src/lib/alerts.js`** (new) — `getAlerts()`, mirrors
+  `dashboard/registry.js`'s per-category role/module-gating shape exactly:
+  Pharmacy alerts (low stock / expiring / expired, PHARMACY active +
+  `stock:read` only), Workflow alerts (FAILED/WAITING counts + the 5 most
+  recent failures, `workflow:read` only — i.e. HOSPITAL_ADMIN/SUPER_ADMIN,
+  matching Phase 9's own RBAC), Leave Request alerts (PENDING count + the
+  5 oldest, HOSPITAL tenants + `staff:manage` only). SUPER_ADMIN
+  (`session.tenantId === null`) gets an empty response — these are
+  tenant-operational alerts, not a platform-wide concept.
+- **`GET /api/alerts`** (new) — `apiRoute(null, ...)`, same "one endpoint,
+  role-filtered subsets" shape as `GET /api/dashboard/overview`, not a new
+  RBAC action gating the whole response.
+- **UI**: `NotificationBell.jsx` extended (not replaced) — an "Alerts"
+  tab showing only the categories that actually have something to report
+  (a pharmacy card, a workflow card, a staff card — each links to its own
+  real screen), a combined badge count (alerts count takes priority over
+  the plain activity-feed unread count when both are present), and a
+  debounced (400ms) re-fetch on `stock:updated`/`workflow:updated`/
+  `leaverequest:created`/`leaverequest:updated` so a burst of realtime
+  events only costs one request.
+- **Build**: succeeded. **Lint**: targeted `npx eslint` on every new/
+  changed file — zero errors/warnings. A full, untargeted `npx eslint src`
+  sweep (run for the first time this session, not this project's normal
+  per-phase convention) surfaced 15 pre-existing errors / 9 warnings in
+  14 files this phase never touched (`ThemeToggle.jsx` ×2,
+  `prismaClient.js`'s already-existing unused-disable-directive warning,
+  and 11 other already-shipped client components) — flagged here for the
+  record, deliberately NOT fixed, since fixing unrelated files was not
+  part of this phase's scope.
+- **Live verification**: none — same Hostinger outage as Phase 9 above.
+  Every number/query here was reviewed carefully against the exact schema
+  and existing precedent (`leave_requests`' real column names
+  `from_date`/`to_date`, the exact Prisma relation name
+  `users_leave_requests_user_idTousers`, confirmed against
+  `prisma/schema.prisma` directly rather than assumed) but has not been
+  exercised against real data. Roll this into the same consolidated
+  full-system verification pass as Phase 9.
+
+## Radiology module (2026-09-17) — MIGRATION APPLIED, ROUTE-LEVEL LIVE VERIFICATION PENDING
+
+The Hostinger DB came back briefly mid-session (after the Phase 9 /
+Alerts outage) — long enough to apply migration 032 with its automatic
+backup, but not long enough to keep a stable `npx prisma db pull`
+connection afterward (several single retries, spaced out, all still hit
+`P1001` — no indefinite polling was done, per instruction). **Status
+distinction, read carefully**: the migration itself is genuinely,
+permanently applied to the real database — that part is done, not
+provisional. What's pending is regenerating `prisma/schema.prisma` /
+the Prisma Client from it and then exercising the new routes against
+real data; until `npx prisma db pull && npx prisma generate` succeeds,
+`tenantDb.radiology_orders` doesn't exist on the generated client yet, so
+none of this phase's routes can actually run, even though they're
+written, built, and lint-clean.
+
+- **Reuses the existing Service/Tariff Master completely** — the biggest
+  finding of this phase's own inspection step: `services.service_type`
+  already had a `RADIOLOGY` value since migration 027 (Phase 6) — nobody
+  had ever used it, but zero pricing schema was needed. An admin creates
+  RADIOLOGY-type services (X-Ray, CT, MRI, ...) on the existing
+  `/dashboard/admin/pricing` screen exactly like any other service; a
+  radiology order's optional `service_id` reuses
+  `resolveAndPriceService()`/`resolvePatientCategory()` from
+  `src/lib/pricing.js` directly — no second pricing/tax calculation
+  exists anywhere in this module.
+- **Schema** (migration 032 — 4 additive ENUM extensions + 1 new table,
+  applied and backed up before connectivity dropped again):
+  `users.role` +`RADIOLOGY_STAFF`, `tenant_modules.module_name` +
+  `RADIOLOGY`, `module_instances.module_name` +`RADIOLOGY`,
+  `bill_items.source` +`RADIOLOGY` (the unmapped-fallback case, same
+  shape as the existing LAB/PHARMACY fallback sources); `radiology_orders`
+  (new table) — ONE study per order (not a JSON array of tests like
+  `lab_orders.tests` — real radiology ordering is per-study, "CT Head,"
+  and this also keeps status/report/price attached to one row instead of
+  needing a lab_order_items-style child table). Findings/impression live
+  directly on the order row — submitting the report **is** the COMPLETED
+  transition; no separate report table, no 6th "study done, report
+  pending" status (the phase's own "do not create unnecessary state
+  complexity" instruction taken literally).
+- **No new tenant type** — a standalone Radiology-solo tenant would need
+  its own `tenants.type` value, `SOLO_TYPE_OWNER_ROLE`/`SOLO_TYPE_MODULE`
+  wiring, and Create Tenant packaging — a genuinely separate vertical
+  slice, not "one more enum value" like everything else in this
+  migration. Flagged as clear future work, not built speculatively here,
+  per the brief's own "unless genuinely required" instruction. A HOSPITAL
+  tenant renting the RADIOLOGY module is the only environment this phase
+  actually supports.
+- **Order lifecycle**: ORDERED → SCHEDULED → IN_PROGRESS → COMPLETED /
+  CANCELLED, exactly the brief's own suggested model. `POST .../report`
+  is both "complete the study" and "submit the report" in one action —
+  the brief's own UI wishlist listed these as 2 separate radiology-staff
+  actions (tech completes the scan, radiologist reports it later), which
+  would need a 6th status; deliberately simplified to one combined action
+  for this initial pass, documented here as the one place this phase
+  diverged from the brief's literal suggestion.
+- **Concurrency**: `POST /api/radiology/orders/[id]/report` locks the
+  order row with `SELECT ... FOR UPDATE` inside a transaction before
+  checking/transitioning status — same technique as Pharmacy's dispense
+  route and IPD discharge — so two radiology staff submitting a report
+  for the same order can never both "win." The lighter schedule/start/
+  cancel routes use a plain pre-check (fetch, verify not already
+  COMPLETED/CANCELLED, then update) — acceptable here since none of them
+  represent an irreversible, once-only fact the way report submission
+  does; only the report route needed the heavier lock.
+- **Clinical integration**: `ConsultationClient.jsx` gained an "Order
+  radiology" section — one study-name input, no service picker in the UI
+  (mirrors Lab's own precedent exactly: `serviceId` mapping exists in the
+  API, Lab's UI never exposed it either, so Radiology doesn't invent new
+  UI surface Lab itself never got). `GET /api/opd/visits/[id]` now also
+  returns `radiologyOrders`, same shape as the existing `labOrders`.
+- **IPD integration**: no `admission_id` column anywhere — mirrors the
+  existing, real architecture exactly: neither `lab_orders` nor
+  `prescriptions` has one either. An IPD radiology order is placed
+  through the same consultation-based flow as OPD (a consultation against
+  the admitted patient's `visit_id`); "is this order for an admitted
+  patient" is derived the same way Phase 9's own IPD workflow already
+  derives it (`admissions.findFirst({ where: { visit_id } })`), never a
+  duplicated admission reference.
+- **Billing integration**: `billing/opd/route.js` bills every radiology
+  order on the visit at checkout (mapped → `SERVICE` with the full price
+  snapshot; unmapped → `RADIOLOGY` source, amount 0, priced manually —
+  same "never a silent SERVICE-labeled ₹0" discipline as Lab/Pharmacy).
+  `billingEvents.js` gained a `radiology:result` listener mirroring
+  `lab:result`'s IPD running-bill append, simplified for the one-study-
+  per-order shape (no per-test loop needed).
+- **Data Contracts** (`src/lib/dataContracts.js`): 4 new connectable
+  contracts — `RADIOLOGY_ORDER_ROUTING` (DOCTOR_OPD→RADIOLOGY),
+  `RADIOLOGY_RESULT_TO_CLINICAL` (RADIOLOGY→DOCTOR_OPD, best-effort — see
+  Workflow section below), `RADIOLOGY_RESULT_TO_BILLING`
+  (RADIOLOGY→BILLING), `IPD_RADIOLOGY_ORDER_ROUTING` (IPD→RADIOLOGY). No
+  separate `connectable:false` reference-only shapes were added — the
+  brief's own suggested `{radiologyOrderId, patientId, visitId, serviceId,
+  status}` payload is already what these 4 contracts validate via
+  `checkContractAccess()`; a parallel copy would just duplicate the same
+  field list for no real second consumer.
+- **Module Connections**: no new code — Connection Center is already
+  fully generic over `moduleInstances`/`dataContracts`; RADIOLOGY
+  instances appear in its dropdowns automatically now that RADIOLOGY is a
+  real `MODULE_NAMES` entry. A paused/revoked Clinical↔Radiology
+  connection is enforced exactly like every other module pair (never
+  silently bypassed) — verified by code inspection against the shared
+  `resolveConnectedInstance()`/`checkContractAccess()` logic Phase 9
+  already proved correct, not yet by a live HTTP run.
+- **Workflow — `RADIOLOGY_ORDER_TO_RESULT`** (7 steps: ORDER_CREATED →
+  CONNECTION_VALIDATED → CONTRACT_VALIDATED → REPORT_COMPLETED →
+  CLINICAL_NOTIFIED → BILLING_SYNCED → COMPLETED), built on the exact
+  same idempotent-`advance()` engine as Phase 9's other three workflows —
+  no engine changes were needed, only a 4th domain module
+  (`src/lib/workflows/radiologyOrderResult.js`). CLINICAL_NOTIFIED is
+  best-effort (SKIPPED, not blocking, when no real RADIOLOGY→DOCTOR_OPD
+  connection exists) — identical reasoning to Lab's own CLINICAL_NOTIFIED
+  step.
+- **Outbox**: 2 new event types — `RadiologyOrderCreated` (durable
+  workflow-start trigger, mirrors `PrescriptionCreated` exactly) and
+  `RadiologyResultCompleted` (written when a report is submitted;
+  observability-only consumer for now, same "no fake business side effect
+  invented" precedent as every other Outbox consumer in this project).
+  `registerConsumer()`'s Phase-9 fan-out upgrade (one event type, multiple
+  independent handlers) is what makes both of these coexist cleanly with
+  their own dedicated handlers.
+- **Realtime**: `radiologyorder:created`/`radiologyorder:updated`
+  (module room) on every write, `radiology:result` (full tenant room,
+  same broad pattern as `lab:result`) specifically on report submission —
+  consumed by `RadiologyClient.jsx`, the Alerts Center, and
+  `billingEvents.js`'s IPD listener.
+- **Alerts**: a new "Radiology" category — pending order count (ORDERED +
+  SCHEDULED), gated on `RADIOLOGY` active + `radiology:manage` (i.e.
+  radiology staff/admin, not every clinical role) — same "only alerts
+  supported by actual state" discipline as the rest of the Alerts Center;
+  "completed report requiring clinical attention" from the brief's own
+  suggestion was deliberately NOT built — there's no "doctor has viewed
+  this report" tracking anywhere in this schema, and fabricating one just
+  for an alert would be inventing state the brief didn't actually ask for.
+- **Dashboard widget**: pending/in-progress/completed-today counts,
+  `HOSPITAL_ADMIN` + `RADIOLOGY_STAFF`, real queries only.
+- **Patient portal**: `GET /api/patient/radiology-reports` (mirrors
+  `lab-reports` exactly, COMPLETED orders only) + a "Radiology Reports"
+  tab in the existing patient dashboard tab registry — the architecture
+  supported this cleanly, so it was built rather than deferred, per the
+  brief's own "if the existing architecture supports it cleanly" test.
+- **RBAC**: new role `RADIOLOGY_STAFF` (`radiology:read`/`:manage`/
+  `:report`, no OWNER_ variant — no solo Radiology tenant type this
+  phase). `DOCTOR` gained `radiology:create`/`:read` (mirrors
+  `laborder:create`/`:read` exactly, including the same "any of
+  DOCTOR_OPD or RADIOLOGY active" module-gate shape, which lets a
+  DOCTOR_OPD-only hospital still order radiology studies even without
+  Kaizen's own Radiology module rented — an existing, deliberate Lab
+  precedent, not a new decision). `BILLING_STAFF` gained `radiology:read`.
+  `HOSPITAL_ADMIN`/`SUPER_ADMIN` unaffected (wildcard). No
+  `canPlatform()`/`PLATFORM_ONLY_ACTIONS` changes — nothing here is
+  platform-scoped.
+- **Doctor-name resolution, a real design fix made before any live
+  testing**: `radiology_orders` has THREE separate FKs to `users`
+  (ordered_by/performed_by/reported_by), so relying on Prisma's
+  auto-generated relation name (e.g.
+  `users_radiology_orders_ordered_byTousers`, guessed from this project's
+  own established naming convention for exactly this multi-FK-to-users
+  shape — see `leave_requests`' `users_leave_requests_user_idTousers`)
+  would have been fragile until introspection confirmed it exactly.
+  Avoided entirely: `src/lib/radiology.js`'s `attachDoctorNames()` does
+  one batch `users.findMany({ where: { id: { in: [...] }, tenant_id } })`
+  lookup instead of an `include`, explicit-tenant-scoped since `users` is
+  deliberately outside `TENANT_SCOPED_MODELS`.
+- **Build**: succeeded (all new routes/pages present in the route
+  manifest). **Lint**: every new/changed file individually — zero
+  errors/warnings. A full `npx eslint src` sweep surfaced 2 more
+  pre-existing errors in `(patient)/.../DashboardClient.jsx` beyond the
+  ones Alerts & Notifications Center already flagged — confirmed via
+  `git diff` that both are in lines this phase never touched (the
+  pre-existing shared `useTabData()`/`AppointmentsTab()` code), not
+  something the new `RadiologyReportsTab` introduced.
+- **Live verification**: NONE yet, for the reason stated at the top of
+  this section — roll into the same consolidated full-system pass as
+  Phase 9 and Alerts & Notifications Center once the database holds a
+  stable connection long enough to run `npx prisma db pull && npx prisma
+  generate` and then exercise the routes for real.
+- **Deliberately not built this phase** (explicit scope cut, per the
+  brief): PACS/DICOM, image storage, AI diagnosis/interpretation, an
+  external radiology provider marketplace, FHIR/ABDM/HL7, microservices,
+  Redis, a complex scheduling engine, a drag-drop workflow designer, and
+  (see above) a standalone Radiology tenant type / module-instance
+  routing UI beyond the single default instance every other module
+  started with too.
+
 ## Patient safety & queue display
 
 - **Allergies** (`patients.allergies` JSON): a chip/tag input, never a

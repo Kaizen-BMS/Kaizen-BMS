@@ -24,6 +24,7 @@ const ROLES = [
   "OWNER_DOCTOR",
   "OWNER_PHARMACIST",
   "OWNER_LAB_TECH",
+  "RADIOLOGY_STAFF",
 ];
 
 // Staff Management self-service: every staff role (not OWNER_* — a solo
@@ -67,6 +68,8 @@ const DOCTOR = [
   "prescription:read",
   "laborder:create",
   "laborder:read",
+  "radiology:create",
+  "radiology:read",
   "followup:create",
   "followup:read",
   "bill:read",
@@ -90,6 +93,7 @@ const DOCTOR = [
   "appointment:create",
   "appointment:read",
   "appointment:update",
+  "analytics:view",
   ...STAFF_SELF_SERVICE,
 ];
 
@@ -123,6 +127,7 @@ const PHARMACIST = [
   "formtemplate:read",
   "branding:read",
   "attendance:self",
+  "analytics:view",
   ...STAFF_SELF_SERVICE,
 ];
 
@@ -138,6 +143,21 @@ const LAB_TECH = [
   "branding:read",
   "branding:manage_own",
   "attendance:self",
+  "analytics:view",
+  ...STAFF_SELF_SERVICE,
+];
+
+const RADIOLOGY_STAFF = [
+  "patient:read",
+  "visit:read",
+  "radiology:read",
+  "radiology:manage",
+  "radiology:report",
+  "formtemplate:read",
+  "branding:read",
+  "branding:manage_own",
+  "attendance:self",
+  "analytics:view",
   ...STAFF_SELF_SERVICE,
 ];
 
@@ -148,6 +168,7 @@ const BILLING_STAFF = [
   "consultation:read",
   "prescription:read",
   "laborder:read",
+  "radiology:read",
   "dispense:read",
   "bill:create",
   "bill:read",
@@ -166,6 +187,7 @@ const BILLING_STAFF = [
   "formtemplate:read",
   "branding:read",
   "attendance:self",
+  "analytics:view",
   ...STAFF_SELF_SERVICE,
 ];
 
@@ -190,6 +212,7 @@ const PERMISSIONS = {
   PHARMACIST,
   LAB_TECH,
   BILLING_STAFF,
+  RADIOLOGY_STAFF,
 
   OWNER_DOCTOR: [...new Set([...DOCTOR, ...OWNER_EXTRAS])],
   OWNER_PHARMACIST: [...new Set([...PHARMACIST, ...OWNER_EXTRAS])],
@@ -223,7 +246,13 @@ function can(role, action) {
  * forged one is rejected before this code ever runs), so checking
  * `session.role === "SUPER_ADMIN"` here is exact, not a heuristic.
  */
-const PLATFORM_ONLY_ACTIONS = new Set(["tenant:read", "tenant:manage"]);
+// "analytics:platform" (the cross-tenant Super Admin analytics view) joins
+// tenant:read/tenant:manage here for the exact same reason: HOSPITAL_ADMIN's
+// wildcard would otherwise satisfy can(), and this data spans every tenant
+// on the platform, not just the caller's own — see the 2026-09-15 RBAC
+// platform-scope hardening section in CLAUDE.md for the incident this
+// pattern exists to prevent from recurring.
+const PLATFORM_ONLY_ACTIONS = new Set(["tenant:read", "tenant:manage", "analytics:platform"]);
 
 function isPlatformOnlyAction(action) {
   return PLATFORM_ONLY_ACTIONS.has(action);

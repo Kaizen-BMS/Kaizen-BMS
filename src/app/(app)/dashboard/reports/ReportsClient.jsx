@@ -77,6 +77,7 @@ const TABS = [
   { key: "opd", label: "OPD Revenue" },
   { key: "ipd", label: "IPD Revenue" },
   { key: "lab", label: "Lab Revenue" },
+  { key: "radiology", label: "Radiology Revenue" },
   { key: "pharmacy", label: "Pharmacy Sales" },
   { key: "doctor", label: "Doctor Revenue" },
 ];
@@ -114,6 +115,7 @@ export default function ReportsClient() {
       {tab === "opd" && <RevenueTab endpoint="/api/reports/opd" columns={OPD_COLUMNS} empty="No OPD revenue in this range." />}
       {tab === "ipd" && <IpdTab />}
       {tab === "lab" && <RevenueTab endpoint="/api/reports/lab" columns={LAB_COLUMNS} empty="No lab revenue in this range." />}
+      {tab === "radiology" && <RevenueTab endpoint="/api/reports/radiology" columns={LAB_COLUMNS} empty="No radiology revenue in this range." />}
       {tab === "pharmacy" && <RevenueTab endpoint="/api/reports/pharmacy" columns={PHARMACY_COLUMNS} empty="No pharmacy revenue in this range." />}
       {tab === "doctor" && <RevenueTab endpoint="/api/reports/doctor-revenue" columns={DOCTOR_COLUMNS} empty="No attributable doctor revenue in this range." />}
     </div>

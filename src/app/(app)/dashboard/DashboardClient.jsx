@@ -282,6 +282,15 @@ function TenantDashboard({ data }) {
         )}
         {has("lab") && !data.lab && failed("lab") && <FailedCard title="Laboratory" />}
 
+        {has("radiology") && data.radiology && (
+          <SectionCard title="Radiology" href="/dashboard/radiology">
+            <Metric label="Pending orders" value={data.radiology.pendingOrders} />
+            <Metric label="In progress" value={data.radiology.inProgress} />
+            <Metric label="Completed today" value={data.radiology.completedToday} />
+          </SectionCard>
+        )}
+        {has("radiology") && !data.radiology && failed("radiology") && <FailedCard title="Radiology" />}
+
         {has("billing") && data.billing && (
           <SectionCard title="Billing" href="/dashboard/billing">
             <Metric label="Bills created today" value={data.billing.billsCreatedToday} />
@@ -291,6 +300,15 @@ function TenantDashboard({ data }) {
           </SectionCard>
         )}
         {has("billing") && !data.billing && failed("billing") && <FailedCard title="Billing" />}
+
+        {has("workflows") && data.workflows && (
+          <SectionCard title="Workflows" href="/dashboard/admin/workflows">
+            <Metric label="Running" value={data.workflows.running} />
+            <Metric label="Waiting" value={data.workflows.waiting} tone={data.workflows.waiting > 0 ? "warn" : undefined} />
+            <Metric label="Failed" value={data.workflows.failed} tone={data.workflows.failed > 0 ? "warn" : undefined} />
+          </SectionCard>
+        )}
+        {has("workflows") && !data.workflows && failed("workflows") && <FailedCard title="Workflows" />}
       </div>
 
       {has("charts") && data.charts && (

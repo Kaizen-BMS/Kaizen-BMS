@@ -1,7 +1,7 @@
 import { apiRoute, json } from "@/lib/apiRoute";
 import { tenantDb } from "@/lib/prismaClient";
-import { EXPIRY_WARNING_DAYS } from "@/lib/pharmacyConstants";
 import { resolveInstance } from "@/lib/moduleInstances";
+import { computeMedicineAlerts } from "@/lib/pharmacyAlerts";
 
 export const dynamic = "force-dynamic";
 
@@ -24,36 +24,7 @@ export const GET = apiRoute("stock:read", async (request, { session }) => {
     }),
   ]);
 
-  const thresholdMap = new Map(thresholds.map((t) => [t.medicine_name, t.low_stock_threshold]));
-  const warnBy = new Date();
-  warnBy.setDate(warnBy.getDate() + EXPIRY_WARNING_DAYS);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const byMedicine = new Map();
-  for (const b of batches) {
-    const expiry = b.expiry_date ? new Date(b.expiry_date) : null;
-    const flagged = {
-      ...b,
-      expired: !!expiry && expiry < today,
-      expiringSoon: !!expiry && expiry >= today && expiry <= warnBy,
-    };
-    if (!byMedicine.has(b.medicine_name)) {
-      byMedicine.set(b.medicine_name, {
-        medicineName: b.medicine_name,
-        totalQuantity: 0,
-        threshold: thresholdMap.get(b.medicine_name) ?? 10,
-        batches: [],
-      });
-    }
-    const entry = byMedicine.get(b.medicine_name);
-    entry.totalQuantity += b.quantity;
-    entry.batches.push(flagged);
-  }
-
-  const medicines = [...byMedicine.values()]
-    .map((m) => ({ ...m, lowStock: m.totalQuantity <= m.threshold }))
-    .sort((a, b) => a.medicineName.localeCompare(b.medicineName));
+  const medicines = computeMedicineAlerts(batches, thresholds);
 
   return json({ medicines, instance: { id: Number(instance.id), name: instance.name } });
 });

@@ -12,12 +12,21 @@ export const config = {
 };
 
 // Routes reachable without a session.
-const PUBLIC_API = new Set(["/api/auth/login"]);
+// `/api/health` deliberately requires no session — it exists specifically
+// to answer "is the database reachable" during an outage, when even
+// logging in (which itself queries the database) would fail.
+const PUBLIC_API = new Set(["/api/auth/login", "/api/health"]);
 // The public waiting-room display polls a read-only, no-PII, slug-scoped
 // endpoint — deliberately unauthenticated (the display screen has no login).
 // /api/patient-auth/* is the patient-portal equivalent of /api/auth/login —
 // there is no patient session yet, that's how one gets created.
-const PUBLIC_API_PREFIXES = ["/api/display/", "/api/patient-auth/"];
+// External provider webhooks (src/app/api/webhooks/*) are genuinely
+// public-by-design too — there is no staff session for an external caller;
+// trust comes from HMAC signature verification against the specific
+// provider's own stored secret, resolved from the URL's provider id
+// (routing only, never a trust credential — see each webhook route's own
+// header comment).
+const PUBLIC_API_PREFIXES = ["/api/display/", "/api/patient-auth/", "/api/webhooks/"];
 
 // Patient Portal routes use a GENUINELY SEPARATE session (see
 // src/lib/patientAuth.js) — never the staff cookie/verify path above, and

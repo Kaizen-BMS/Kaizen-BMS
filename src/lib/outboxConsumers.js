@@ -35,3 +35,11 @@ registerConsumer("PrescriptionCreated", async (payload, event) => {
 registerConsumer("PaymentReceived", async (payload, event) => {
   console.log(`[outbox] PaymentReceived ${event.eventId} payment=${payload.paymentId} tenant=${event.tenantId} occurredAt=${event.occurredAt}`);
 });
+
+registerConsumer("RadiologyOrderCreated", async (payload, event) => {
+  console.log(`[outbox] RadiologyOrderCreated ${event.eventId} order=${payload.radiologyOrderId} tenant=${event.tenantId} occurredAt=${event.occurredAt}`);
+});
+
+registerConsumer("RadiologyResultCompleted", async (payload, event) => {
+  console.log(`[outbox] RadiologyResultCompleted ${event.eventId} order=${payload.radiologyOrderId} tenant=${event.tenantId} occurredAt=${event.occurredAt}`);
+});

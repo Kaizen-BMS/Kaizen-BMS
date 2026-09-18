@@ -1,5 +1,6 @@
 import { apiRoute, json } from "@/lib/apiRoute";
 import { tenantDb } from "@/lib/prismaClient";
+import { serializeOrder } from "@/lib/radiology";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export const GET = apiRoute("consultation:read", async (_request, ctx) => {
 
   let prescriptions = [];
   let labOrders = [];
+  let radiologyOrders = [];
   if (consultation) {
     const rxRows = await tenantDb.prescriptions.findMany({
       where: { consultation_id: consultation.id },
@@ -49,7 +51,13 @@ export const GET = apiRoute("consultation:read", async (_request, ctx) => {
       where: { consultation_id: consultation.id },
       orderBy: { id: "asc" },
     });
+    radiologyOrders = (
+      await tenantDb.radiology_orders.findMany({
+        where: { consultation_id: consultation.id },
+        orderBy: { id: "asc" },
+      })
+    ).map(serializeOrder);
   }
 
-  return json({ visit, consultation, prescriptions, labOrders });
+  return json({ visit, consultation, prescriptions, labOrders, radiologyOrders });
 });

@@ -167,6 +167,44 @@ serverEvents.on("lab:result", ({ tenantId, payload }) => {
   }).catch((err) => console.error("billingEvents lab:result failed", err));
 });
 
+serverEvents.on("radiology:result", ({ tenantId, payload }) => {
+  runWithContext({ tenantId }, async () => {
+    const order = payload.radiologyOrder;
+    if (!order?.visitId) return;
+    const bill = await findOpenIpdBill(BigInt(order.visitId));
+    if (!bill) return; // not an IPD stay — OPD radiology items are aggregated at checkout instead
+
+    // Explicit mapping only (order.serviceId) — same rule as OPD's
+    // billing/opd route. No mapping -> amount:0, priced manually.
+    let priced = { ok: false };
+    if (order.serviceId) {
+      const category = await resolvePatientCategory(tenantDb, bill.patient_id);
+      priced = await resolveAndPriceService(tenantDb, order.serviceId, category, 1);
+    }
+    await appendItemOnce(bill.id, tenantId, {
+      source: priced.ok ? "SERVICE" : "RADIOLOGY",
+      description: order.studyName,
+      amount: priced.ok ? priced.line.amount : 0,
+      reference_type: "radiology_order",
+      reference_id: BigInt(order.id),
+      ...(priced.ok
+        ? {
+            service_id: priced.service.id,
+            tariff_id: priced.tariff.id,
+            quantity: priced.line.quantity,
+            unit_price: priced.line.unit_price,
+            taxable_amount: priced.line.taxable_amount,
+            tax_rate: priced.line.tax_rate,
+            cgst_amount: priced.line.cgst_amount,
+            sgst_amount: priced.line.sgst_amount,
+            igst_amount: priced.line.igst_amount,
+            tax_amount: priced.line.tax_amount,
+          }
+        : {}),
+    });
+  }).catch((err) => console.error("billingEvents radiology:result failed", err));
+});
+
 serverEvents.on("admission:discharged", ({ tenantId, payload }) => {
   runWithContext({ tenantId }, async () => {
     const admission = payload.admission;

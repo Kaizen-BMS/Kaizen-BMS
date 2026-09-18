@@ -10,9 +10,11 @@ import {
   getIpdStatus,
   getPharmacyStatus,
   getLabStatus,
+  getRadiologyStatus,
   getBillingStatus,
   getWeeklyCharts,
   getRecentActivity,
+  getWorkflowSummary,
   getPlatformOverview,
 } from "@/lib/dashboard/queries";
 
@@ -61,9 +63,11 @@ export const GET = apiRoute(null, async (_request, { session }) => {
     ipd,
     pharmacy,
     lab,
+    radiology,
     billing,
     charts,
     recentActivity,
+    workflows,
   ] = await Promise.all([
     has("kpis") ? safe("kpis", getKpis(tenantDb, ctx)) : null,
     has("patientFlow") ? safe("patientFlow", getPatientFlow(tenantDb)) : null,
@@ -71,9 +75,11 @@ export const GET = apiRoute(null, async (_request, { session }) => {
     has("ipd") ? safe("ipd", getIpdStatus(tenantDb)) : null,
     has("pharmacy") ? safe("pharmacy", getPharmacyStatus(tenantDb, session.tenantId)) : null,
     has("lab") ? safe("lab", getLabStatus(tenantDb)) : null,
+    has("radiology") ? safe("radiology", getRadiologyStatus(tenantDb)) : null,
     has("billing") ? safe("billing", getBillingStatus(tenantDb)) : null,
     has("charts") ? safe("charts", getWeeklyCharts(tenantDb, { tenantCreatedAt: tenant.created_at, activeModules })) : null,
     has("recentActivity") ? safe("recentActivity", getRecentActivity(tenantDb, ctx)) : null,
+    has("workflows") ? safe("workflows", getWorkflowSummary(tenantDb)) : null,
   ]);
 
   return json({
@@ -89,9 +95,11 @@ export const GET = apiRoute(null, async (_request, { session }) => {
     ipd,
     pharmacy,
     lab,
+    radiology,
     billing,
     charts,
     recentActivity,
+    workflows,
     quickActions: has("quickActions") ? quickActionsFor(session.role, activeModules) : [],
   });
 });

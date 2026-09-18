@@ -38,17 +38,27 @@ export const POST = apiRoute("bill:create", async (request, { session }) => {
   });
   if (existing) return json({ bill: existing }, 200);
 
-  const [consultations, prescriptionItemsAll, labOrders] = await Promise.all([
+  const [consultations, prescriptionItemsAll, labOrders, radiologyOrders] = await Promise.all([
     tenantDb.consultations.findMany({ where: { visit_id: visitId } }),
     tenantDb.prescription_items.findMany({
       where: { prescriptions: { visit_id: visitId } },
     }),
     tenantDb.lab_orders.findMany({ where: { visit_id: visitId } }),
+    // Every radiology order on the visit is billed regardless of status —
+    // same "bill whatever happened" rule the pre-existing lab_orders line
+    // already uses (a CANCELLED order's amount is priced at 0 the same as
+    // an unmapped one; billing staff can always price/adjust manually).
+    tenantDb.radiology_orders.findMany({ where: { visit_id: visitId } }),
   ]);
   const prescriptionItems = prescriptionItemsAll.filter((it) => it.dispensed_quantity > 0);
 
-  if (consultations.length === 0 && prescriptionItems.length === 0 && labOrders.length === 0) {
-    throw new HttpError(400, "nothing to bill — no consultation, dispensed items, or lab orders on this visit yet");
+  if (
+    consultations.length === 0 &&
+    prescriptionItems.length === 0 &&
+    labOrders.length === 0 &&
+    radiologyOrders.length === 0
+  ) {
+    throw new HttpError(400, "nothing to bill — no consultation, dispensed items, lab orders, or radiology orders on this visit yet");
   }
 
   const labOrderIds = labOrders.map((lo) => lo.id);
@@ -183,6 +193,37 @@ export const POST = apiRoute("bill:create", async (request, { session }) => {
           },
         });
       }
+    }
+    for (const ro of radiologyOrders) {
+      // Explicit mapping only (ro.service_id, set at ordering time from
+      // the Service Master — never inferred from study_name text).
+      const priced = ro.service_id
+        ? await resolveAndPriceService(tx, ro.service_id, patientCategory, 1)
+        : { ok: false };
+      await tx.bill_items.create({
+        data: {
+          bill_id: created.id,
+          source: priced.ok ? "SERVICE" : "RADIOLOGY",
+          description: ro.study_name,
+          amount: priced.ok ? priced.line.amount : 0,
+          reference_type: "radiology_order",
+          reference_id: ro.id,
+          ...(priced.ok
+            ? {
+                service_id: priced.service.id,
+                tariff_id: priced.tariff.id,
+                quantity: priced.line.quantity,
+                unit_price: priced.line.unit_price,
+                taxable_amount: priced.line.taxable_amount,
+                tax_rate: priced.line.tax_rate,
+                cgst_amount: priced.line.cgst_amount,
+                sgst_amount: priced.line.sgst_amount,
+                igst_amount: priced.line.igst_amount,
+                tax_amount: priced.line.tax_amount,
+              }
+            : {}),
+        },
+      });
     }
 
     await recomputeBillStatus(tx, created.id);

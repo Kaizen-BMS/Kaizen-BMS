@@ -253,6 +253,33 @@ function getLabRevenue(tenantId, opts) {
 }
 
 /**
+ * REPORT — Radiology Revenue, by study/service. Mirrors getLabRevenue()'s
+ * exact shape (unmapped RADIOLOGY-sourced lines + explicitly-mapped
+ * RADIOLOGY-type SERVICE lines) — the gap this task's own gap analysis
+ * flagged (Radiology existed as a module, but had no revenue report the
+ * way Lab/Pharmacy/OPD/IPD already did).
+ */
+function getRadiologyRevenue(tenantId, opts) {
+  return getSourceRevenue(tenantId, { ...opts, sources: ["RADIOLOGY"] }).then(async (unmapped) => {
+    const { fromDate, toExclusive } = resolveRange(opts?.from, opts?.to);
+    const mappedRows = await tenantDb.$queryRawUnsafe(
+      `SELECT s.name AS serviceName, s.id AS serviceId, SUM(bi.quantity) AS quantity, SUM(bi.amount) AS billed
+         FROM bill_items bi
+         JOIN bills b ON b.id = bi.bill_id
+         JOIN services s ON s.id = bi.service_id AND s.service_type = 'RADIOLOGY'
+        WHERE b.tenant_id = ? AND bi.source = 'SERVICE' AND bi.reference_type = 'radiology_order'
+          AND b.created_at >= ? AND b.created_at < ?
+        GROUP BY s.id, s.name
+        ORDER BY billed DESC`,
+      tenantId,
+      fromDate,
+      toExclusive,
+    );
+    return [...mappedRows.map((r) => ({ source: "SERVICE", ...r })), ...unmapped];
+  });
+}
+
+/**
  * REPORT 6 — Pharmacy Sales, by medicine (module-instance breakdown via
  * dispense movements). Deliberately no per-line "refunded" column — a
  * refund is recorded against the whole BILL, not one line item, so (same
@@ -316,6 +343,7 @@ module.exports = {
   getOpdRevenue,
   getIpdRevenue,
   getLabRevenue,
+  getRadiologyRevenue,
   getPharmacyRevenue,
   getDoctorRevenue,
 };

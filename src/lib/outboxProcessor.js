@@ -20,14 +20,28 @@ const { MAX_ATTEMPTS, backoffSeconds, toEnvelope } = require("./outbox");
 const BATCH_SIZE = 20;
 const POLL_INTERVAL_MS = 2000;
 
-// eventType -> async (payload, envelope) => void — `envelope` is the
+// eventType -> [async (payload, envelope) => void, ...] — `envelope` is the
 // canonical camelCase shape from outbox.js's toEnvelope(), always
 // carrying `occurredAt`, never the raw snake_case DB row.
 const consumers = new Map();
 
-/** Register what happens when an event of this type is processed. One handler per type — the last registration wins, deliberately (no fan-out to multiple handlers needed yet). */
+/**
+ * Register what happens when an event of this type is processed. Fans out
+ * to every handler registered for that type, in registration order — this
+ * was originally "last registration wins, no fan-out needed yet" (Phase 4),
+ * upgraded here (Phase 9 — CLAUDE.md "Workflow Automation") the first time
+ * a second real consumer of the same event type was actually needed: the
+ * Workflow Engine's OPD_PHARMACY_BILLING workflow reacts to
+ * "PrescriptionCreated" alongside the existing observability consumer
+ * (outboxConsumers.js) — both must run, not one replacing the other. Each
+ * handler must still be independently safe to redeliver (see the
+ * idempotency note in outbox.js) since a later handler throwing marks the
+ * WHOLE event for retry, re-running every handler for it again.
+ */
 function registerConsumer(eventType, handler) {
-  consumers.set(eventType, handler);
+  const list = consumers.get(eventType) || [];
+  list.push(handler);
+  consumers.set(eventType, list);
 }
 
 /**
@@ -70,11 +84,13 @@ async function claimBatch() {
  * infinite retry loop.
  */
 async function processEvent(event) {
-  const handler = consumers.get(event.event_type);
+  const handlers = consumers.get(event.event_type);
   try {
-    if (handler) {
+    if (handlers && handlers.length) {
       const envelope = toEnvelope(event);
-      await handler(envelope.payload, envelope);
+      for (const handler of handlers) {
+        await handler(envelope.payload, envelope);
+      }
     }
     await prisma.outbox_events.update({
       where: { id: event.id },

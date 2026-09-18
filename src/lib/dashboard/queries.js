@@ -173,6 +173,17 @@ async function getLabStatus(tenantDb) {
   return { pendingOrders, resultsPending, completedToday };
 }
 
+async function getRadiologyStatus(tenantDb) {
+  const today = startOfDay();
+  const tomorrow = endOfDay();
+  const [pendingOrders, inProgress, completedToday] = await Promise.all([
+    tenantDb.radiology_orders.count({ where: { status: { in: ["ORDERED", "SCHEDULED"] } } }),
+    tenantDb.radiology_orders.count({ where: { status: "IN_PROGRESS" } }),
+    tenantDb.radiology_orders.count({ where: { status: "COMPLETED", completed_at: { gte: today, lt: tomorrow } } }),
+  ]);
+  return { pendingOrders, inProgress, completedToday };
+}
+
 /**
  * Bills created / payments received / pending amount / today's collection.
  * `pendingAmount` reuses the EXACT same "owed minus net paid" formula
@@ -206,6 +217,38 @@ async function getBillingStatus(tenantDb) {
     todaysCollection: toNumber(paymentsTodaySum._sum.amount),
     pendingAmount,
     openBillCount: openBills.length,
+  };
+}
+
+/**
+ * Phase 9 (CLAUDE.md "Workflow Automation") — real counts only, straight
+ * from workflow_instances, same "zero fabricated numbers" rule every
+ * other widget here already follows. Recently completed is capped to a
+ * handful, same bounded-list shape as getRecentActivity() below.
+ */
+async function getWorkflowSummary(tenantDb) {
+  const [running, waiting, failed, recentCompleted] = await Promise.all([
+    tenantDb.workflow_instances.count({ where: { status: "RUNNING" } }),
+    tenantDb.workflow_instances.count({ where: { status: "WAITING" } }),
+    tenantDb.workflow_instances.count({ where: { status: "FAILED" } }),
+    tenantDb.workflow_instances.findMany({
+      where: { status: "COMPLETED" },
+      orderBy: { completed_at: "desc" },
+      take: 5,
+      select: { id: true, definition_code: true, reference_type: true, reference_id: true, completed_at: true },
+    }),
+  ]);
+  return {
+    running,
+    waiting,
+    failed,
+    recentCompleted: recentCompleted.map((w) => ({
+      id: Number(w.id),
+      definitionCode: w.definition_code,
+      referenceType: w.reference_type,
+      referenceId: Number(w.reference_id),
+      completedAt: w.completed_at,
+    })),
   };
 }
 
@@ -344,8 +387,10 @@ module.exports = {
   getIpdStatus,
   getPharmacyStatus,
   getLabStatus,
+  getRadiologyStatus,
   getBillingStatus,
   getWeeklyCharts,
   getRecentActivity,
+  getWorkflowSummary,
   getPlatformOverview,
 };

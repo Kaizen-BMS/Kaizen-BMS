@@ -2,6 +2,7 @@ import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { tenantDb } from "@/lib/prismaClient";
 import { getDefaultInstance } from "@/lib/moduleInstances";
 import { checkContractAccess } from "@/lib/moduleConnections";
+import { resolveConnectedInstance } from "@/lib/moduleConnectionResolver";
 
 export const dynamic = "force-dynamic";
 
@@ -135,32 +136,26 @@ export const GET = apiRoute("dispense:read", async (request, ctx) => {
  * pharmacy" as a fallback, since that would silently bypass the whole
  * point of requiring a real connection. Zero connected instances is a
  * clean rejection; more than one requires the caller to say which.
+ *
+ * Phase 9 (Workflow Automation) factored the actual resolution logic out
+ * into src/lib/moduleConnectionResolver.js so the Workflow Engine's
+ * OPD_PHARMACY_BILLING workflow can reuse the exact same rule rather than
+ * a second, possibly-drifting copy — this function now just adapts that
+ * shared result to this route's own existing response shape.
  */
 async function resolvePharmacyTarget(sourceInstanceId, pharmacyInstanceIdParam) {
-  const connections = await tenantDb.module_connections.findMany({
-    where: { source_instance_id: sourceInstanceId, connection_type: CONTRACT_TYPE, status: "ACTIVE" },
-    include: { module_instances_module_connections_target_instance_idTomodule_instances: true },
+  const resolved = await resolveConnectedInstance(tenantDb, {
+    sourceInstanceId,
+    targetModule: "PHARMACY",
+    connectionType: CONTRACT_TYPE,
+    preferredInstanceId: pharmacyInstanceIdParam || undefined,
   });
-  const connectedInstances = connections
-    .map((c) => c.module_instances_module_connections_target_instance_idTomodule_instances)
-    .filter((inst) => inst && inst.module_name === "PHARMACY" && inst.status === "ACTIVE");
-
-  if (connectedInstances.length === 0) {
-    return { error: "no_active_connection", status: 409 };
-  }
-
-  if (pharmacyInstanceIdParam) {
-    const match = connectedInstances.find((inst) => String(inst.id) === String(pharmacyInstanceIdParam));
-    if (!match) return { error: "pharmacy_instance_not_connected", status: 409 };
-    return { instance: match };
-  }
-
-  if (connectedInstances.length === 1) {
-    return { instance: connectedInstances[0] };
-  }
-
-  return {
-    needsSelection: true,
-    options: connectedInstances.map((inst) => ({ id: Number(inst.id), name: inst.name })),
-  };
+  if (resolved.ok) return { instance: resolved.instance };
+  if (resolved.reason === "needs_selection") return { needsSelection: true, options: resolved.options };
+  if (resolved.reason === "instance_not_connected") return { error: "pharmacy_instance_not_connected", status: 409 };
+  // no_connection / connection_not_active / connection_revoked all collapse
+  // to this route's original single "no_active_connection" response —
+  // unchanged behavior for this endpoint, just resolved via the shared
+  // helper now.
+  return { error: "no_active_connection", status: 409 };
 }

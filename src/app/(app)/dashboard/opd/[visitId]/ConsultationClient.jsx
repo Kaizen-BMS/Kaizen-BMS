@@ -17,11 +17,12 @@ function upsertById(list, item) {
 }
 
 export default function ConsultationClient({ visitId, doctorUserId }) {
-  const [data, setData] = useState(null); // { visit, consultation, prescriptions, labOrders }
+  const [data, setData] = useState(null); // { visit, consultation, prescriptions, labOrders, radiologyOrders }
   const [form, setForm] = useState(null);
   const [values, setValues] = useState({});
   const [rx, setRx] = useState([{ medicineName: "", dosage: "", quantity: 1, ack: false }]);
   const [tests, setTests] = useState([""]);
+  const [studyName, setStudyName] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
@@ -64,6 +65,18 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
             ? { ...d, labOrders: upsertById(d.labOrders, labOrder) }
             : d,
         ),
+      "radiologyorder:created": ({ radiologyOrder }) =>
+        setData((d) =>
+          d && d.consultation && radiologyOrder.consultationId === d.consultation.id
+            ? { ...d, radiologyOrders: upsertById(d.radiologyOrders, radiologyOrder) }
+            : d,
+        ),
+      "radiologyorder:updated": ({ radiologyOrder }) =>
+        setData((d) =>
+          d && d.consultation && radiologyOrder.consultationId === d.consultation.id
+            ? { ...d, radiologyOrders: upsertById(d.radiologyOrders, radiologyOrder) }
+            : d,
+        ),
     },
     load,
   );
@@ -72,7 +85,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
     return <p className="text-sm text-slate-400">{msg || "Loading…"}</p>;
   }
 
-  const { visit, consultation, prescriptions, labOrders } = data;
+  const { visit, consultation, prescriptions, labOrders, radiologyOrders } = data;
   const patientAllergies = parseMaybeJson(visit.patient_allergies) || [];
 
   async function saveConsultation(e) {
@@ -147,6 +160,26 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
       );
       setTests([""]);
       setData((d) => ({ ...d, labOrders: upsertById(d.labOrders, labOrder) }));
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveRadiologyOrder() {
+    const study = studyName.trim();
+    if (!study) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const { radiologyOrder } = await apiSend(
+        `/api/opd/consultations/${consultation.id}/radiology-orders`,
+        "POST",
+        { studyName: study },
+      );
+      setStudyName("");
+      setData((d) => ({ ...d, radiologyOrders: upsertById(d.radiologyOrders, radiologyOrder) }));
     } catch (err) {
       setMsg(err.message);
     } finally {
@@ -400,6 +433,38 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                   Send to lab
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <p className="text-sm font-semibold">Radiology order → Radiology</p>
+            {radiologyOrders.map((ro) => (
+              <div key={ro.id} className="mt-2 rounded-md bg-slate-50 p-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400">
+                    #{ro.id} · {ro.status}
+                  </span>
+                </div>
+                <p>{ro.studyName}</p>
+                {ro.status === "COMPLETED" && ro.impression && (
+                  <p className="mt-1 text-xs text-slate-500">Impression: {ro.impression}</p>
+                )}
+              </div>
+            ))}
+            <div className="mt-3 flex gap-2">
+              <input
+                placeholder="study name, e.g. Chest X-Ray"
+                value={studyName}
+                onChange={(e) => setStudyName(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+              />
+              <button
+                onClick={saveRadiologyOrder}
+                disabled={busy}
+                className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50"
+              >
+                Order radiology
+              </button>
             </div>
           </div>
         </div>

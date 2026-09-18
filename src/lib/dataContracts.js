@@ -228,6 +228,144 @@ const CONNECTION_TYPES = {
     restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
     defaultActions: ["view", "create"],
   },
+  // Radiology module additions (the phase after Alerts & Notifications
+  // Center) — same shape as the Lab contracts above, mirrored field-for-
+  // field since a radiology order is the same "doctor orders a diagnostic
+  // study" pattern Lab already established. No separate reference-only
+  // RADIOLOGY_ORDER_REFERENCE/RADIOLOGY_RESULT_REFERENCE shapes were
+  // added — these 3 connectable contracts' own ID-first payloads already
+  // are that reference shape, and a parallel non-connectable copy would
+  // just duplicate the same field list for no real consumer.
+  RADIOLOGY_ORDER_ROUTING: {
+    label: "Radiology Order Routing",
+    version: 1,
+    status: "ACTIVE",
+    sourceModule: "DOCTOR_OPD",
+    targetModule: "RADIOLOGY",
+    description: "A doctor's radiology order, sent to a radiology instance for scheduling and imaging.",
+    purpose: "Allow a connected radiology instance to see and act on a doctor's radiology order.",
+    fields: ["radiologyOrderId", "patientId", "patientName", "visitId", "doctorId", "doctorName", "studyName", "priority"],
+    requiredFields: ["radiologyOrderId", "patientId"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view", "create"],
+  },
+  RADIOLOGY_RESULT_TO_CLINICAL: {
+    label: "Radiology Result to Clinical",
+    version: 1,
+    status: "ACTIVE",
+    sourceModule: "RADIOLOGY",
+    targetModule: "DOCTOR_OPD",
+    description: "A completed radiology report, made available back to the ordering doctor.",
+    purpose: "Let the ordering doctor see that a report is ready, without exposing radiology-internal detail.",
+    fields: ["radiologyOrderId", "patientId", "visitId", "status", "reportedAt"],
+    requiredFields: ["radiologyOrderId", "patientId"],
+    restrictedFields: ["findings", "impression", "diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view"],
+  },
+  RADIOLOGY_RESULT_TO_BILLING: {
+    label: "Radiology Result to Billing",
+    version: 1,
+    status: "ACTIVE",
+    sourceModule: "RADIOLOGY",
+    targetModule: "BILLING",
+    description: "A completed radiology order, sent to Billing so the study can be invoiced.",
+    purpose: "Allow Billing to invoice a completed radiology order.",
+    fields: ["radiologyOrderId", "patientId", "visitId", "status", "reportedAt"],
+    requiredFields: ["radiologyOrderId", "patientId"],
+    restrictedFields: ["findings", "impression", "diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view", "create"],
+  },
+  IPD_RADIOLOGY_ORDER_ROUTING: {
+    label: "IPD Radiology Order Routing",
+    version: 1,
+    status: "ACTIVE",
+    sourceModule: "IPD",
+    targetModule: "RADIOLOGY",
+    description: "An admitted patient's radiology order, sent to a radiology instance for scheduling and imaging.",
+    purpose: "Allow a connected radiology instance to act on an admitted patient's radiology order.",
+    fields: ["radiologyOrderId", "patientId", "patientName", "admissionId", "doctorId", "doctorName", "studyName", "priority"],
+    requiredFields: ["radiologyOrderId", "patientId", "admissionId"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view", "create"],
+  },
+  // External Integration additions — the same catalog, governing
+  // external_connections (module_instance <-> external_providers) instead
+  // of module_connections (module_instance <-> module_instance). The
+  // target side has no real Kaizen module_name, so `targetModule` here is
+  // a label only ("EXTERNAL_LAB"/"EXTERNAL_PHARMACY") — the real check
+  // for the target side is "is the provider active," done in
+  // checkExternalContractAccess(), not a module-pair match.
+  EXTERNAL_LAB_ORDER: {
+    label: "External Lab Order",
+    version: 1,
+    status: "ACTIVE",
+    sourceModule: "DOCTOR_OPD",
+    targetModule: "EXTERNAL_LAB",
+    description: "A lab order sent to an external laboratory for processing.",
+    purpose: "Give an external lab exactly what it needs to accept and process a test order — never the full internal record.",
+    // providerPatientId/providerTestCode are additive + optional (Real
+    // Vendor Integration Readiness TASK 5/9) — populated only when an
+    // external_identifiers mapping already exists (PATIENT/SERVICE entity
+    // types), never invented. A vendor that requires its own persistent
+    // patient/test identifiers has somewhere real to receive them; one
+    // that doesn't simply never sees these keys (undefined fields are
+    // stripped before send — see externalLab.js).
+    fields: ["labOrderId", "patientId", "patientName", "patientAge", "patientGender", "doctorId", "testName", "priority", "providerPatientId", "providerTestCode"],
+    requiredFields: ["labOrderId", "patientId", "testName"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes", "phone", "address", "allergies"],
+    defaultActions: ["view", "create"],
+  },
+  EXTERNAL_LAB_RESULT: {
+    label: "External Lab Result",
+    version: 1,
+    status: "ACTIVE",
+    sourceModule: "EXTERNAL_LAB",
+    targetModule: "DOCTOR_OPD",
+    description: "A completed result received back from an external laboratory.",
+    purpose: "The inbound counterpart — what a webhook payload is allowed to contain before it is trusted.",
+    // labOrderId is deliberately optional, not required: a real external
+    // lab's webhook only knows ITS OWN order reference (externalOrderRef) —
+    // it has no reason to know Kaizen's internal lab_order id, and this
+    // task's own explicit rule is to never require/trust an internal id
+    // from an untrusted external payload. The internal lab_orders row is
+    // resolved server-side via external_identifiers (mapped at send time),
+    // never trusted bare from the payload — see the webhook route.
+    fields: ["externalOrderRef", "labOrderId", "status", "resultedAt", "findings", "reportUrl"],
+    requiredFields: ["externalOrderRef", "status"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view", "create"],
+  },
+  EXTERNAL_PHARMACY_PRESCRIPTION: {
+    label: "External Pharmacy Prescription",
+    version: 1,
+    status: "ACTIVE",
+    sourceModule: "DOCTOR_OPD",
+    targetModule: "EXTERNAL_PHARMACY",
+    description: "A prescription line sent to an external pharmacy for fulfillment.",
+    purpose: "Give an external pharmacy exactly what it needs to fulfill one medicine line — never the full prescription_items row.",
+    // See EXTERNAL_LAB_ORDER's identical comment on providerPatientId.
+    fields: ["prescriptionItemId", "patientId", "patientName", "medicineName", "dosage", "quantity", "providerPatientId", "providerMedicineCode"],
+    requiredFields: ["prescriptionItemId", "patientId", "medicineName", "quantity"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes", "phone", "address", "allergies"],
+    defaultActions: ["view", "create"],
+  },
+  EXTERNAL_PHARMACY_FULFILLMENT: {
+    label: "External Pharmacy Fulfillment",
+    version: 1,
+    status: "ACTIVE",
+    sourceModule: "EXTERNAL_PHARMACY",
+    targetModule: "DOCTOR_OPD",
+    description: "A fulfillment status update received back from an external pharmacy.",
+    purpose: "The inbound counterpart for a prescription fulfilled by a provider whose own inventory Kaizen never sees.",
+    // prescriptionItemId is deliberately optional here, same reasoning as
+    // EXTERNAL_LAB_RESULT's labOrderId above — an external pharmacy only
+    // knows its own order reference; the internal prescription_items row
+    // is resolved via external_identifiers, never trusted bare.
+    fields: ["externalOrderRef", "prescriptionItemId", "status", "quantityFulfilled"],
+    requiredFields: ["externalOrderRef", "status"],
+    restrictedFields: ["diagnosis", "medicalHistory", "privateNotes"],
+    defaultActions: ["view", "create"],
+  },
   // Reference-only shapes (`connectable: false`) — no module_connections
   // counterpart; see the file header comment for why. Used only through
   // dataContractValidator.js's validateContractPayload(), never through

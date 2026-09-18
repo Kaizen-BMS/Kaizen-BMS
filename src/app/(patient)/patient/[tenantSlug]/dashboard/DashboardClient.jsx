@@ -26,6 +26,7 @@ const TABS = [
   { key: "medications", label: "Medications", module: "DOCTOR_OPD" },
   { key: "prescriptions", label: "Prescriptions", module: "DOCTOR_OPD" },
   { key: "lab-reports", label: "Lab Reports", module: "LAB" },
+  { key: "radiology-reports", label: "Radiology Reports", module: "RADIOLOGY" },
   { key: "discharge-summaries", label: "Discharge Summaries", module: "IPD" },
   { key: "bills", label: "Bills", module: "BILLING" },
   { key: "feedback", label: "Feedback", module: "APPOINTMENTS" },
@@ -100,6 +101,7 @@ export default function DashboardClient({ tenantSlug, tenantName, profiles, acti
           {tab === "medications" && <MedicationsTab profileId={profileId} />}
           {tab === "prescriptions" && <PrescriptionsTab profileId={profileId} />}
           {tab === "lab-reports" && <LabReportsTab profileId={profileId} />}
+          {tab === "radiology-reports" && <RadiologyReportsTab profileId={profileId} />}
           {tab === "discharge-summaries" && <DischargeSummariesTab profileId={profileId} />}
           {tab === "bills" && <BillsTab profileId={profileId} />}
           {tab === "feedback" && <FeedbackTab profileId={profileId} />}
@@ -281,6 +283,22 @@ function LabReportsTab({ profileId }) {
                 {row.name || row.test}: {row.value} {row.unit || ""}
               </p>
             ))}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function RadiologyReportsTab({ profileId }) {
+  const state = useTabData("radiology-reports", profileId, "radiologyReports");
+  const fallback = <TabState state={state} emptyLabel="No radiology reports yet." />;
+  if (fallback) return fallback;
+  return (
+    <div className="space-y-2">
+      {state.items.map((r) => (
+        <Card key={r.id}>
+          <p className="font-medium">{fmtDate(r.reportedAt)} · {r.studyName}</p>
+          {r.impression && <p className="text-slate-600">{r.impression}</p>}
         </Card>
       ))}
     </div>

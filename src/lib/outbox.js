@@ -42,8 +42,24 @@ function backoffSeconds(attempts) {
  *   AppointmentBooked   { appointmentId, patientId, doctorUserId, slotTime, bookedBy }
  *   PrescriptionCreated { prescriptionId, patientId, visitId, consultationId, createdBy, itemCount }
  *   PaymentReceived     { paymentId, billId, amount, mode, recordedBy }
+ *   RadiologyOrderCreated   { radiologyOrderId, patientId, visitId, consultationId, createdBy }
+ *   RadiologyResultCompleted { radiologyOrderId, patientId, visitId, reportedBy }
+ *
+ * The Radiology pair (added the phase after Alerts & Notifications
+ * Center) is a real, named consumer need, not a "why not" addition: they
+ * durably (a) start/advance the RADIOLOGY_ORDER_TO_RESULT workflow the
+ * same way PrescriptionCreated already starts OPD_PHARMACY_BILLING, and
+ * (b) give a future consumer a durable "this report is final" fact
+ * independent of whether anyone was listening on a socket at that
+ * instant — see src/lib/workflows/radiologyOrderResult.js.
  */
-const EVENT_TYPES = ["AppointmentBooked", "PrescriptionCreated", "PaymentReceived"];
+const EVENT_TYPES = [
+  "AppointmentBooked",
+  "PrescriptionCreated",
+  "PaymentReceived",
+  "RadiologyOrderCreated",
+  "RadiologyResultCompleted",
+];
 
 /**
  * Write one durable event row inside an existing transaction. Returns the

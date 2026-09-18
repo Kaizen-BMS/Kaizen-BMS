@@ -14,6 +14,7 @@ const { getActiveModules, moduleRoomsForRole } = require("./src/lib/modules");
 const { registerIo } = require("./src/lib/realtime");
 const { prisma } = require("./src/lib/prismaClient");
 const outboxProcessor = require("./src/lib/outboxProcessor");
+const analyticsScheduler = require("./src/lib/analytics/scheduler");
 // Side-effect require: registers Billing's IPD event listeners on the
 // serverEvents bus once, for the lifetime of this process. See
 // src/lib/billingEvents.js / CLAUDE.md "Billing module".
@@ -107,6 +108,19 @@ app.prepare().then(() => {
 
   registerIo(io);
   outboxProcessor.start();
+  analyticsScheduler.start();
+  // Side-effect require: registers every Workflow's realtime listeners +
+  // Outbox consumer once, for the lifetime of this process. See
+  // src/lib/workflows/index.js / CLAUDE.md "Workflow Automation". Loaded
+  // here (after app.prepare(), not at the top of this file) because its
+  // require chain reaches src/lib/apiRoute.js (for the HttpError class,
+  // via moduleConnections.js/moduleInstances.js) which imports
+  // "next/server" — that import throws ("AsyncLocalStorage accessed in
+  // runtime where it is not available") if evaluated before Next's own
+  // runtime has initialized. billingEvents.js/outboxConsumers.js above
+  // never happened to reach apiRoute.js, so this ordering constraint never
+  // surfaced before this phase.
+  require("./src/lib/workflows");
 
   httpServer.listen(port, () => {
     console.log(
@@ -120,6 +134,7 @@ app.prepare().then(() => {
   for (const sig of ["SIGTERM", "SIGINT"]) {
     process.on(sig, () => {
       outboxProcessor.stop();
+      analyticsScheduler.stop();
       httpServer.close(() => process.exit(0));
     });
   }
