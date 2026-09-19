@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = apiRoute("partner:manage", async () => {
   const services = {};
-  for (const s of ["LAB", "PHARMACY"]) {
+  for (const s of ["LAB", "PHARMACY", "REFERRAL"]) {
     services[s] = {
       label: SERVICE_LABEL[s],
       defaultPurpose: SERVICE_DEFAULT_PURPOSE[s],

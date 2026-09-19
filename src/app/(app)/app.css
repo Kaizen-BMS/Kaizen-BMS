@@ -221,3 +221,22 @@
 @media (prefers-reduced-motion: reduce) {
   .hms-flash, .hms-skeleton, .hms-login-blob { animation: none; }
 }
+
+/* Everything clickable shows the pointer (Tailwind v4 resets buttons to default). */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href],
+summary,
+select:not(:disabled),
+label[for],
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="file"]:not(:disabled) {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled="true"],
+select:disabled {
+  cursor: not-allowed;
+}

@@ -5,10 +5,25 @@ import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
 import { parseMaybeJson } from "@/components/hms/json";
+import PartnerSend from "@/components/hms/PartnerSend";
 
 const FLAGS = ["NORMAL", "HIGH", "LOW", "ABNORMAL"];
 
 export default function LabClient({ permissions }) {
+  const [tab, setTab] = useState("queue");
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 text-sm">
+        {[["queue", "Lab queue"], ["partner", "Partner orders"]].map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 ${tab === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"}`}>{label}</button>
+        ))}
+      </div>
+      {tab === "queue" ? <LabQueueView permissions={permissions} /> : <LabPartnerTab canResult={permissions.canResult} />}
+    </div>
+  );
+}
+
+function LabQueueView({ permissions }) {
   const [orders, setOrders] = useState([]);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,7 +45,6 @@ export default function LabClient({ permissions }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch((e) => setMsg(e.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useRealtime(
@@ -236,6 +250,74 @@ export default function LabClient({ permissions }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Tests sent by connected facilities: the lab enters the result here (its own
+// record) and it is sent back to whoever asked.
+function LabPartnerTab({ canResult }) {
+  const [orders, setOrders] = useState(null);
+  const [text, setText] = useState({});
+  const [amounts, setAmounts] = useState({});
+  const [error, setError] = useState("");
+
+  async function load() {
+    setOrders((await apiGet("/api/lab/partner-orders")).orders);
+  }
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load().catch((e) => setError(e.message));
+  }, []);
+  useRealtime({ "partner:inbound": load, "partner:updated": load }, load);
+
+  async function send(o) {
+    setError("");
+    try {
+      await apiSend(`/api/lab/partner-orders/${o.id}/result`, "POST", { findings: text[o.id], ...(amounts[o.id] ? { amount: Number(amounts[o.id]) } : {}) });
+      await load();
+    } catch (e) {
+      setError(e.message === "connection_not_active" ? "The connection with this facility is not active." : `Could not send the result (${e.message}).`);
+    }
+  }
+
+  if (!orders) return <p className="text-sm text-slate-400">{error || "Loading…"}</p>;
+  return (
+    <div className="space-y-4">
+      <PartnerSend service="LAB" />
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {orders.length === 0 ? (
+        <p className="text-sm text-slate-400">No tests from partners yet.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+              <tr><th className="px-3 py-2">From</th><th className="px-3 py-2">Patient</th><th className="px-3 py-2">Test</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Result</th></tr>
+            </thead>
+            <tbody>
+              {orders.map((o) => (
+                <tr key={o.id} className="border-b border-slate-100 align-top last:border-0">
+                  <td className="px-3 py-2">{o.from}</td>
+                  <td className="px-3 py-2">{o.patientName || "—"}{o.patientAge != null ? ` · ${o.patientAge}y` : ""}</td>
+                  <td className="px-3 py-2">{o.testName}<p className="text-xs text-slate-400">{o.priority}</p></td>
+                  <td className="px-3 py-2">{o.status === "COMPLETED" ? "Result sent" : "Waiting"}</td>
+                  <td className="px-3 py-2">
+                    {o.status === "RECEIVED" && canResult && o.connectionStatus === "ACTIVE" ? (
+                      <div className="flex gap-1">
+                        <input value={text[o.id] || ""} onChange={(e) => setText({ ...text, [o.id]: e.target.value })} placeholder="Findings" className="w-48 rounded-md border border-slate-300 px-2 py-1 text-xs" />
+                        <input type="number" min="0" value={amounts[o.id] || ""} onChange={(e) => setAmounts({ ...amounts, [o.id]: e.target.value })} placeholder="₹ amount" className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs" />
+                        <button onClick={() => send(o)} disabled={!(text[o.id] || "").trim()} className="rounded-md bg-[var(--hms-btn-bg)] px-2 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50">Send result</button>
+                      </div>
+                    ) : (
+                      <span className="text-xs">{o.result?.findings || ""}{o.result?.amount != null ? ` · ₹${o.result.amount}` : ""}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

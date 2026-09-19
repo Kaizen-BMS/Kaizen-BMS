@@ -18,11 +18,12 @@ const { getContract } = require("./dataContracts");
 const SERVICE_CONTRACT = {
   LAB: "EXTERNAL_LAB_ORDER",
   PHARMACY: "EXTERNAL_PHARMACY_PRESCRIPTION",
+  REFERRAL: "PATIENT_REFERRAL",
 };
 
-const SERVICE_LABEL = { LAB: "Laboratory orders", PHARMACY: "Prescription fulfillment" };
-const SERVICE_DEFAULT_PURPOSE = { LAB: "Laboratory Order Processing", PHARMACY: "Prescription Fulfillment" };
-const SERVICE_ORDER_TYPE = { LAB: "LAB_ORDER", PHARMACY: "PHARMACY_PRESCRIPTION" };
+const SERVICE_LABEL = { LAB: "Laboratory orders", PHARMACY: "Prescription fulfillment", REFERRAL: "Patient referrals" };
+const SERVICE_DEFAULT_PURPOSE = { LAB: "Laboratory Order Processing", PHARMACY: "Prescription Fulfillment", REFERRAL: "Patient Referral" };
+const SERVICE_ORDER_TYPE = { LAB: "LAB_ORDER", PHARMACY: "PHARMACY_PRESCRIPTION", REFERRAL: "REFERRAL" };
 
 const CATEGORY_META = {
   PATIENT_REFERENCE: { label: "Patient reference", description: "Patient name, age, gender and reference number" },
@@ -30,6 +31,7 @@ const CATEGORY_META = {
   LAB_ORDER: { label: "Lab order", description: "The test requested, its priority and ordering doctor" },
   PRESCRIPTION: { label: "Prescription", description: "Dose and quantity prescribed" },
   MEDICINE_REFERENCE: { label: "Medicine reference", description: "Medicine name and its code at the partner" },
+  REFERRAL_DETAILS: { label: "Referral details", description: "Why the patient is being referred, with a short summary" },
   BILLING_INFORMATION: { label: "Billing information", description: "Never shared through order exchange" },
   CLINICAL_NOTES: { label: "Clinical notes", description: "Never shared through order exchange" },
 };
@@ -50,10 +52,16 @@ const FIELDS = {
     BILLING_INFORMATION: [],
     CLINICAL_NOTES: [],
   },
+  REFERRAL: {
+    PATIENT_REFERENCE: ["patientName", "patientAge", "patientGender", "patientPhone"],
+    REFERRAL_DETAILS: ["reason", "summary"],
+    BILLING_INFORMATION: [],
+    CLINICAL_NOTES: [],
+  },
 };
 
 function isValidService(s) {
-  return s === "LAB" || s === "PHARMACY";
+  return s === "LAB" || s === "PHARMACY" || s === "REFERRAL";
 }
 
 /** Categories offered for a service — `selectable: false` ones are shown as "never shared". */
@@ -82,11 +90,13 @@ function fieldsForCategories(service, cats) {
 
 /** Snapshot of the contract version the consent was given against. */
 function currentContractVersion(service) {
+  if (service === "REFERRAL") return 1;
   return getContract(SERVICE_CONTRACT[service]).version;
 }
 
 /** Categories whose fields cover the contract's REQUIRED fields — a connection without them can never send a valid order. */
 function requiredCategories(service) {
+  if (service === "REFERRAL") return ["PATIENT_REFERENCE", "REFERRAL_DETAILS"];
   const required = new Set(getContract(SERVICE_CONTRACT[service]).requiredFields);
   return Object.entries(FIELDS[service])
     .filter(([, fields]) => fields.some((f) => required.has(f)))

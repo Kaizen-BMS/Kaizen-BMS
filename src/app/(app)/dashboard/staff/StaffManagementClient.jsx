@@ -1,5 +1,7 @@
 "use client";
 
+
+import ResetPasswordButton from "@/components/hms/ResetPasswordButton";
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
@@ -143,7 +145,8 @@ function DirectoryTab() {
                   <td className="px-3 py-2">{s.phone || "—"}</td>
                   <td className="px-3 py-2">{s.joinDate ? new Date(s.joinDate).toLocaleDateString() : "—"}</td>
                   <td className="px-3 py-2">
-                    <button onClick={() => startEdit(s)} className="text-xs text-slate-400 hover:text-slate-700">edit</button>
+                    <button onClick={() => startEdit(s)} className="mr-3 text-xs text-slate-400 hover:text-slate-700">edit</button>
+                    <ResetPasswordButton userId={s.userId} name={s.name} />
                   </td>
                 </>
               )}

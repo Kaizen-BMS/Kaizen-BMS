@@ -436,6 +436,7 @@ model tenants {
   organization_id                                              BigInt?                     @db.UnsignedBigInt
   public_code                                                  String?                     @unique(map: "uq_tenants_public_code") @db.VarChar(32)
   owner_enabled                                                Boolean                     @default(true)
+  show_stock_to_doctors                                        Boolean                     @default(true)
   admissions                                                   admissions[]
   analytics_daily_dimension                                    analytics_daily_dimension[]
   analytics_daily_tenant                                       analytics_daily_tenant[]
@@ -530,6 +531,7 @@ model users {
   nursing_notes                                                nursing_notes[]
   org_connections                                              org_connections[]
   organization_members                                         organization_members[]
+  password_resets                                              password_resets[]
   patient_insurance                                            patient_insurance[]
   payments                                                     payments[]
   pharmacy_stock_movements                                     pharmacy_stock_movements[]
@@ -1476,6 +1478,7 @@ model org_connections {
   created_at                                           DateTime                     @default(now()) @db.Timestamp(0)
   updated_at                                           DateTime                     @default(now()) @db.Timestamp(0)
   open_slot                                            Int?                         @db.TinyInt
+  share_stock                                          Boolean                      @default(false)
   org_connection_events                                org_connection_events[]
   tenants_org_connections_receiver_tenant_idTotenants  tenants                      @relation("org_connections_receiver_tenant_idTotenants", fields: [receiver_tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_org_connections_receiver")
   users                                                users                        @relation(fields: [requested_by], references: [id], onUpdate: Restrict, map: "fk_org_connections_requested_by")
@@ -1527,6 +1530,18 @@ model peer_inbound_orders {
 
   @@unique([org_connection_id, external_order_ref], map: "uq_peer_inbound_ref")
   @@index([tenant_id, status], map: "idx_peer_inbound_tenant")
+}
+
+model password_resets {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id    BigInt    @db.UnsignedBigInt
+  token_hash String    @unique(map: "uq_password_resets_token") @db.Char(64)
+  expires_at DateTime  @db.DateTime(0)
+  used_at    DateTime? @db.DateTime(0)
+  created_at DateTime  @default(now()) @db.Timestamp(0)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_password_resets_user")
+
+  @@index([user_id], map: "idx_password_resets_user")
 }
 
 enum beds_ward_type {
@@ -1883,11 +1898,6 @@ enum external_orders_status {
   CANCELLED
 }
 
-enum org_connections_service_type {
-  LAB
-  PHARMACY
-}
-
 enum organization_members_role {
   OWNER
 }
@@ -1906,4 +1916,10 @@ enum peer_inbound_orders_status {
   RECEIVED
   COMPLETED
   REJECTED
+}
+
+enum org_connections_service_type {
+  LAB
+  PHARMACY
+  REFERRAL
 }

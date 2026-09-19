@@ -9,6 +9,9 @@ import AllergyBadge from "@/components/hms/AllergyBadge";
 import DoctorSlotPicker from "@/components/hms/DoctorSlotPicker";
 import { parseMaybeJson } from "@/components/hms/json";
 import ExternalSend from "@/components/hms/ExternalSend";
+import StockHint from "@/components/hms/StockHint";
+import PatientHistory from "@/components/hms/PatientHistory";
+import { LAB_TEST_GROUPS } from "@/lib/labTestCatalog";
 import { matchAllergy } from "@/lib/allergyCheck";
 
 function upsertById(list, item) {
@@ -245,6 +248,35 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
         </div>
       </div>
 
+      <PatientHistory patientId={visit.patient_id} currentVisitId={visit.id}>
+        {doctorUserId && (
+          <div className="mt-2">
+            <button
+              onClick={() => {
+                setFollowUpMsg("");
+                setShowFollowUp(true);
+              }}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
+            >
+              Schedule a future appointment
+            </button>
+            {followUpMsg && <span className="ml-2 text-xs text-green-700">{followUpMsg}</span>}
+          </div>
+        )}
+      </PatientHistory>
+
+      {showFollowUp && doctorUserId && (
+        <DoctorSlotPicker
+          doctorUserId={doctorUserId}
+          patientId={visit.patient_id}
+          onClose={() => setShowFollowUp(false)}
+          onBooked={() => {
+            setShowFollowUp(false);
+            setFollowUpMsg("Appointment scheduled.");
+          }}
+        />
+      )}
+
       {msg && <p className="text-sm text-red-600">{msg}</p>}
 
       {!consultation ? (
@@ -298,17 +330,6 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
             {followUpMsg && <p className="mt-2 text-xs text-green-700">{followUpMsg}</p>}
           </div>
 
-          {showFollowUp && doctorUserId && (
-            <DoctorSlotPicker
-              doctorUserId={doctorUserId}
-              patientId={visit.patient_id}
-              onClose={() => setShowFollowUp(false)}
-              onBooked={() => {
-                setShowFollowUp(false);
-                setFollowUpMsg("Follow-up scheduled.");
-              }}
-            />
-          )}
 
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             <p className="text-sm font-semibold">Prescription → Pharmacy</p>
@@ -365,6 +386,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                             r.match ? "border-red-300 bg-red-50" : "border-slate-300"
                           }`}
                         />
+                        <StockHint query={r.medicineName} onPick={(name) => update({ medicineName: name })} />
                       </div>
                       <div>
                         <label className="block text-[11px] text-slate-500">Dose</label>
@@ -466,6 +488,23 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
               </div>
             ))}
             <div className="mt-3 space-y-2">
+              <select
+                aria-label="Add a common test"
+                value=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  setTests((xs) => (xs.includes(v) ? xs : xs.some((x) => !x.trim()) ? xs.map((x, k) => (k === xs.findIndex((y) => !y.trim()) ? v : x)) : [...xs, v]));
+                }}
+                className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+              >
+                <option value="">Add a common test…</option>
+                {Object.entries(LAB_TEST_GROUPS).map(([g, list]) => (
+                  <optgroup key={g} label={g}>
+                    {list.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </optgroup>
+                ))}
+              </select>
               {tests.map((t, i) => (
                 <input
                   key={i}

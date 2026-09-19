@@ -15,7 +15,7 @@ export const config = {
 // `/api/health` deliberately requires no session — it exists specifically
 // to answer "is the database reachable" during an outage, when even
 // logging in (which itself queries the database) would fail.
-const PUBLIC_API = new Set(["/api/auth/login", "/api/health"]);
+const PUBLIC_API = new Set(["/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/health"]);
 // The public waiting-room display polls a read-only, no-PII, slug-scoped
 // endpoint — deliberately unauthenticated (the display screen has no login).
 // /api/patient-auth/* is the patient-portal equivalent of /api/auth/login —

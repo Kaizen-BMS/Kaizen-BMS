@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
+import ResetPasswordButton from "@/components/hms/ResetPasswordButton";
 
 const ALL_MODULES = ["DOCTOR_OPD", "PHARMACY", "LAB", "IPD", "BILLING", "APPOINTMENTS"];
 
@@ -98,7 +99,8 @@ export default function TenantDetailClient({ tenantId }) {
               <tr key={u.id} className="border-t border-slate-100">
                 <td className="py-1.5 pr-2 font-medium">{u.name}</td>
                 <td className="py-1.5 pr-2 text-slate-500">{u.email}</td>
-                <td className="py-1.5 text-slate-500">{u.role}</td>
+                <td className="py-1.5 pr-2 text-slate-500">{u.role}</td>
+                <td className="py-1.5"><ResetPasswordButton userId={u.id} name={u.name} /></td>
               </tr>
             ))}
           </tbody>

@@ -54,12 +54,22 @@ function lookupAllowed(tenantId) {
   return true;
 }
 
+/** The facility's own working module instance a connection hangs off: clinical (OPD) for hospitals/clinics, else its pharmacy or lab. Any facility can connect — not only ones with a clinic. */
+async function sourceInstanceFor(db, tenantId) {
+  for (const m of ["DOCTOR_OPD", "PHARMACY", "LAB"]) {
+    const i = await db.module_instances.findFirst({ where: { tenant_id: toId(tenantId), module_name: m, is_default: true, status: "ACTIVE" }, select: { id: true } });
+    if (i) return i;
+  }
+  return null;
+}
+
 async function offersFor(tenantId) {
   const mods = await prisma.tenant_modules.findMany({
-    where: { tenant_id: tenantId, is_active: true, module_name: { in: ["LAB", "PHARMACY"] } },
+    where: { tenant_id: tenantId, is_active: true, module_name: { in: ["LAB", "PHARMACY", "DOCTOR_OPD"] } },
     select: { module_name: true },
   });
-  return mods.map((m) => m.module_name);
+  // A clinic / hospital (OPD) can receive patient referrals.
+  return mods.map((m) => (m.module_name === "DOCTOR_OPD" ? "REFERRAL" : m.module_name));
 }
 
 async function addEvent(db, connectionId, from, to, actor, note, snapshot) {
@@ -129,6 +139,7 @@ function serialize(conn, viewerTenantId, tmap, events) {
     modifiedByReceiver: !!conn.modified_by,
     contractVersions: parseJson(conn.contract_versions, null),
     providerId: outgoing && conn.requester_provider_id != null ? Number(conn.requester_provider_id) : null,
+    shareStock: !!conn.share_stock,
     pausedByMe: conn.paused_by_tenant_id != null && Number(conn.paused_by_tenant_id) === Number(viewerTenantId),
     requestedAt: conn.requested_at,
     approvedAt: conn.approved_at,
@@ -163,11 +174,7 @@ async function requestConnection(session, { code, serviceType, purpose, categori
   const required = catalog.requiredCategories(serviceType);
   if (!required.every((c) => cats.includes(c))) throw new HttpError(422, "missing_required_information");
 
-  const clinical = await prisma.module_instances.findFirst({
-    where: { tenant_id: me, module_name: "DOCTOR_OPD", is_default: true, status: "ACTIVE" },
-    select: { id: true },
-  });
-  if (!clinical) throw new HttpError(409, "clinical_module_required");
+  if (!(await sourceInstanceFor(prisma, me))) throw new HttpError(409, "clinical_module_required");
 
   const receiver = await prisma.tenants.findUnique({ where: { public_code: found.publicCode }, select: { id: true } });
   let conn;
@@ -239,10 +246,7 @@ async function getConnection(session, id) {
 /** Provisions the requester's side of the EXISTING external-integration machinery for an accepted connection. */
 async function provisionRequesterSide(tx, conn, receiverName, approvedFields, decidedBy) {
   const service = conn.service_type;
-  const clinical = await tx.module_instances.findFirst({
-    where: { tenant_id: conn.requester_tenant_id, module_name: "DOCTOR_OPD", is_default: true, status: "ACTIVE" },
-    select: { id: true },
-  });
+  const clinical = await sourceInstanceFor(tx, conn.requester_tenant_id);
   if (!clinical) throw new HttpError(409, "requester_clinical_module_not_active");
   const provider = await tx.external_providers.create({
     data: {
@@ -343,10 +347,15 @@ async function decide(session, id, { decision, approvedCategories, note }) {
       modified,
       contract: versions,
     });
-    const { provider, ext } = await provisionRequesterSide(tx, conn, receiverName, fields, session.userId);
+    // Referrals need no external provider machinery — they are recorded directly.
+    let linkData = {};
+    if (conn.service_type !== "REFERRAL") {
+      const { provider, ext } = await provisionRequesterSide(tx, conn, receiverName, fields, session.userId);
+      linkData = { requester_provider_id: provider.id, requester_connection_id: ext.id };
+    }
     const u = await tx.org_connections.update({
       where: { id: conn.id },
-      data: { status: "ACTIVE", requester_provider_id: provider.id, requester_connection_id: ext.id },
+      data: { status: "ACTIVE", ...linkData },
     });
     await addEvent(tx, conn.id, "ACCEPTED", "ACTIVE", session, "Connection is active", { approvedCategories: approved });
     return u;
@@ -415,7 +424,7 @@ async function isPeerConnectionActive(connectionId) {
  * current contract version, and that the payload carries ONLY approved
  * fields — a defense-in-depth backstop behind the send-time enforcement.
  */
-async function deliverPeerOrder(connectionId, payload) {
+async function deliverPeerOrder(connectionId, payload, { direct = false } = {}) {
   const conn = await prisma.org_connections.findUnique({ where: { id: toId(connectionId) } });
   if (!conn || conn.status !== "ACTIVE") throw new Error("connection_not_active");
   const versions = parseJson(conn.contract_versions, null);
@@ -426,7 +435,7 @@ async function deliverPeerOrder(connectionId, payload) {
   const extra = sent.filter((k) => !allowed.has(k));
   if (extra.length) throw new Error(`unapproved_fields:${extra.join(",")}`);
 
-  const ref = `PEER-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  const ref = `${direct ? "DIR" : "PEER"}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
   await prisma.peer_inbound_orders.create({
     data: {
       tenant_id: conn.receiver_tenant_id,
@@ -468,15 +477,30 @@ async function listInbound(session) {
 }
 
 /** Receiver returns a result: a REAL signed webhook call into the requester's existing inbound pipeline (signature, replay window, Inbox idempotency, contract validation, business update, realtime). */
-async function completeInbound(session, id, { findings, quantityFulfilled }, origin) {
+async function completeInbound(session, id, { findings, quantityFulfilled, amount, referral }, origin) {
+  const money = amount != null && amount !== "" && Number.isFinite(Number(amount)) ? { amount: Number(amount) } : {};
   const order = await prisma.peer_inbound_orders.findFirst({ where: { id: toId(id), tenant_id: toId(session.tenantId) } });
   if (!order) throw new HttpError(404, "order_not_found");
   if (order.status !== "RECEIVED") throw new HttpError(409, "already_completed");
   const conn = await prisma.org_connections.findUnique({ where: { id: order.org_connection_id } });
   if (!conn || conn.status !== "ACTIVE") throw new HttpError(409, "connection_not_active");
+  const requesterTenant = Number(conn.requester_tenant_id);
+
+  // A "direct" order (facility-to-facility request, no internal record on the
+  // sender's side to update) is just marked done with its result.
+  if (String(order.external_order_ref).startsWith("DIR-")) {
+    const result =
+      conn.service_type === "REFERRAL"
+        ? { ...referral }
+        : conn.service_type === "LAB"
+          ? { findings: String(findings || "Result reported.").slice(0, 2000), ...money }
+          : { quantityFulfilled: quantityFulfilled != null ? Number(quantityFulfilled) : parseJson(order.payload, {}).quantity ?? null, ...money };
+    await prisma.peer_inbound_orders.update({ where: { id: order.id }, data: { status: "COMPLETED", completed_at: new Date(), result_payload: JSON.stringify(result) } });
+    emitToTenant(requesterTenant, "partner:updated", { id: Number(conn.id), status: conn.status });
+    return { ok: true };
+  }
   if (!conn.requester_provider_id) throw new HttpError(409, "connection_not_provisioned");
 
-  const requesterTenant = Number(conn.requester_tenant_id);
   const secret = await runWithContext({ tenantId: requesterTenant }, async () => {
     return await getWebhookSecret(requesterTenant, conn.requester_provider_id);
   });
@@ -498,10 +522,59 @@ async function completeInbound(session, id, { findings, quantityFulfilled }, ori
 
   await prisma.peer_inbound_orders.update({
     where: { id: order.id },
-    data: { status: "COMPLETED", completed_at: new Date(), result_payload: JSON.stringify(conn.service_type === "LAB" ? { findings: body.findings } : { quantityFulfilled: body.quantityFulfilled }) },
+    data: { status: "COMPLETED", completed_at: new Date(), result_payload: JSON.stringify(conn.service_type === "LAB" ? { findings: body.findings, ...money } : { quantityFulfilled: body.quantityFulfilled, ...money }) },
   });
   emitToTenant(requesterTenant, "partner:updated", { id: Number(conn.id), status: conn.status });
   return { ok: true };
+}
+
+const DIRECT_FIELDS = {
+  PHARMACY: ["medicineName", "quantity", "dosage", "patientName"],
+  LAB: ["testName", "patientName", "patientAge", "priority"],
+  REFERRAL: ["patientName", "patientAge", "patientGender", "patientPhone", "reason", "summary"],
+};
+const DIRECT_REQUIRED = { PHARMACY: "medicineName", LAB: "testName", REFERRAL: "patientName" };
+
+/** A facility sends its own request to a connected partner (pharmacy→pharmacy, lab→lab, anyone→anyone that offers the service). Only approved information leaves. */
+async function sendDirect(session, connectionId, input) {
+  const conn = await loadForParty(session, connectionId);
+  if (Number(conn.requester_tenant_id) !== Number(session.tenantId)) throw new HttpError(403, "only_requester_can_send");
+  if (conn.status !== "ACTIVE") throw new HttpError(409, "connection_not_active");
+  const svc = conn.service_type;
+  const allowed = new Set(catalog.fieldsForCategories(svc, parseJson(conn.approved_categories, [])));
+  const payload = {};
+  for (const k of DIRECT_FIELDS[svc]) {
+    if (input[k] === undefined || input[k] === null || input[k] === "") continue;
+    if (allowed.has(k)) payload[k] = k === "quantity" || k === "patientAge" ? Number(input[k]) : String(input[k]).slice(0, 191);
+  }
+  if (!payload[DIRECT_REQUIRED[svc]]) throw new HttpError(403, "data_not_approved");
+  if (svc === "PHARMACY" && !payload.quantity) throw new HttpError(422, "quantity_required");
+  if (svc === "LAB") payload.priority = payload.priority || "ROUTINE";
+  if (svc === "REFERRAL" && !payload.reason) throw new HttpError(403, "data_not_approved");
+  return { ref: await deliverPeerOrder(conn.id, payload, { direct: true }) };
+}
+
+/** Requests THIS facility sent to partners, with their status/result. */
+async function listOutbound(session) {
+  const conns = await prisma.org_connections.findMany({ where: { requester_tenant_id: toId(session.tenantId) } });
+  if (!conns.length) return [];
+  const rows = await prisma.peer_inbound_orders.findMany({ where: { org_connection_id: { in: conns.map((c) => c.id) } }, orderBy: { id: "desc" }, take: 100 });
+  const tmap = await tenantsById(conns.map((c) => c.receiver_tenant_id));
+  const cmap = new Map(conns.map((c) => [String(c.id), c]));
+  return rows.map((r) => {
+    const c = cmap.get(String(r.org_connection_id));
+    return {
+      id: Number(r.id),
+      to: tmap.get(String(c.receiver_tenant_id))?.name,
+      serviceType: c.service_type,
+      ref: r.external_order_ref,
+      status: r.status,
+      payload: parseJson(r.payload, {}),
+      result: parseJson(r.result_payload, null),
+      sentAt: r.received_at,
+      completedAt: r.completed_at,
+    };
+  });
 }
 
 async function pendingIncoming(tenantId) {
@@ -524,5 +597,7 @@ module.exports = {
   listInbound,
   completeInbound,
   pendingIncoming,
+  sendDirect,
+  listOutbound,
   isPeerConnectionActive,
 };

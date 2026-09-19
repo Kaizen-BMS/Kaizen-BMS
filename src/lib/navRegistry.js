@@ -50,17 +50,10 @@ const NAV = [
   // ── Administration (admin / owner only) ──
   { key: "staff", label: "Staff Management", section: "ADMINISTRATION", route: "/dashboard/staff", icon: "staff", action: "staffroster:read", tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "forms", label: "Form Builder", section: "ADMINISTRATION", route: "/dashboard/admin/forms", icon: "forms", action: "formtemplate:manage", adminOnly: true, status: "live" },
-  { key: "referralSources", label: "Referral Sources", section: "ADMINISTRATION", route: "/dashboard/admin/referral-sources", icon: "referral", action: "referral:manage", adminOnly: true, status: "live" },
-  { key: "modules", label: "Modules", section: "ADMINISTRATION", route: "/dashboard/admin/modules", icon: "registry", action: "module:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
-  { key: "moduleInstances", label: "Module Instances", section: "ADMINISTRATION", route: "/dashboard/admin/module-instances", icon: "registry", action: "moduleinstance:manage", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
-  { key: "moduleConnections", label: "Connection Center", section: "ADMINISTRATION", route: "/dashboard/admin/module-connections", icon: "registry", action: "moduleconnection:manage", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
-  { key: "masterData", label: "Master Data", section: "ADMINISTRATION", route: "/dashboard/admin/master-data", icon: "registry", action: "department:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
-  { key: "contracts", label: "Data Contracts", section: "ADMINISTRATION", route: "/dashboard/admin/contracts", icon: "registry", action: "moduleconnection:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
-  { key: "workflows", label: "Workflows", section: "ADMINISTRATION", route: "/dashboard/admin/workflows", icon: "registry", action: "workflow:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "pricing", label: "Pricing", section: "ADMINISTRATION", route: "/dashboard/admin/pricing", icon: "billing", action: "service:manage", modules: ["BILLING"], adminOnly: true, status: "live" },
-  { key: "externalIntegrations", label: "External Integrations", section: "ADMINISTRATION", route: "/dashboard/admin/external", icon: "registry", action: "external:manage", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
-  { key: "myOrganizations", label: "My Organizations", section: "ADMINISTRATION", route: "/dashboard/admin/organizations", icon: "tenants", action: "partner:manage", adminOnly: true, status: "live" },
-  { key: "partnerOrganizations", label: "Partner Organizations", section: "ADMINISTRATION", route: "/dashboard/admin/partners", icon: "registry", action: "partner:manage", adminOnly: true, status: "live" },
+  { key: "myOrganizations", label: "My Facilities", section: "ADMINISTRATION", route: "/dashboard/admin/organizations", icon: "tenants", action: "partner:manage", adminOnly: true, status: "live" },
+  { key: "partnerOrganizations", label: "Partners", section: "ADMINISTRATION", route: "/dashboard/admin/partners", icon: "registry", action: "partner:manage", adminOnly: true, status: "live" },
+  { key: "settings", label: "Settings", section: "ADMINISTRATION", route: "/dashboard/admin/settings", icon: "forms", action: "formtemplate:manage", adminOnly: true, status: "live" },
   { key: "branding", label: "Branding", section: "ADMINISTRATION", route: "/dashboard/branding", icon: "branding", action: "branding:read", adminOnly: false, status: "live" },
 
   // ── Platform (SUPER_ADMIN only) ──

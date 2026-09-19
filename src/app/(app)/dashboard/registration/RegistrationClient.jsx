@@ -1,5 +1,8 @@
 "use client";
 
+
+import PatientHistory from "@/components/hms/PatientHistory";
+import ReferralsPanel from "@/components/hms/ReferralsPanel";
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import DynamicForm, { splitValues } from "@/components/hms/DynamicForm";
@@ -27,6 +30,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
   const [editAllergies, setEditAllergies] = useState([]);
   const [editEmail, setEditEmail] = useState("");
   const [editingInsuranceId, setEditingInsuranceId] = useState(null);
+  const [historyFor, setHistoryFor] = useState(null);
   const [editInsurance, setEditInsurance] = useState(DEFAULT_INSURANCE);
   const [insuranceBusy, setInsuranceBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -231,6 +235,13 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
       <section className="space-y-6">
         <h1 className="text-xl font-semibold">Registration</h1>
 
+        <details className="rounded-lg border border-slate-200 bg-white p-3">
+          <summary className="cursor-pointer text-sm font-medium">Patient referrals — send to / receive from other hospitals</summary>
+          <div className="mt-3">
+            <ReferralsPanel />
+          </div>
+        </details>
+
         {msg && (
           <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
             {msg}
@@ -278,6 +289,12 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
                     edit insurance / payment
                   </button>
                   <button
+                    onClick={() => setHistoryFor(historyFor === p.id ? null : p.id)}
+                    className="text-xs text-slate-500 underline"
+                  >
+                    history
+                  </button>
+                  <button
                     onClick={() => newVisit(p.id)}
                     disabled={busy}
                     className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
@@ -295,6 +312,11 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
                 </div>
               </div>
               <AllergyBadge allergies={p.allergies} className="mt-1.5" />
+              {historyFor === p.id && (
+                <div className="mt-2">
+                  <PatientHistory patientId={p.id} defaultOpen />
+                </div>
+              )}
               <p className="mt-1 text-xs text-slate-400">
                 {p.email ? `Email: ${p.email}` : "No email on file — can't use online login yet"}
               </p>

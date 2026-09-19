@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
+import PartnerSend from "@/components/hms/PartnerSend";
 
 export default function PharmacyClient({ permissions }) {
   const [tab, setTab] = useState("queue");
@@ -16,6 +17,7 @@ export default function PharmacyClient({ permissions }) {
         <div className="flex gap-1 text-sm">
           {[
             ["queue", "Prescription queue"],
+            ["partner", "Partner orders"],
             ["inventory", "Inventory"],
           ].map(([key, label]) => (
             <button
@@ -33,6 +35,8 @@ export default function PharmacyClient({ permissions }) {
       {msg && <p className="text-sm text-red-600">{msg}</p>}
       {tab === "queue" ? (
         <QueueTab canDispense={permissions.canDispense} onError={setMsg} />
+      ) : tab === "partner" ? (
+        <PartnerOrdersTab canDispense={permissions.canDispense} onError={setMsg} />
       ) : (
         <InventoryTab
           canStockIn={permissions.canStockIn}
@@ -292,7 +296,7 @@ function AvailabilityPanel({ prescriptionId, onError }) {
 
 function InventoryTab({ canStockIn, canAdjust, onError }) {
   const [medicines, setMedicines] = useState([]);
-  const [stockForm, setStockForm] = useState({ medicineName: "", batchNumber: "", expiryDate: "", quantity: "" });
+  const [stockForm, setStockForm] = useState({ form: "Tablet", medicineName: "", strength: "", batchNumber: "", expiryDate: "", quantity: "" });
   const [busy, setBusy] = useState(false);
   const [adjusting, setAdjusting] = useState(null); // batch id being adjusted
   const [adjustForm, setAdjustForm] = useState({ delta: "", reason: "" });
@@ -321,8 +325,12 @@ function InventoryTab({ canStockIn, canAdjust, onError }) {
     e.preventDefault();
     setBusy(true);
     try {
-      await apiSend("/api/pharmacy/stock", "POST", stockForm);
-      setStockForm({ medicineName: "", batchNumber: "", expiryDate: "", quantity: "" });
+      // Same structure as a prescription line: Type / Medicine / Strength. The
+      // stored name is the readable composition, so doctors who pick it from
+      // the availability hint prescribe exactly what is in stock.
+      const name = [stockForm.medicineName.trim(), stockForm.strength.trim(), ["Tablet", "Capsule"].includes(stockForm.form) ? "" : stockForm.form].filter(Boolean).join(" ");
+      await apiSend("/api/pharmacy/stock", "POST", { medicineName: name, batchNumber: stockForm.batchNumber, expiryDate: stockForm.expiryDate, quantity: stockForm.quantity });
+      setStockForm((f) => ({ ...f, medicineName: "", strength: "", batchNumber: "", expiryDate: "", quantity: "" }));
     } catch (err) {
       onError(err.message);
     } finally {
@@ -383,15 +391,33 @@ function InventoryTab({ canStockIn, canAdjust, onError }) {
       {canStockIn && (
         <form
           onSubmit={submitStockIn}
-          className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-5"
+          className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-7"
         >
-          <p className="col-span-2 text-sm font-semibold sm:col-span-5">Stock-in</p>
+          <p className="col-span-2 text-sm font-semibold sm:col-span-7">Add medicine to stock</p>
+          <select
+            aria-label="Type"
+            value={stockForm.form}
+            onChange={(e) => setStockForm((s) => ({ ...s, form: e.target.value }))}
+            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+          >
+            {["Tablet", "Capsule", "Syrup", "Injection", "Cream/Ointment", "Drops", "Inhaler", "Powder", "Other"].map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
           <input
-            placeholder="medicine"
+            placeholder="Medicine name"
             required
+            list="stock-known-medicines"
             value={stockForm.medicineName}
             onChange={(e) => setStockForm((s) => ({ ...s, medicineName: e.target.value }))}
             className="col-span-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm sm:col-span-1"
+          />
+          <datalist id="stock-known-medicines">
+            {medicines.map((m) => <option key={m.medicineName} value={m.medicineName} />)}
+          </datalist>
+          <input
+            placeholder="Strength e.g. 500mg"
+            value={stockForm.strength}
+            onChange={(e) => setStockForm((s) => ({ ...s, strength: e.target.value }))}
+            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
           />
           <input
             placeholder="batch #"
@@ -515,3 +541,82 @@ function InventoryTab({ canStockIn, canAdjust, onError }) {
   );
 }
 
+
+// ── Prescriptions sent by connected hospitals ───
+// They arrive here (not in the hospital's own queue), are dispensed from THIS
+// pharmacy's own stock, and the fulfilled quantity goes back to the sender.
+function PartnerOrdersTab({ canDispense, onError }) {
+  const [orders, setOrders] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [amounts, setAmounts] = useState({});
+
+  async function load() {
+    const d = await apiGet("/api/pharmacy/partner-orders");
+    setOrders(d.orders);
+  }
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load().catch((e) => onError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useRealtime({ "partner:inbound": load, "partner:updated": load, "stock:updated": load }, load);
+
+  async function dispense(o) {
+    setBusyId(o.id);
+    onError("");
+    try {
+      await apiSend(`/api/pharmacy/partner-orders/${o.id}/dispense`, "POST", amounts[o.id] ? { amount: Number(amounts[o.id]) } : {});
+      await load();
+    } catch (e) {
+      onError(e.message === "out_of_stock" ? "This medicine is out of stock." : e.message === "connection_not_active" ? "The connection with this hospital is not active." : `Could not dispense (${e.message}).`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (!orders) return <p className="text-sm text-slate-400">Loading…</p>;
+  return (
+    <div className="space-y-4">
+    <PartnerSend service="PHARMACY" />
+    {orders.length === 0 ? <p className="text-sm text-slate-400">No requests from partners yet.</p> : (
+    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <table className="w-full text-sm">
+        <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+          <tr>
+            <th className="px-3 py-2">From</th>
+            <th className="px-3 py-2">Patient</th>
+            <th className="px-3 py-2">Medicine</th>
+            <th className="px-3 py-2">Qty</th>
+            <th className="px-3 py-2">In my stock</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2" />
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => (
+            <tr key={o.id} className="border-b border-slate-100 last:border-0">
+              <td className="px-3 py-2">{o.from}</td>
+              <td className="px-3 py-2">{o.patientName || "—"}</td>
+              <td className="px-3 py-2">{o.medicineName}<p className="text-xs text-slate-400">{o.dosage}</p></td>
+              <td className="px-3 py-2">{o.quantity}</td>
+              <td className={`px-3 py-2 ${o.inStock >= (o.quantity || 0) ? "text-emerald-700" : "text-amber-700"}`}>{o.inStock}</td>
+              <td className="px-3 py-2">{o.status === "COMPLETED" ? `Dispensed${o.result?.quantityFulfilled != null ? ` (${o.result.quantityFulfilled})` : ""}${o.result?.amount != null ? ` · ₹${o.result.amount}` : ""}` : "Waiting"}</td>
+              <td className="px-3 py-2 text-right">
+                {o.status === "RECEIVED" && canDispense && o.connectionStatus === "ACTIVE" && (
+                  <span className="inline-flex items-center gap-1">
+                    <input type="number" min="0" placeholder="₹ amount" value={amounts[o.id] || ""} onChange={(e) => setAmounts({ ...amounts, [o.id]: e.target.value })} className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs" />
+                    <button onClick={() => dispense(o)} disabled={busyId === o.id || o.inStock <= 0} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
+                      Dispense
+                    </button>
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    )}
+    </div>
+  );
+}

@@ -62,6 +62,15 @@ export default function PartnersClient() {
     }
   }
 
+  async function shareStock(id, share) {
+    try {
+      await apiSend(`/api/partners/connections/${id}/share-stock`, "POST", { share });
+      load();
+    } catch (e) {
+      setError(`Could not update (${e.message}).`);
+    }
+  }
+
   async function openDetails(id) {
     try {
       setDetails((await apiGet(`/api/partners/connections/${id}`)).connection);
@@ -120,6 +129,11 @@ export default function PartnersClient() {
                     </td>
                     <td className="px-3 py-2"><Pill status={c.status} /></td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {c.direction === "INCOMING" && c.serviceType === "PHARMACY" && c.status === "ACTIVE" && (
+                        <label className="mr-3 inline-flex items-center gap-1 text-xs" title="Their doctors see whether a medicine is available (never quantities)">
+                          <input type="checkbox" checked={c.shareStock} onChange={(e) => shareStock(c.id, e.target.checked)} /> Show my stock to their doctors
+                        </label>
+                      )}
                       <button onClick={() => openDetails(c.id)} className="mr-2 text-xs underline">Details</button>
                       {c.status === "ACTIVE" && <button onClick={() => act(c.id, "PAUSE")} className="mr-2 text-xs underline">Pause</button>}
                       {c.status === "PAUSED" && c.pausedByMe && <button onClick={() => act(c.id, "RESUME")} className="mr-2 text-xs underline">Resume</button>}

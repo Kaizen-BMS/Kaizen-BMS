@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 const schema = z.object({
   code: z.string().trim().min(3).max(40),
-  serviceType: z.enum(["LAB", "PHARMACY"]),
+  serviceType: z.enum(["LAB", "PHARMACY", "REFERRAL"]),
   purpose: z.string().trim().max(255).optional(),
   categories: z.array(z.string()).max(20),
 });

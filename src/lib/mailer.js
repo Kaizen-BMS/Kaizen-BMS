@@ -56,4 +56,21 @@ async function sendOtpEmail(toEmail, code) {
   });
 }
 
-module.exports = { sendOtpEmail };
+
+/** Password reset link email. Throws on failure — the caller must not reveal that to the requester. */
+async function sendPasswordResetEmail(toEmail, link) {
+  const t = getTransporter();
+  await t.sendMail({
+    from: `"Kaizen HMS" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: "Reset your Kaizen HMS password",
+    text: `Use this link to choose a new password (valid for 30 minutes):
+
+${link}
+
+If you did not ask for this, ignore this email — your password is unchanged.`,
+    html: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#111"><p>Use the button below to choose a new password. The link is valid for 30 minutes.</p><p><a href="${link}" style="display:inline-block;background:#111;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">Reset password</a></p><p style="font-size:13px;color:#777">If you did not ask for this, ignore this email — your password is unchanged.</p></div>`,
+  });
+}
+
+module.exports = { sendOtpEmail, sendPasswordResetEmail };

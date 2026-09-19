@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
+import ReferralSourcesClient from "../referral-sources/ReferralSourcesClient";
 
 const FORM_TYPES = ["PATIENT_REGISTRATION", "CONSULTATION", "LAB_ORDER", "BILLING"];
 const FIELD_TYPES = ["text", "textarea", "number", "date", "select", "checkbox", "phone"];
@@ -15,7 +16,7 @@ const blank = (order) => ({
   options: [],
 });
 
-export default function FormBuilderClient() {
+function FormsEditor() {
   const [forms, setForms] = useState(null);
   const [tab, setTab] = useState(FORM_TYPES[0]);
   const [draft, setDraft] = useState([]);
@@ -177,6 +178,24 @@ export default function FormBuilderClient() {
       >
         Save {tab.replace(/_/g, " ").toLowerCase()} form
       </button>
+    </div>
+  );
+}
+
+// One simple screen for everything a facility customises: its forms and its
+// referral sources (RMP / camps / insurance …).
+export default function FormBuilderClient() {
+  const [section, setSection] = useState("forms");
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 border-b pb-2 text-sm" style={{ borderColor: "var(--hms-border)" }}>
+        {[["forms", "Forms"], ["referrals", "Referral sources"]].map(([k, label]) => (
+          <button key={k} onClick={() => setSection(k)} className={`rounded-md px-3 py-1.5 font-medium ${section === k ? "bg-[var(--hms-accent-soft)] text-[var(--hms-accent)]" : "text-[var(--hms-ink-soft)] hover:bg-slate-100"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {section === "forms" ? <FormsEditor /> : <ReferralSourcesClient />}
     </div>
   );
 }

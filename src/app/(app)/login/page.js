@@ -143,6 +143,10 @@ function LoginForm() {
           {busy ? "Signing in…" : "Sign in"}
         </button>
 
+        <p className="text-center text-sm">
+          <Link href="/forgot-password" className="text-slate-600 underline hover:text-slate-900">Forgot password?</Link>
+        </p>
+
         <p className="text-center text-xs text-slate-400">
           Staff accounts are created by your hospital admin.
         </p>

@@ -61,6 +61,9 @@ async function main() {
   const rxIds = num(rxs);
   const items = rxIds.length ? num(await q(`SELECT id FROM prescription_items WHERE prescription_id IN (${inList(rxIds)})`)) : [];
 
+  // Patients registered by the referral live test (name starts "UITEST ", demo tenants only).
+  const uiPatients = num(await q(`SELECT id FROM patients WHERE tenant_id IN (${inList(DEMO_TENANTS)}) AND name LIKE 'UITEST %' AND created_at >= ?`, SINCE));
+
   // PEER_* providers belong to a matched connection (code is PEER_<SVC>:<connId>).
   const providers = await q(`SELECT id, provider_code FROM external_providers WHERE provider_code LIKE 'PEER\\_%'`);
   const peerProv = providers.filter((p) => connIds.includes(Number(String(p.provider_code).split(":")[1]))).map((p) => Number(p.id));
@@ -72,6 +75,7 @@ async function main() {
     ["PEER_* providers", peerProv.length],
     ["test lab orders", labIds.length],
     ["test prescriptions", rxIds.length],
+    ["UITEST patients (referral test)", uiPatients.length],
   ];
   console.log(execute ? "EXECUTE" : "DRY RUN", "— since", SINCE);
   plan.forEach(([n, c]) => console.log(`  ${String(c).padStart(3)}  ${n}`));
@@ -101,6 +105,10 @@ async function main() {
         await run(`DELETE FROM external_providers WHERE id IN (${inList(peerProv)})`);
       }
       if (connIds.length) await run(`DELETE FROM org_connections WHERE id IN (${inList(connIds)})`);
+      if (uiPatients.length) {
+        await run(`DELETE FROM visits WHERE patient_id IN (${inList(uiPatients)})`);
+        await run(`DELETE FROM patients WHERE id IN (${inList(uiPatients)})`);
+      }
       if (labIds.length) await run(`DELETE FROM lab_orders WHERE id IN (${inList(labIds)})`);
       if (rxIds.length) await run(`DELETE FROM prescriptions WHERE id IN (${inList(rxIds)})`);
       if (comboIds.length) {

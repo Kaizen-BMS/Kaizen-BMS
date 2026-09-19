@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { apiGet } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, BarChart, Bar } from "recharts";
 
 // The events that plausibly change something on this dashboard — reused
 // as-is (CLAUDE.md "Outbox — durable domain events": realtime stays
@@ -105,8 +105,76 @@ const ACTIVITY_ICON = {
   PaymentReceived: "💳",
 };
 
+const PBI_COLORS = ["#2563eb", "#0d9488", "#f59e0b", "#e11d48", "#7c3aed"];
+
+/** Power-BI-style donut: proportions at a glance, hover for the exact number. */
+function Donut({ data }) {
+  const rows = data.filter((d) => d.value > 0);
+  if (rows.length === 0) return <p className="py-8 text-center text-sm text-slate-400">No data yet today.</p>;
+  const total = rows.reduce((a, b) => a + b.value, 0);
+  return (
+    <div className="flex items-center gap-3">
+      <div className="relative h-36 w-36 shrink-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={rows} dataKey="value" nameKey="name" innerRadius={42} outerRadius={64} paddingAngle={2} stroke="none">
+              {rows.map((_, i) => <Cell key={i} fill={PBI_COLORS[i % PBI_COLORS.length]} />)}
+            </Pie>
+            <Tooltip />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+          <div>
+            <p className="text-lg font-semibold leading-none">{total}</p>
+            <p className="text-[10px] text-slate-400">total</p>
+          </div>
+        </div>
+      </div>
+      <ul className="space-y-1 text-xs">
+        {rows.map((r, i) => (
+          <li key={r.name} className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: PBI_COLORS[i % PBI_COLORS.length] }} />
+            <span className="text-slate-600">{r.name}</span>
+            <span className="font-semibold">{r.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function StatusBars({ data }) {
+  return (
+    <div className="h-36">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
+          <XAxis type="number" hide allowDecimals={false} />
+          <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+          <Tooltip cursor={{ fill: "rgba(148,163,184,0.15)" }} />
+          <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+            {data.map((_, i) => <Cell key={i} fill={PBI_COLORS[i % PBI_COLORS.length]} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function LiveBadge({ at }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+      <span className="relative flex h-2 w-2">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+      </span>
+      Live · updated {at ? new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
+    </span>
+  );
+}
+
 export default function DashboardClient() {
   const [data, setData] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
   const debounceRef = useRef(null);
@@ -115,6 +183,7 @@ export default function DashboardClient() {
     apiGet("/api/dashboard/overview")
       .then((d) => {
         setData(d);
+        setUpdatedAt(Date.now());
         setError(false);
       })
       .catch(() => setError(true))
@@ -157,7 +226,7 @@ export default function DashboardClient() {
   }
 
   if (data.scope === "PLATFORM") return <PlatformDashboard data={data} />;
-  return <TenantDashboard data={data} />;
+  return <TenantDashboard data={data} updatedAt={updatedAt} />;
 }
 
 function PlatformDashboard({ data }) {
@@ -213,19 +282,22 @@ function PlatformDashboard({ data }) {
   );
 }
 
-function TenantDashboard({ data }) {
+function TenantDashboard({ data, updatedAt }) {
   const has = (k) => data.widgets.includes(k);
   const failed = (k) => data.failedWidgets?.includes(k);
   const money = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+       <div>
         <h1 className="text-2xl font-semibold">{data.tenant.name}</h1>
         <p className="text-sm text-slate-500">
           {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · Signed in as{" "}
           {data.role.replace(/_/g, " ").toLowerCase()}
         </p>
+       </div>
+       <LiveBadge at={updatedAt} />
       </div>
 
       {has("kpis") && data.kpis && (
@@ -238,6 +310,35 @@ function TenantDashboard({ data }) {
           {data.kpis.availableBeds !== undefined && <KpiCard label="Available beds" value={data.kpis.availableBeds} href="/dashboard/ipd" />}
           {data.kpis.pendingLabOrders !== undefined && <KpiCard label="Pending lab orders" value={data.kpis.pendingLabOrders} href="/dashboard/lab" />}
           {data.kpis.todaysCollection !== undefined && <KpiCard label="Today's collection" value={money(data.kpis.todaysCollection)} href="/dashboard/billing" />}
+        </div>
+      )}
+
+      {(data.patientFlow || data.appointments || data.charts) && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          {data.patientFlow && (
+            <SectionCard title="Patient mix today">
+              <Donut data={[
+                { name: "OPD", value: data.patientFlow.opd },
+                { name: "Emergency", value: data.patientFlow.emergency },
+                { name: "Admissions", value: data.patientFlow.admissions },
+              ]} />
+            </SectionCard>
+          )}
+          {data.appointments && (
+            <SectionCard title="Appointment status today">
+              <StatusBars data={[
+                { name: "Scheduled", value: data.appointments.scheduled },
+                { name: "Completed", value: data.appointments.completed },
+                { name: "Cancelled", value: data.appointments.cancelled },
+                { name: "No-show", value: data.appointments.noShow },
+              ]} />
+            </SectionCard>
+          )}
+          {data.charts?.patientVisits && (
+            <SectionCard title="Visits — last 7 days">
+              <MiniBarChart data={data.charts.patientVisits} />
+            </SectionCard>
+          )}
         </div>
       )}
 
