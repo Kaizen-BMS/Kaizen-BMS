@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { apiGet } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 
 // The events that plausibly change something on this dashboard — reused
 // as-is (CLAUDE.md "Outbox — durable domain events": realtime stays
@@ -72,18 +73,27 @@ function Metric({ label, value, tone }) {
   );
 }
 
-/** A small, hand-rolled bar chart — no charting library needed for 7 bars. */
+/** A real, hoverable trend chart — same {date, value}[] shape the API already returned for the previous hand-rolled bars, just rendered with recharts for a proper axis/tooltip/gridline feel. */
 function MiniBarChart({ data, formatValue }) {
   if (!data || data.length === 0) return <p className="text-sm text-slate-400">No data available.</p>;
-  const max = Math.max(1, ...data.map((d) => d.value));
+  const fmt = formatValue || ((v) => v);
   return (
-    <div className="flex h-24 items-end gap-1.5">
-      {data.map((d) => (
-        <div key={d.date} className="flex flex-1 flex-col items-center gap-1" title={`${d.date}: ${formatValue ? formatValue(d.value) : d.value}`}>
-          <div className="w-full rounded-t bg-[var(--hms-btn-bg)]/80" style={{ height: `${Math.max(2, (d.value / max) * 72)}px` }} />
-          <span className="text-[9px] text-slate-400">{d.date.slice(5)}</span>
-        </div>
-      ))}
+    <div style={{ width: "100%", height: 110 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+          <defs>
+            <linearGradient id="miniChartFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#2563eb" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="#2563eb" stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+          <XAxis dataKey="date" tickFormatter={(d) => d.slice(5)} tick={{ fontSize: 9 }} />
+          <YAxis tick={{ fontSize: 9 }} width={0} />
+          <Tooltip formatter={(v) => fmt(v)} labelFormatter={(d) => d} />
+          <Area type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} fill="url(#miniChartFill)" />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 }

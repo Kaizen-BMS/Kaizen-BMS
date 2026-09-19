@@ -22,7 +22,8 @@ function countAlerts(categories) {
   const w = categories.workflows;
   const l = categories.leaveRequests;
   const r = categories.radiology;
-  return (p?.lowStockCount || 0) + (w?.failedCount || 0) + (w?.waitingCount || 0) + (l?.pendingCount || 0) + (r?.pendingCount || 0);
+  const pr = categories.partnerRequests;
+  return (pr?.pendingCount || 0) + (p?.lowStockCount || 0) + (w?.failedCount || 0) + (w?.waitingCount || 0) + (l?.pendingCount || 0) + (r?.pendingCount || 0);
 }
 
 // Maps a socket event to a notification line. Returns null to ignore.
@@ -97,6 +98,8 @@ export default function NotificationBell() {
     "consultation:created": (p) => push("consultation:created", p),
     "stock:updated": loadAlertsDebounced,
     "workflow:updated": loadAlertsDebounced,
+    "partner:request": loadAlertsDebounced,
+    "partner:updated": loadAlertsDebounced,
     "leaverequest:created": loadAlertsDebounced,
     "leaverequest:updated": loadAlertsDebounced,
     "radiologyorder:created": loadAlertsDebounced,
@@ -205,6 +208,20 @@ export default function NotificationBell() {
                       </p>
                       <ul className="mt-1 space-y-0.5 pl-6 text-xs text-[var(--hms-ink-faint)]">
                         <li>{categories.radiology.pendingCount} order(s) not yet started</li>
+                      </ul>
+                    </button>
+                  )}
+
+                  {categories.partnerRequests && categories.partnerRequests.pendingCount > 0 && (
+                    <button onClick={() => go("/dashboard/admin/partners")} className="block w-full px-3 py-2.5 text-left hover:bg-slate-50">
+                      <p className="flex items-center gap-2 text-sm">
+                        <Icon name="registry" size={15} className="text-[var(--hms-ink-faint)]" />
+                        Connection requests
+                      </p>
+                      <ul className="mt-1 space-y-0.5 pl-6 text-xs text-[var(--hms-ink-faint)]">
+                        {categories.partnerRequests.items.map((i) => (
+                          <li key={i.id}>{i.from} wants to connect ({i.service})</li>
+                        ))}
                       </ul>
                     </button>
                   )}

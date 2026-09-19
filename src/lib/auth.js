@@ -23,8 +23,13 @@ async function verifyPassword(plain, hash) {
 }
 
 /** Sign a session. Payload always carries userId + tenantId + role. */
-function signSession({ userId, tenantId, role }) {
-  return jwt.sign({ uid: userId, tid: tenantId ?? null, role }, getSecret(), {
+function signSession({ userId, tenantId, role, homeTenantId }) {
+  // `ht` = the user's own home tenant. Present only so a SWITCHED session
+  // (tid !== ht, an organization owner acting in another owned facility) can
+  // be re-verified against live ownership on every request — see orgAccess.js.
+  const claims = { uid: userId, tid: tenantId ?? null, role };
+  if (homeTenantId != null) claims.ht = homeTenantId;
+  return jwt.sign(claims, getSecret(), {
     algorithm: "HS256",
     expiresIn: SESSION_TTL_SECONDS,
   });
@@ -45,6 +50,7 @@ async function verifySession(token) {
       userId: Number(p.uid),
       tenantId: p.tid == null ? null : Number(p.tid),
       role: p.role,
+      homeTenantId: p.ht == null ? null : Number(p.ht),
     };
   } catch {
     return null;

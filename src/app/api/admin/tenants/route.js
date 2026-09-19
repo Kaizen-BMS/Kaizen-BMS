@@ -7,6 +7,7 @@ import { hashPassword } from "@/lib/auth";
 import { TENANT_TYPES, SOLO_TYPE_MODULE, SOLO_TYPE_OWNER_ROLE } from "@/lib/tenants";
 import { MODULE_NAMES } from "@/lib/modules";
 import { MODULE_LABEL } from "@/lib/moduleInstances";
+import { uniquePublicCode } from "@/lib/orgAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,8 @@ const createSchema = z
     modules: z.array(z.enum(MODULE_NAMES)).max(MODULE_NAMES.length).optional().default([]),
     ownerName: z.string().trim().min(1).max(191),
     ownerEmail: z.string().trim().email().max(191),
+    // Optional: attach the new facility to an existing organization (one owner, several facilities).
+    organizationId: z.coerce.number().int().positive().optional(),
   })
   .refine((b) => b.type !== "HOSPITAL" || b.modules.length > 0, {
     message: "select at least one module for a HOSPITAL tenant",
@@ -73,9 +76,19 @@ export const POST = apiRoute("tenant:manage", async (request) => {
   const tempPassword = randomTempPassword();
   const passwordHash = await hashPassword(tempPassword);
 
+  // Resolved before the transaction so the remote-DB round trips do not eat its timeout.
+  let organizationId = null;
+  if (body.organizationId) {
+    const org = await prisma.organizations.findUnique({ where: { id: BigInt(body.organizationId) }, select: { id: true } });
+    if (!org) throw new HttpError(404, "organization_not_found");
+    organizationId = org.id;
+  }
+  const publicCode = await uniquePublicCode(prisma, body.type);
+
   const { tenant, owner } = await prisma.$transaction(async (tx) => {
+    if (organizationId == null) organizationId = (await tx.organizations.create({ data: { name: body.name } })).id;
     const tenant = await tx.tenants.create({
-      data: { name: body.name, slug: body.slug, type: body.type, active: true },
+      data: { name: body.name, slug: body.slug, type: body.type, active: true, organization_id: organizationId, public_code: publicCode },
     });
     for (const m of modules) {
       await tx.tenant_modules.create({
@@ -96,6 +109,12 @@ export const POST = apiRoute("tenant:manage", async (request) => {
         password_hash: passwordHash,
         role: ownerRole,
       },
+    });
+    // The initial owner login owns the organization this facility belongs to.
+    await tx.organization_members.upsert({
+      where: { organization_id_user_id: { organization_id: organizationId, user_id: owner.id } },
+      update: {},
+      create: { organization_id: organizationId, user_id: owner.id, role: "OWNER" },
     });
     return { tenant, owner };
   });

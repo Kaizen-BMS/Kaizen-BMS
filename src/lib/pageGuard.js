@@ -5,6 +5,7 @@ const { getSession } = require("./session");
 const { canPlatform } = require("./rbac");
 const { anyModuleActive } = require("./modules");
 const { getTenant } = require("./tenants");
+const { sessionFacilityOk } = require("./orgAccess");
 
 /**
  * Server-component gate for a dashboard screen — the UI equivalent of
@@ -18,9 +19,10 @@ async function guardPage({ action, modules } = {}) {
 
   const tenant =
     session.tenantId == null ? null : await getTenant(session.tenantId);
-  if (session.tenantId != null && (!tenant || !tenant.active)) {
+  if (session.tenantId != null && (!tenant || !tenant.active || tenant.owner_enabled === false)) {
     redirect("/login?suspended=1");
   }
+  if (!(await sessionFacilityOk(session))) redirect("/login");
 
   // canPlatform() — see rbac.js: can(role, action) plus, for
   // tenant:read/tenant:manage specifically, session.role === "SUPER_ADMIN".

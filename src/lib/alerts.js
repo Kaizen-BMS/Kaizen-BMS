@@ -135,6 +135,15 @@ async function getAlerts(db, { session, tenantType, activeModules }) {
     categories.leaveRequests = leaveRequests;
   }
 
+  // Connection requests from other organizations waiting for THIS facility's decision (persisted — survives offline).
+  if (can(session.role, "partner:manage")) {
+    const { pendingIncoming } = require("./partners");
+    const rows = await pendingIncoming(session.tenantId);
+    if (rows.length > 0) {
+      categories.partnerRequests = { pendingCount: rows.length, items: rows.slice(0, 5).map((r) => ({ id: r.id, from: r.counterparty?.name, service: r.serviceLabel })) };
+    }
+  }
+
   return { categories };
 }
 

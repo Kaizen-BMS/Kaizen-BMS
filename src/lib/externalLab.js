@@ -11,7 +11,7 @@ const { tenantDb } = require("./prismaClient");
 const { requireTenantId } = require("./requestContext");
 const { HttpError } = require("./apiRoute");
 const { getDefaultInstance } = require("./moduleInstances");
-const { resolveExternalConnection, checkExternalContractAccess } = require("./externalConnections");
+const { resolveExternalConnection, checkExternalContractAccess, enforceApprovedFields } = require("./externalConnections");
 const { findOrCreateExternalOrder, markSent, markFailed } = require("./externalOrders");
 const { mapExternalId, resolveExternalId } = require("./externalIdentifiers");
 const { getAdapter } = require("./providerAdapters");
@@ -60,7 +60,8 @@ async function sendLabOrderExternal({ labOrderId, providerId, actorUserId }) {
     ? await resolveExternalId(tenantDb, { tenantId, providerId: resolved.provider.id, entityType: "SERVICE", internalId: testItem.service_id })
     : null;
 
-  const payload = {
+  let payload = {
+    visitId: order.visit_id != null ? Number(order.visit_id) : undefined,
     labOrderId: Number(order.id),
     patientId: Number(order.patient_id),
     patientName: order.patients?.name,
@@ -71,6 +72,9 @@ async function sendLabOrderExternal({ labOrderId, providerId, actorUserId }) {
     providerPatientId: providerPatientId || undefined,
     providerTestCode: providerTestCode || undefined,
   };
+
+  // Consent enforcement: only what the connection approved can leave.
+  payload = enforceApprovedFields(resolved.connection, payload);
 
   const access = await checkExternalContractAccess(tenantDb, {
     tenantId,

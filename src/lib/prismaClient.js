@@ -108,6 +108,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "external_identifiers",
   "external_orders",
   "webhook_events",
+  "peer_inbound_orders",
   "analytics_daily_tenant",
   "analytics_daily_dimension",
   "referral_sources",

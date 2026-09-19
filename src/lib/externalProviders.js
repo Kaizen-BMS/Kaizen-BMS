@@ -120,6 +120,8 @@ function parseConfig(v) {
 }
 
 const MOCK_CODES = new Set(["MOCK_LAB", "MOCK_PHARMACY"]);
+// Partner (peer Kaizen facility) providers need no base URL either — delivery is in-process.
+const needsNoUrl = (code) => MOCK_CODES.has(code) || String(code).startsWith("PEER_");
 
 /** The environment-appropriate base URL — config.sandboxBaseUrl/productionBaseUrl when set, falling back to the legacy single `base_url` column (what every provider used before per-environment URLs existed). MOCK providers need none of this (no real network call is ever made). */
 function resolveBaseUrl(row) {
@@ -153,7 +155,7 @@ const NETWORK_ERROR_CATEGORIES = new Set(["timeout", "network_error", "unreachab
 function deriveHealth(row, { hasCredential } = {}) {
   if (!row.active) return "DISABLED";
 
-  const isMock = MOCK_CODES.has(row.provider_code);
+  const isMock = needsNoUrl(row.provider_code);
   if (hasCredential === false) return "CONFIG_ERROR";
   if (!isMock && !resolveBaseUrl(row)) return "CONFIG_ERROR";
 

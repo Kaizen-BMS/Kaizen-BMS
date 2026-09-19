@@ -17,7 +17,7 @@ const MOCK_CODES = new Set(["MOCK_LAB", "MOCK_PHARMACY"]);
 /** Fails fast, with a clean actionable error, when a real (non-MOCK) provider has no credential configured yet, rather than letting the adapter throw something confusing mid-call. */
 async function resolveAdapterContext(tenantId, providerRow) {
   const credentials = await getCredentialFields(tenantId, providerRow.id);
-  if (!MOCK_CODES.has(providerRow.provider_code) && !credentials) {
+  if (!MOCK_CODES.has(providerRow.provider_code) && !String(providerRow.provider_code).startsWith("PEER_") && !credentials) {
     throw new HttpError(409, "provider_credential_not_configured");
   }
   const provider = {

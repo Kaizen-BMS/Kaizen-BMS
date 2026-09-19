@@ -7,6 +7,7 @@ import { apiGet } from "./api";
 import CommandPalette from "./CommandPalette";
 import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
+import FacilitySwitcher from "./FacilitySwitcher";
 
 export default function Topbar({ user, navItems, onSidebarToggle }) {
   const router = useRouter();
@@ -35,6 +36,8 @@ export default function Topbar({ user, navItems, onSidebarToggle }) {
       >
         <Icon name="panelLeft" size={18} />
       </button>
+
+      {user.role !== "SUPER_ADMIN" && <FacilitySwitcher fallbackName={user.tenantName} />}
 
       <GlobalSearch onNavigate={(href) => router.push(href)} />
 

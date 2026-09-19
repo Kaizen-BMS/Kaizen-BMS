@@ -6,6 +6,7 @@ const { canPlatform } = require("./rbac");
 const { requiredModules, anyModuleActive } = require("./modules");
 const { runWithContext } = require("./requestContext");
 const { getTenant } = require("./tenants");
+const { sessionFacilityOk } = require("./orgAccess");
 
 const json = (data, status) => NextResponse.json(data, { status });
 
@@ -36,7 +37,10 @@ function apiRoute(action, handler) {
     if (session.tenantId != null) {
       tenant = await getTenant(session.tenantId);
       if (!tenant) return json({ error: "unauthorized" }, 401);
-      if (!tenant.active) return json({ error: "tenant_suspended" }, 403);
+      if (!tenant.active || tenant.owner_enabled === false) return json({ error: "tenant_suspended" }, 403);
+      // A switched session (owner acting in another owned facility) is
+      // re-verified against live ownership every request.
+      if (!(await sessionFacilityOk(session))) return json({ error: "unauthorized" }, 401);
     }
 
     if (action) {

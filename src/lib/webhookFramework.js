@@ -27,6 +27,7 @@ const { runWithContext } = require("./requestContext");
 const { getWebhookSecret } = require("./externalCredentials");
 const { verifySignature, verifyTimestamp } = require("./webhookAuth");
 const { recordFailure } = require("./integrationHealth");
+const { isPeerConnectionActive } = require("./partners");
 
 /**
  * Returns `{ ok: true, provider, tenantId, body }` or
@@ -52,6 +53,17 @@ async function authenticateWebhook({ providerId, providerType, rawBody, signatur
   if (!verifyTimestamp(timestampHeader)) {
     await recordFailure(prisma, provider.id, { errorCategory: "replay_window" });
     return { ok: false, status: 401, error: "timestamp_out_of_window" };
+  }
+
+  // A partner (peer facility) provider only exchanges data while its
+  // consent-based connection is ACTIVE — paused/revoked connections are
+  // refused here even with a valid signature.
+  if (String(provider.provider_code).startsWith("PEER_")) {
+    let cfg = {};
+    try { cfg = JSON.parse(provider.config || "{}"); } catch { /* ignore */ }
+    if (!provider.active || !(await isPeerConnectionActive(cfg.peerConnectionId))) {
+      return { ok: false, status: 403, error: "connection_not_active" };
+    }
   }
 
   let body;

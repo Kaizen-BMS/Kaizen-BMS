@@ -59,10 +59,13 @@ const NAV = [
   { key: "workflows", label: "Workflows", section: "ADMINISTRATION", route: "/dashboard/admin/workflows", icon: "registry", action: "workflow:read", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
   { key: "pricing", label: "Pricing", section: "ADMINISTRATION", route: "/dashboard/admin/pricing", icon: "billing", action: "service:manage", modules: ["BILLING"], adminOnly: true, status: "live" },
   { key: "externalIntegrations", label: "External Integrations", section: "ADMINISTRATION", route: "/dashboard/admin/external", icon: "registry", action: "external:manage", adminOnly: true, tenantTypes: ["HOSPITAL"], status: "live" },
+  { key: "myOrganizations", label: "My Organizations", section: "ADMINISTRATION", route: "/dashboard/admin/organizations", icon: "tenants", action: "partner:manage", adminOnly: true, status: "live" },
+  { key: "partnerOrganizations", label: "Partner Organizations", section: "ADMINISTRATION", route: "/dashboard/admin/partners", icon: "registry", action: "partner:manage", adminOnly: true, status: "live" },
   { key: "branding", label: "Branding", section: "ADMINISTRATION", route: "/dashboard/branding", icon: "branding", action: "branding:read", adminOnly: false, status: "live" },
 
   // ── Platform (SUPER_ADMIN only) ──
   { key: "tenants", label: "Tenants", section: "PLATFORM", route: "/dashboard/platform/tenants", icon: "tenants", action: "tenant:read", status: "live" },
+  { key: "organizations", label: "Organizations", section: "PLATFORM", route: "/dashboard/platform/organizations", icon: "tenants", action: "tenant:read", status: "live" },
   { key: "createTenant", label: "Create Tenant", section: "PLATFORM", route: "/dashboard/platform/tenants/new", icon: "createTenant", action: "tenant:manage", status: "live" },
   { key: "registry", label: "Module Registry", section: "PLATFORM", route: "/dashboard/platform/modules", icon: "registry", action: "tenant:read", status: "live" },
   { key: "platformAnalytics", label: "Platform Analytics", section: "PLATFORM", route: "/dashboard/platform/analytics", icon: "reports", action: "analytics:platform", status: "live" },

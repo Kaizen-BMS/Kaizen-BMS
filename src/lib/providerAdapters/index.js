@@ -55,6 +55,7 @@
  */
 const mockLab = require("./mockLabAdapter");
 const mockPharmacy = require("./mockPharmacyAdapter");
+const peer = require("./peerAdapter");
 
 const ADAPTERS = {
   MOCK_LAB: mockLab,
@@ -62,7 +63,9 @@ const ADAPTERS = {
 };
 
 function getAdapter(providerCode) {
-  const adapter = ADAPTERS[providerCode];
+  // Partner (another Kaizen facility) providers are one row per connection:
+  // PEER_LAB:<id> / PEER_PHARMACY:<id> — all served by the one peer adapter.
+  const adapter = String(providerCode).startsWith("PEER_") ? peer : ADAPTERS[providerCode];
   if (!adapter) throw new Error(`no adapter registered for provider code "${providerCode}"`);
   return adapter;
 }

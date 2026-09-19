@@ -8,6 +8,7 @@ import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
 import DoctorSlotPicker from "@/components/hms/DoctorSlotPicker";
 import { parseMaybeJson } from "@/components/hms/json";
+import ExternalSend from "@/components/hms/ExternalSend";
 import { matchAllergy } from "@/lib/allergyCheck";
 
 function upsertById(list, item) {
@@ -16,11 +17,45 @@ function upsertById(list, item) {
     : [...list, item];
 }
 
+// Structured prescription entry — real medical terms, dropdown-first where
+// the option set is genuinely fixed (form/frequency), free text only where
+// it has to be (medicine name, dose strength, notes). `prescription_items`
+// itself still only has medicine_name/dosage columns (see CLAUDE.md
+// "dosage carries frequency+duration together, e.g. '1-0-1 × 5 days' — no
+// separate columns for those") — these fields are composed into that same
+// single `dosage` string before sending, so the API and the pharmacy-stock
+// matching (which keys on medicine_name being byte-for-byte the same drug
+// name a pharmacist stocked in) are completely unchanged.
+const MEDICINE_FORMS = ["Tablet", "Capsule", "Syrup", "Injection", "Cream/Ointment", "Drops", "Inhaler", "Powder", "Other"];
+const FREQUENCIES = [
+  { code: "OD", label: "OD — Once a day" },
+  { code: "BD", label: "BD — Twice a day" },
+  { code: "TID", label: "TID — Three times a day" },
+  { code: "QID", label: "QID — Four times a day" },
+  { code: "HS", label: "HS — At bedtime" },
+  { code: "SOS", label: "SOS — As needed" },
+  { code: "STAT", label: "STAT — Immediately, once" },
+  { code: "CUSTOM", label: "Custom…" },
+];
+
+function emptyRxRow() {
+  return { form: "Tablet", medicineName: "", dose: "", frequency: "OD", customFrequency: "", notes: "", quantity: 1, ack: false };
+}
+
+/** The one place a row's Type/Dose/Frequency/Notes become the single `dosage` string the API expects — matches this project's existing convention exactly (e.g. "20mg BD (Twice a day)"), just with the form and notes layered on. */
+function composeDosage(r) {
+  const freq = r.frequency === "CUSTOM" ? r.customFrequency.trim() : FREQUENCIES.find((f) => f.code === r.frequency);
+  const freqText = r.frequency === "CUSTOM" ? freq : freq ? `${freq.code} (${freq.label.split("— ")[1]})` : "";
+  return [r.form, [r.dose.trim(), freqText].filter(Boolean).join(" "), r.notes.trim()]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export default function ConsultationClient({ visitId, doctorUserId }) {
   const [data, setData] = useState(null); // { visit, consultation, prescriptions, labOrders, radiologyOrders }
   const [form, setForm] = useState(null);
   const [values, setValues] = useState({});
-  const [rx, setRx] = useState([{ medicineName: "", dosage: "", quantity: 1, ack: false }]);
+  const [rx, setRx] = useState([emptyRxRow()]);
   const [tests, setTests] = useState([""]);
   const [studyName, setStudyName] = useState("");
   const [msg, setMsg] = useState("");
@@ -122,7 +157,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
       .filter((r) => r.medicineName.trim())
       .map((r) => ({
         medicineName: r.medicineName.trim(),
-        dosage: r.dosage.trim(),
+        dosage: composeDosage(r),
         quantity: Number(r.quantity) || 1,
         allergyAck: r.ack,
       }));
@@ -135,7 +170,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
         "POST",
         { items },
       );
-      setRx([{ medicineName: "", dosage: "", quantity: 1, ack: false }]);
+      setRx([emptyRxRow()]);
       setData((d) => ({
         ...d,
         prescriptions: upsertById(d.prescriptions, prescription),
@@ -296,78 +331,101 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                   {(p.items || []).map((it) => (
                     <li key={it.id}>
                       {it.medicine_name} {it.dosage} × {it.quantity}
+                      <ExternalSend type="PHARMACY" url={`/api/pharmacy/prescriptions/${p.id}/items/${it.id}/send-external`} />
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
-            <div className="mt-3 space-y-2">
-              {rxRows.map((r, i) => (
-                <div key={i} className="space-y-1">
-                  <div className="flex gap-2">
-                    <input
-                      placeholder="medicine"
-                      value={r.medicineName}
-                      onChange={(e) =>
-                        setRx((xs) =>
-                          xs.map((x, j) =>
-                            j === i ? { ...x, medicineName: e.target.value } : x,
-                          ),
-                        )
-                      }
-                      className={`flex-1 rounded-md border px-2 py-1 text-sm ${
-                        r.match ? "border-red-300 bg-red-50" : "border-slate-300"
-                      }`}
-                    />
-                    <input
-                      placeholder="dosage"
-                      value={r.dosage}
-                      onChange={(e) =>
-                        setRx((xs) =>
-                          xs.map((x, j) =>
-                            j === i ? { ...x, dosage: e.target.value } : x,
-                          ),
-                        )
-                      }
-                      className="w-28 rounded-md border border-slate-300 px-2 py-1 text-sm"
-                    />
-                    <input
-                      type="number"
-                      min="1"
-                      value={r.quantity}
-                      onChange={(e) =>
-                        setRx((xs) =>
-                          xs.map((x, j) =>
-                            j === i ? { ...x, quantity: e.target.value } : x,
-                          ),
-                        )
-                      }
-                      className="w-16 rounded-md border border-slate-300 px-2 py-1 text-sm"
-                    />
-                  </div>
-                  {r.match && (
-                    <label className="flex items-center gap-1.5 pl-1 text-xs text-red-700">
+            <div className="mt-3 space-y-3">
+              {rxRows.map((r, i) => {
+                function update(patch) {
+                  setRx((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                }
+                return (
+                  <div key={i} className="space-y-2 rounded-md border border-slate-200 p-2.5">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                      <div>
+                        <label className="block text-[11px] text-slate-500">Type</label>
+                        <select
+                          value={r.form}
+                          onChange={(e) => update({ form: e.target.value })}
+                          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                        >
+                          {MEDICINE_FORMS.map((f) => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </div>
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="block text-[11px] text-slate-500">Medicine name</label>
+                        <input
+                          placeholder="e.g. Omeprazole"
+                          value={r.medicineName}
+                          onChange={(e) => update({ medicineName: e.target.value })}
+                          className={`w-full rounded-md border px-2 py-1 text-sm ${
+                            r.match ? "border-red-300 bg-red-50" : "border-slate-300"
+                          }`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500">Dose</label>
+                        <input
+                          placeholder="e.g. 20mg"
+                          value={r.dose}
+                          onChange={(e) => update({ dose: e.target.value })}
+                          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500">Frequency</label>
+                        <select
+                          value={r.frequency}
+                          onChange={(e) => update({ frequency: e.target.value })}
+                          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                        >
+                          {FREQUENCIES.map((f) => <option key={f.code} value={f.code}>{f.label}</option>)}
+                        </select>
+                        {r.frequency === "CUSTOM" && (
+                          <input
+                            placeholder="e.g. 1-0-1 × 5 days"
+                            value={r.customFrequency}
+                            onChange={(e) => update({ customFrequency: e.target.value })}
+                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-500">Qty</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={r.quantity}
+                          onChange={(e) => update({ quantity: e.target.value })}
+                          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-500">Notes (optional)</label>
                       <input
-                        type="checkbox"
-                        checked={r.ack}
-                        onChange={(e) =>
-                          setRx((xs) =>
-                            xs.map((x, j) =>
-                              j === i ? { ...x, ack: e.target.checked } : x,
-                            ),
-                          )
-                        }
+                        placeholder="e.g. after food"
+                        value={r.notes}
+                        onChange={(e) => update({ notes: e.target.value })}
+                        className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
                       />
-                      ⚠ Matches declared allergy &quot;{r.match}&quot; — I acknowledge and want to prescribe anyway
-                    </label>
-                  )}
-                </div>
-              ))}
+                    </div>
+                    {r.match && (
+                      <label className="flex items-center gap-1.5 pl-1 text-xs text-red-700">
+                        <input type="checkbox" checked={r.ack} onChange={(e) => update({ ack: e.target.checked })} />
+                        ⚠ Matches declared allergy &quot;{r.match}&quot; — I acknowledge and want to prescribe anyway
+                      </label>
+                    )}
+                    <p className="text-[11px] text-slate-400">Will be recorded as: {composeDosage(r) || "—"}</p>
+                  </div>
+                );
+              })}
               <div className="flex gap-2">
                 <button
-                  onClick={() =>
-                    setRx((xs) => [...xs, { medicineName: "", dosage: "", quantity: 1, ack: false }])
-                  }
+                  onClick={() => setRx((xs) => [...xs, emptyRxRow()])}
                   className="rounded-md border border-slate-300 px-2 py-1 text-xs"
                 >
                   + row
@@ -404,6 +462,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                   )}
                 </div>
                 <p>{(parseJson(lo.tests) || []).join(", ")}</p>
+                {lo.status === "ORDERED" && <ExternalSend type="LAB" url={`/api/lab/orders/${lo.id}/send-external`} />}
               </div>
             ))}
             <div className="mt-3 space-y-2">

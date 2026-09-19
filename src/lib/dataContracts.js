@@ -310,7 +310,7 @@ const CONNECTION_TYPES = {
     // patient/test identifiers has somewhere real to receive them; one
     // that doesn't simply never sees these keys (undefined fields are
     // stripped before send — see externalLab.js).
-    fields: ["labOrderId", "patientId", "patientName", "patientAge", "patientGender", "doctorId", "testName", "priority", "providerPatientId", "providerTestCode"],
+    fields: ["labOrderId", "patientId", "patientName", "patientAge", "patientGender", "doctorId", "testName", "priority", "providerPatientId", "providerTestCode", "visitId"],
     requiredFields: ["labOrderId", "patientId", "testName"],
     restrictedFields: ["diagnosis", "medicalHistory", "privateNotes", "phone", "address", "allergies"],
     defaultActions: ["view", "create"],
@@ -344,7 +344,7 @@ const CONNECTION_TYPES = {
     description: "A prescription line sent to an external pharmacy for fulfillment.",
     purpose: "Give an external pharmacy exactly what it needs to fulfill one medicine line — never the full prescription_items row.",
     // See EXTERNAL_LAB_ORDER's identical comment on providerPatientId.
-    fields: ["prescriptionItemId", "patientId", "patientName", "medicineName", "dosage", "quantity", "providerPatientId", "providerMedicineCode"],
+    fields: ["prescriptionItemId", "patientId", "patientName", "medicineName", "dosage", "quantity", "providerPatientId", "providerMedicineCode", "visitId"],
     requiredFields: ["prescriptionItemId", "patientId", "medicineName", "quantity"],
     restrictedFields: ["diagnosis", "medicalHistory", "privateNotes", "phone", "address", "allergies"],
     defaultActions: ["view", "create"],

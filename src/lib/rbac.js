@@ -200,6 +200,9 @@ const OWNER_EXTRAS = [
   "formtemplate:manage",
   "branding:manage_tenant",
   "referral:manage",
+  // Partner organizations (two-sided connection consent) — an owner runs
+  // their own facility's partnerships; HOSPITAL_ADMIN via the wildcard.
+  "partner:manage",
 ];
 
 const PERMISSIONS = {

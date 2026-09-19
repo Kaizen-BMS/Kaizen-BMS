@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prismaClient";
 import { verifyPassword, signSession } from "@/lib/auth";
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "@/lib/authConstants";
+import { listFacilitiesForUser } from "@/lib/orgAccess";
 import { loginRateCheck, loginRateHit, loginRateReset } from "@/lib/rateLimit";
 
 const bodySchema = z.object({
@@ -56,29 +57,36 @@ export async function POST(request) {
   // guardPage() also re-check this on every later request, but the login
   // response itself should say so rather than hand out a cookie that's
   // rejected on the very next call.
+  let homeTenantId = user.tenant_id == null ? null : Number(user.tenant_id);
+  let tenantId = homeTenantId;
+  let sessionRole = user.role;
   if (user.tenant_id != null) {
     const tenant = await prisma.tenants.findUnique({
       where: { id: user.tenant_id },
-      select: { active: true },
+      select: { active: true, owner_enabled: true },
     });
-    if (!tenant || !tenant.active) {
-      return NextResponse.json({ error: "tenant_suspended" }, { status: 403 });
+    if (!tenant || !tenant.active || !tenant.owner_enabled) {
+      // The home facility is unavailable. An organization owner may still
+      // have another enabled facility to land in — anyone else is blocked.
+      const owned = (await listFacilitiesForUser(Number(user.id), null)).filter((f) => f.isOwner && f.enabled);
+      if (owned.length === 0) return NextResponse.json({ error: "tenant_suspended" }, { status: 403 });
+      tenantId = owned[0].id;
+      sessionRole = "HOSPITAL_ADMIN";
     }
   }
 
   loginRateReset(email);
 
   const userId = Number(user.id);
-  const tenantId = user.tenant_id == null ? null : Number(user.tenant_id);
 
-  const token = signSession({ userId, tenantId, role: user.role });
+  const token = signSession({ userId, tenantId, role: sessionRole, homeTenantId });
 
   const res = NextResponse.json({
     user: {
       id: userId,
       name: user.name,
       email: user.email,
-      role: user.role,
+      role: sessionRole,
       tenantId,
     },
   });

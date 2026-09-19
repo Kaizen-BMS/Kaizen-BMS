@@ -191,6 +191,25 @@ function parseJsonArray(v) {
   }
 }
 
+/**
+ * Send-time enforcement of what the connection's consent actually allows.
+ * Fields outside allowed_fields are dropped (optional ones simply aren't
+ * shared); if a REQUIRED field of the contract is not approved the whole
+ * exchange is REJECTED — nothing is ever sent with extra or missing-consent
+ * data. A connection with no allowed_fields column value (legacy) is not
+ * restricted, exactly as before.
+ */
+function enforceApprovedFields(connection, payload) {
+  if (!connection.allowed_fields) return payload;
+  const allowed = new Set(parseJsonArray(connection.allowed_fields));
+  const contract = getContract(connection.connection_type);
+  const missing = (contract?.requiredFields || []).filter((f) => !allowed.has(f));
+  if (missing.length) throw new HttpError(403, "data_not_approved");
+  const out = {};
+  for (const [k, v] of Object.entries(payload)) if (allowed.has(k)) out[k] = v;
+  return out;
+}
+
 function serializeExternalConnection(row) {
   if (!row) return null;
   const { source, provider, ...rest } = row;
@@ -220,5 +239,6 @@ module.exports = {
   listExternalConnectionEvents,
   resolveExternalConnection,
   checkExternalContractAccess,
+  enforceApprovedFields,
   serializeExternalConnection,
 };
