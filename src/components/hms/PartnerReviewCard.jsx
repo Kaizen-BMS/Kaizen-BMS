@@ -33,7 +33,11 @@ export default function PartnerReviewCard({ request, catalogs, onDone }) {
       onDone?.();
     } catch (e) {
       setError(
-        e.message === "cannot_approve_own_request"
+        e.message === "server_not_configured"
+          ? "This server is missing its security key (EXTERNAL_INTEGRATION_KEY). Ask whoever hosts the app to add it, then try again."
+          : e.message === "internal_error"
+          ? "The server was slow and did not finish. Nothing was changed — please press Approve again."
+          : e.message === "cannot_approve_own_request"
             ? "A request cannot be approved by the organization that sent it."
             : `Could not save (${e.message}).`,
       );

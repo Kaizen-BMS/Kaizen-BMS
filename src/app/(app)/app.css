@@ -240,3 +240,26 @@ button:disabled,
 select:disabled {
   cursor: not-allowed;
 }
+
+/* Native dropdown lists (select / datalist) follow the theme — without this the
+   option text inherits the light dark-mode ink onto the browser's white popup. */
+.hms-shell select option,
+.hms-shell select optgroup {
+  background-color: var(--color-white);
+  color: var(--color-slate-900);
+}
+.hms-shell select {
+  color-scheme: light;
+}
+:root[data-theme="dark"] .hms-shell select,
+:root[data-theme="dark"] .hms-shell input,
+:root[data-theme="dark"] .hms-shell textarea {
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hms-shell select,
+  :root:not([data-theme="light"]) .hms-shell input,
+  :root:not([data-theme="light"]) .hms-shell textarea {
+    color-scheme: dark;
+  }
+}

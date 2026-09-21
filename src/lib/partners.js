@@ -244,9 +244,8 @@ async function getConnection(session, id) {
 }
 
 /** Provisions the requester's side of the EXISTING external-integration machinery for an accepted connection. */
-async function provisionRequesterSide(tx, conn, receiverName, approvedFields, decidedBy) {
+async function provisionRequesterSide(tx, conn, receiverName, approvedFields, decidedBy, clinical) {
   const service = conn.service_type;
-  const clinical = await sourceInstanceFor(tx, conn.requester_tenant_id);
   if (!clinical) throw new HttpError(409, "requester_clinical_module_not_active");
   const provider = await tx.external_providers.create({
     data: {
@@ -329,7 +328,12 @@ async function decide(session, id, { decision, approvedCategories, note }) {
   const receiverName = (await prisma.tenants.findUnique({ where: { id: conn.receiver_tenant_id }, select: { name: true } })).name;
   const versions = { contract: catalog.SERVICE_CONTRACT[conn.service_type], version: catalog.currentContractVersion(conn.service_type) };
 
-  const updated = await prisma.$transaction(async (tx) => {
+  // Looked up BEFORE the transaction: on a slow remote database every extra
+  // round trip inside it eats the transaction's time limit.
+  const sourceInstance = conn.service_type === "REFERRAL" ? null : await sourceInstanceFor(prisma, conn.requester_tenant_id);
+
+  const updated = await prisma
+    .$transaction(async (tx) => {
     await tx.org_connections.update({
       where: { id: conn.id },
       data: {
@@ -350,7 +354,7 @@ async function decide(session, id, { decision, approvedCategories, note }) {
     // Referrals need no external provider machinery — they are recorded directly.
     let linkData = {};
     if (conn.service_type !== "REFERRAL") {
-      const { provider, ext } = await provisionRequesterSide(tx, conn, receiverName, fields, session.userId);
+      const { provider, ext } = await provisionRequesterSide(tx, conn, receiverName, fields, session.userId, sourceInstance);
       linkData = { requester_provider_id: provider.id, requester_connection_id: ext.id };
     }
     const u = await tx.org_connections.update({
@@ -359,7 +363,16 @@ async function decide(session, id, { decision, approvedCategories, note }) {
     });
     await addEvent(tx, conn.id, "ACCEPTED", "ACTIVE", session, "Connection is active", { approvedCategories: approved });
     return u;
-  });
+  }, { maxWait: 20000, timeout: 120000 })
+    .catch((err) => {
+      // The partner channel's signing secret is stored encrypted; a server without
+      // its key cannot approve. Say so plainly instead of a generic failure.
+      if (/EXTERNAL_INTEGRATION_KEY/.test(String(err && err.message))) {
+        console.error("partner approve failed:", err.message);
+        throw new HttpError(503, "server_not_configured");
+      }
+      throw err;
+    });
   emitBoth(updated, "partner:updated", { id: Number(updated.id), status: "ACTIVE" });
   return getConnection(session, id);
 }
