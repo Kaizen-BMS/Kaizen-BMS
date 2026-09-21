@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet, apiSend } from "@/components/hms/api";
+import PrintingSettings from "@/components/hms/PrintingSettings";
 
 // One simple page for facility-level switches. Nothing technical here.
 export default function SettingsClient() {
@@ -24,7 +25,7 @@ export default function SettingsClient() {
   }
   if (!s) return <p className="text-sm text-slate-400">{msg || "Loading…"}</p>;
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="max-w-5xl space-y-5">
       <div>
         <h1 className="text-xl font-semibold">Settings</h1>
         <p className="text-sm text-slate-500">{s.name}</p>
@@ -45,6 +46,7 @@ export default function SettingsClient() {
           </label>
         </section>
       )}
+      <PrintingSettings />
       <p className="text-sm text-slate-500">
         Connections with other hospitals, labs and pharmacies are in <Link href="/dashboard/admin/partners" className="underline">Partners</Link>.
       </p>

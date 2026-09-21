@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiSend } from "./api";
+import { usePrintSettings, openSlip } from "./usePrintSettings";
 
 const EMPTY = { name: "", age: "", gender: "", phone: "", reason: "", fee: "", mode: "CASH" };
 
@@ -13,6 +14,7 @@ export default function QuickRegister({ canCollectFee, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(null);
+  const ps = usePrintSettings();
   const nameRef = useRef(null);
   useEffect(() => nameRef.current?.focus(), []);
   useEffect(() => {
@@ -45,7 +47,8 @@ export default function QuickRegister({ canCollectFee, onClose }) {
           feeNote = "Registered, but the fee could not be recorded — collect it from Today's appointments or Billing.";
         }
       }
-      setDone({ name: r.patient.name, token: r.visit?.token_number, feeNote });
+      setDone({ name: r.patient.name, token: r.visit?.token_number, feeNote, visitId: r.visit?.id });
+      if (r.visit?.id && ps?.slip?.enabled !== false && ps?.slip?.autoPrint) openSlip(r.visit.id, true);
     } catch (err) {
       setError(err.message === "invalid_input" ? "Please check the details." : `Could not register (${err.message}).`);
     } finally {
@@ -67,6 +70,9 @@ export default function QuickRegister({ canCollectFee, onClose }) {
               <span className="font-semibold">{done.name}</span> is registered.{done.token != null && <> Token number <span className="text-lg font-bold">{done.token}</span>.</>} {done.feeNote}
             </p>
             <div className="flex gap-2">
+              {done.visitId && ps?.slip?.enabled !== false && (
+                <button onClick={() => openSlip(done.visitId, false)} className="rounded-md border border-slate-300 px-3 py-2 text-sm">Print slip</button>
+              )}
               <button onClick={() => { setDone(null); setF(EMPTY); }} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)]">Register another</button>
               <button onClick={onClose} className="rounded-md border border-slate-300 px-3 py-2 text-sm">Done</button>
             </div>

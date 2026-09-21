@@ -12,7 +12,7 @@ export const GET = apiRoute("patient:read", async (request, { session }) => {
   if (q.length < 2 || session.tenantId == null) return json({ patients: [] });
 
   let patients = [];
-  if (can(session.role, "visit:create")) {
+  if (can(session.role, "patient:read")) {
     const rows = await tenantDb.patients.findMany({
       where: { OR: [{ name: { contains: q } }, { phone: { contains: q } }] },
       select: { id: true, name: true, age: true, phone: true },
@@ -23,7 +23,7 @@ export const GET = apiRoute("patient:read", async (request, { session }) => {
       id: p.id,
       label: p.name,
       sub: `${p.age ?? "?"}y · ${p.phone}`,
-      href: `/dashboard/registration?patient=${p.id}`,
+      href: `/dashboard/patients/${p.id}`,
     }));
   }
 

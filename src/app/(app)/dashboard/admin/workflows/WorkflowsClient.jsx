@@ -32,7 +32,7 @@ const STEP_MARK = {
 function StatusBadge({ status }) {
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[status] || "bg-slate-100 text-slate-600"}`}>
-      {status}
+      {{ RUNNING: "In progress", WAITING: "Waiting", FAILED: "Needs attention", COMPLETED: "Done", PENDING: "Not started", CANCELLED: "Cancelled" }[status] || status}
     </span>
   );
 }
@@ -84,10 +84,11 @@ export default function WorkflowsClient() {
   return (
     <div className="max-w-6xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Workflows</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Real cross-module business processes — OPD → Pharmacy → Billing, Lab orders, IPD admissions — tracked as they
-          progress through the modules already handling them.
+        <h1 className="text-xl font-semibold">Process Tracker</h1>
+        <p className="mt-1 max-w-3xl text-sm text-slate-500">
+          Follows a job from start to finish across departments — for example a prescription going to the pharmacy and then to the bill,
+          a lab test from order to result, or a patient from admission to discharge. You do not have to do anything here: it runs by itself.
+          Look at it only when something shows <b>Needs attention</b> — open it to see which step is stuck and press Retry.
         </p>
       </div>
 
@@ -103,7 +104,7 @@ export default function WorkflowsClient() {
             }`}
           >
             <p className={`text-2xl font-semibold ${statusFilter === s ? "text-white" : "text-slate-900"}`}>{counts[s]}</p>
-            <p className={`text-xs ${statusFilter === s ? "text-slate-200" : "text-slate-500"}`}>{s}</p>
+            <p className={`text-xs ${statusFilter === s ? "text-slate-200" : "text-slate-500"}`}>{{ RUNNING: "In progress", WAITING: "Waiting for something", FAILED: "Needs attention", COMPLETED: "Done" }[s]}</p>
           </button>
         ))}
       </div>
@@ -112,12 +113,12 @@ export default function WorkflowsClient() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-2">Workflow</th>
+              <th className="px-4 py-2">What</th>
               <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2">Reference</th>
-              <th className="px-4 py-2">Current Step</th>
+              <th className="px-4 py-2">For</th>
+              <th className="px-4 py-2">Now at</th>
               <th className="px-4 py-2">Started</th>
-              <th className="px-4 py-2">Last Updated</th>
+              <th className="px-4 py-2">Last change</th>
               <th className="px-4 py-2" />
             </tr>
           </thead>
@@ -131,7 +132,7 @@ export default function WorkflowsClient() {
             ) : workflows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-6 text-center text-slate-400">
-                  No workflows{statusFilter ? ` in ${statusFilter}` : ""} yet.
+                  Nothing here{statusFilter ? " for this filter" : ""} yet.
                 </td>
               </tr>
             ) : (

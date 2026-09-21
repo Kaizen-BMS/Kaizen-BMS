@@ -437,6 +437,7 @@ model tenants {
   public_code                                                  String?                     @unique(map: "uq_tenants_public_code") @db.VarChar(32)
   owner_enabled                                                Boolean                     @default(true)
   show_stock_to_doctors                                        Boolean                     @default(true)
+  print_settings                                               String?                     @db.Text
   admissions                                                   admissions[]
   analytics_daily_dimension                                    analytics_daily_dimension[]
   analytics_daily_tenant                                       analytics_daily_tenant[]

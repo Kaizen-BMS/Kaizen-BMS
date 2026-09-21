@@ -1,6 +1,7 @@
 "use client";
 
 
+import Link from "next/link";
 import { wall } from "@/lib/wallClock";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
@@ -169,6 +170,7 @@ export default function AppointmentsClient({ canBook, canUpdate, canManageSlots,
           <p className="text-sm text-slate-500">{rangeLabel}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link href="/dashboard/appointments/today" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">Day list (with patient details) →</Link>
           {canManageSlots && (
             <button
               onClick={() => setShowSlotManager((s) => !s)}

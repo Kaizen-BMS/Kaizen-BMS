@@ -8,6 +8,7 @@ import { apiGet } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import Topbar from "@/components/hms/Topbar";
 import PartnerRequestPopup from "@/components/hms/PartnerRequestPopup";
+import Toasts from "@/components/hms/Toasts";
 
 const COLLAPSE_KEY = "hms-sidebar-collapsed";
 
@@ -128,6 +129,7 @@ export default function DashboardShell({ user, groups, children }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar user={user} navItems={flatNav} onSidebarToggle={toggleCollapse} />
         <main className="flex-1 overflow-x-auto p-6">{children}</main>
+        <Toasts navKeys={flatNav.map((i) => i.key)} />
         <PartnerRequestPopup enabled={user.role === "HOSPITAL_ADMIN" || String(user.role).startsWith("OWNER_")} />
       </div>
     </div>

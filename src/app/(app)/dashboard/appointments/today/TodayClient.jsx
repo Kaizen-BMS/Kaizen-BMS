@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import { wall } from "@/lib/wallClock";
 import AllergyBadge from "@/components/hms/AllergyBadge";
+import { openSlip } from "@/components/hms/usePrintSettings";
 
 const STATUS = {
   BOOKED: ["Booked", "bg-blue-100 text-blue-700"],
@@ -28,10 +30,48 @@ export default function TodayClient({ canUpdate, canCheckIn, canCollectFee }) {
   const [fee, setFee] = useState({});
   const [busy, setBusy] = useState(null);
   const loadRef = useRef(null);
+  const [upcoming, setUpcoming] = useState([]);
+  const [allDoctors, setAllDoctors] = useState([]);
+  const [mv, setMv] = useState({ from: "", to: "" });
+  const [moveResult, setMoveResult] = useState(null);
+  const [showMove, setShowMove] = useState(false);
 
   const load = useCallback(() => {
-    apiGet(`/api/appointments/today?date=${date}`).then((d) => setItems(d.appointments)).catch((e) => setError(e.message));
+    return Promise.all([
+      apiGet(`/api/appointments/today?date=${date}`).then((d) => setItems(d.appointments)).catch((e) => setError(e.message)),
+      apiGet(`/api/appointments/overview?from=${localDate()}&days=14`).then((d) => setUpcoming(d.days)).catch(() => {}),
+    ]);
   }, [date]);
+  useEffect(() => {
+    apiGet("/api/appointments/doctors").then((d) => setAllDoctors(d.doctors)).catch(() => {});
+  }, []);
+  const shiftDate = (n) => {
+    const d = new Date(`${date}T00:00:00`);
+    d.setDate(d.getDate() + n);
+    setDate(localDate(d));
+  };
+  async function moveAll() {
+    setError("");
+    setMoveResult(null);
+    try {
+      const r = await apiSend("/api/appointments/reassign", "POST", { fromDoctorId: Number(mv.from), toDoctorId: Number(mv.to), date });
+      setMoveResult(r);
+      await load();
+    } catch (e) {
+      setError(`Could not move (${e.message}).`);
+    }
+  }
+  async function moveOne(a, toId) {
+    if (!toId) return;
+    setError("");
+    try {
+      const r = await apiSend("/api/appointments/reassign", "POST", { appointmentId: a.id, toDoctorId: Number(toId) });
+      if (r.moved === 0 && r.conflicts[0]) setError(r.conflicts[0].reason + ".");
+      await load();
+    } catch (e) {
+      setError(`Could not move (${e.message}).`);
+    }
+  }
   useEffect(() => {
     loadRef.current = load;
     load();
@@ -70,7 +110,7 @@ export default function TodayClient({ canUpdate, canCheckIn, canCollectFee }) {
     <div className="max-w-6xl space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Today&apos;s appointments</h1>
+          <h1 className="text-xl font-semibold">{date === localDate() ? "Today's appointments" : "Appointments"}</h1>
           <p className="text-sm text-slate-500">{wall(`${date}T00:00:00.000Z`).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
         </div>
         <div className="flex flex-wrap gap-2 text-center">
@@ -80,8 +120,25 @@ export default function TodayClient({ canUpdate, canCheckIn, canCollectFee }) {
         </div>
       </div>
 
+      {upcoming.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Coming days — click a day to open it</p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {upcoming.map((d) => (
+              <button key={d.date} onClick={() => setDate(d.date)} title={d.doctors.map((x) => `${x.name}: ${x.count}`).join("\n") || "No appointments"} className={`hms-plain min-w-[5rem] shrink-0 rounded-lg border px-3 py-2 text-center ${d.date === date ? "border-[var(--hms-btn-bg)] bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                <span className="block text-[11px] opacity-70">{wall(`${d.date}T00:00:00.000Z`).toLocaleDateString(undefined, { weekday: "short" })}</span>
+                <span className="block text-sm font-semibold">{wall(`${d.date}T00:00:00.000Z`).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
+                <span className="block text-xs">{d.total} appt{d.total === 1 ? "" : "s"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-white p-3">
+        <button onClick={() => shiftDate(-1)} aria-label="Previous day" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">‹</button>
         <label className="text-xs"><span className="block text-slate-500">Date</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={input} /></label>
+        <button onClick={() => shiftDate(1)} aria-label="Next day" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">›</button>
         <button onClick={() => setDate(localDate())} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Today</button>
         <label className="text-xs"><span className="block text-slate-500">Doctor</span>
           <select value={doctor} onChange={(e) => setDoctor(e.target.value)} className={input}><option value="">All doctors</option>{doctors.map((d) => <option key={d}>{d}</option>)}</select>
@@ -90,7 +147,37 @@ export default function TodayClient({ canUpdate, canCheckIn, canCollectFee }) {
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={input}><option value="">Any</option>{Object.entries(STATUS).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}</select>
         </label>
         <label className="text-xs"><span className="block text-slate-500">Search patient</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name or phone" className={input} /></label>
+        <span className="ml-auto flex gap-2">
+          {canUpdate && allDoctors.length > 1 && <button onClick={() => setShowMove((v) => !v)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Doctor not available?</button>}
+          <Link href="/dashboard/appointments" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Open calendar →</Link>
+        </span>
       </div>
+
+      {showMove && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+          <p className="font-medium">Move a doctor&apos;s appointments on {wall(`${date}T00:00:00.000Z`).toLocaleDateString(undefined, { day: "numeric", month: "long" })} to another doctor</p>
+          <p className="text-xs text-slate-600">Same time slots. Only appointments the other doctor can take are moved; the rest are listed so you can rebook them.</p>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <label className="text-xs"><span className="block text-slate-500">From (not available)</span>
+              <select value={mv.from} onChange={(e) => setMv({ ...mv, from: e.target.value })} className={input}><option value="">Choose…</option>{allDoctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
+            </label>
+            <label className="text-xs"><span className="block text-slate-500">To (taking over)</span>
+              <select value={mv.to} onChange={(e) => setMv({ ...mv, to: e.target.value })} className={input}><option value="">Choose…</option>{allDoctors.filter((d) => String(d.id) !== mv.from).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
+            </label>
+            <button onClick={moveAll} disabled={!mv.from || !mv.to} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Move appointments</button>
+          </div>
+          {moveResult && (
+            <div className="mt-2 text-sm">
+              <p className="text-emerald-700">{moveResult.moved} appointment{moveResult.moved === 1 ? "" : "s"} moved{moveResult.to ? ` to ${moveResult.to}` : ""}.</p>
+              {moveResult.conflicts.length > 0 && (
+                <ul className="mt-1 list-disc pl-5 text-amber-800">
+                  {moveResult.conflicts.map((c) => <li key={c.id}>{c.patient} · {time(c.slotTime)} — {c.reason}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {!items ? (
@@ -135,6 +222,13 @@ export default function TodayClient({ canUpdate, canCheckIn, canCollectFee }) {
                 )}
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {a.visit && <button onClick={() => openSlip(a.visit.id, false)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs">Print slip</button>}
+                  {canUpdate && ["BOOKED", "CONFIRMED"].includes(a.status) && allDoctors.length > 1 && (
+                    <select aria-label="Move to another doctor" value="" onChange={(e) => moveOne(a, e.target.value)} className={`${input} text-xs`}>
+                      <option value="">Move to another doctor…</option>
+                      {allDoctors.filter((d) => d.name !== a.doctor).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  )}
                   {canCheckIn && !a.visit && a.status !== "COMPLETED" && a.status !== "NO_SHOW" && (
                     <button onClick={() => checkIn(a)} disabled={busy === a.id} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Check in (get token)</button>
                   )}

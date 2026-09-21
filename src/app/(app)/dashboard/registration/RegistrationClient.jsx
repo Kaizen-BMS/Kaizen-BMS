@@ -2,6 +2,7 @@
 
 
 import PatientHistory from "@/components/hms/PatientHistory";
+import { usePrintSettings, openSlip } from "@/components/hms/usePrintSettings";
 import ReferralsPanel from "@/components/hms/ReferralsPanel";
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
@@ -31,6 +32,14 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
   const [editEmail, setEditEmail] = useState("");
   const [editingInsuranceId, setEditingInsuranceId] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
+  const printSettings = usePrintSettings();
+  const [slip, setSlip] = useState(null); // { visitId, token }
+  function slipFrom(res) {
+    const v = res?.visit;
+    if (!v?.id || printSettings?.slip?.enabled === false) return setSlip(null);
+    setSlip({ visitId: v.id, token: v.token_number });
+    if (printSettings?.slip?.autoPrint) openSlip(v.id, true);
+  }
   const [editInsurance, setEditInsurance] = useState(DEFAULT_INSURANCE);
   const [insuranceBusy, setInsuranceBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -107,7 +116,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
     setMsg("");
     try {
       const { core, custom } = splitValues(form, values);
-      await apiSend("/api/registration/patients", "POST", {
+      const created = await apiSend("/api/registration/patients", "POST", {
         name: core.name,
         age: core.age,
         gender: core.gender || "",
@@ -132,6 +141,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
       setOverrideToken(false);
       setManualToken("");
       setOverrideReason("");
+      slipFrom(created);
       setMsg("Patient registered and added to the queue.");
     } catch (err) {
       setMsg(err.message);
@@ -158,7 +168,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
     setBusy(true);
     setMsg("");
     try {
-      await apiSend("/api/registration/visits", "POST", {
+      const opened = await apiSend("/api/registration/visits", "POST", {
         patientId,
         ...(override ? { manualToken: Number(override.manualToken), overrideReason: override.overrideReason } : {}),
       });
@@ -167,6 +177,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
       setVisitOverrideFor(null);
       setVisitManualToken("");
       setVisitOverrideReason("");
+      slipFrom(opened);
       setMsg("New visit opened.");
     } catch (err) {
       setMsg(err.message);
@@ -246,6 +257,13 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
           <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
             {msg}
           </p>
+        )}
+        {slip && (
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+            <span>Token <span className="text-lg font-bold">{slip.token ?? "—"}</span> is ready.</span>
+            <button onClick={() => openSlip(slip.visitId, false)} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)]">Print slip (parcha)</button>
+            <button onClick={() => setSlip(null)} className="text-xs text-slate-500">Dismiss</button>
+          </div>
         )}
 
         <form

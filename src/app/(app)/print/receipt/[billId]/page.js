@@ -4,6 +4,7 @@ import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prismaClient";
 import { resolveBranding } from "@/lib/branding";
 import PrintButton from "@/components/hms/PrintButton";
+import { merge, PAPERS } from "@/lib/printSettings";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Receipt", robots: { index: false, follow: false } };
@@ -37,6 +38,9 @@ export default async function ReceiptPrintPage({ params }) {
   if (!row) redirect("/dashboard");
 
   const branding = await resolveBranding(session.tenantId, null);
+  const tsettings = await prisma.tenants.findUnique({ where: { id: BigInt(session.tenantId) }, select: { print_settings: true } });
+  const inv = merge(tsettings?.print_settings).invoice;
+  const paper = PAPERS[inv.paper];
 
   const itemsTotal = row.bill_items.reduce((s, i) => s + Number(i.amount), 0);
   const discountTotal = row.discounts.reduce((s, d) => s + Number(d.amount), 0);
@@ -47,7 +51,8 @@ export default async function ReceiptPrintPage({ params }) {
   const invoiceNo = `INV-${String(session.tenantId).padStart(4, "0")}-${String(row.id).padStart(6, "0")}`;
 
   return (
-    <div className="mx-auto max-w-2xl p-8 print:max-w-none print:p-0">
+    <div className="mx-auto p-8 print:p-0" style={{ width: paper.width, maxWidth: "100%" }}>
+      <style>{`@page { size: ${paper.page}; margin: 8mm; }`}</style>
       <PrintButton />
 
       <div className="border-b-2 border-slate-900 pb-4">
@@ -60,7 +65,7 @@ export default async function ReceiptPrintPage({ params }) {
             <h1 className="text-xl font-bold">{branding.header.header_name}</h1>
             {branding.header.address && <p className="text-xs text-slate-600">{branding.header.address}</p>}
             {branding.header.phone && <p className="text-xs text-slate-600">{branding.header.phone}</p>}
-            {branding.header.gstin && <p className="text-xs text-slate-600">GSTIN: {branding.header.gstin}</p>}
+            {inv.showGstin && branding.header.gstin && <p className="text-xs text-slate-600">GSTIN: {branding.header.gstin}</p>}
           </div>
           <div className="shrink-0 text-right text-xs text-slate-500">
             <p className="font-semibold text-slate-700">{invoiceNo}</p>

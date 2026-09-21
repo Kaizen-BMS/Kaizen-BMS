@@ -48,6 +48,7 @@ function featureOfAction(action) {
 // nav item key -> feature
 const NAV_FEATURE = {
   registration: "registration",
+  patients: "registration",
   opd: "opd",
   appointments: "appointments",
   todayAppointments: "appointments",
