@@ -358,18 +358,44 @@ async function getRecentActivity(tenantDb, { activeModules }, limit = 15) {
 
 /** SUPER_ADMIN platform dashboard — the one deliberate raw-`prisma` exception, matching every other Super Admin screen (there is no single tenant to scope by). */
 async function getPlatformOverview(prisma) {
-  const [totalTenants, activeTenants, byType, moduleInstanceCounts, recentTenants] = await Promise.all([
+  const since14 = daysAgo(13);
+  const [totalTenants, activeTenants, byType, moduleInstanceCounts, recentTenants, userCount, orgCount, rented, tenantDates, auditDates] = await Promise.all([
     prisma.tenants.count(),
     prisma.tenants.count({ where: { active: true } }),
     prisma.tenants.groupBy({ by: ["type"], _count: true }),
     prisma.module_instances.groupBy({ by: ["module_name", "status"], _count: true }),
     prisma.tenants.findMany({ orderBy: { created_at: "desc" }, take: 8, select: { id: true, name: true, type: true, active: true, created_at: true } }),
+    prisma.users.count({ where: { tenant_id: { not: null } } }),
+    prisma.organizations.count(),
+    prisma.tenant_modules.groupBy({ by: ["module_name"], where: { is_active: true }, _count: true }),
+    prisma.tenants.findMany({ select: { created_at: true } }),
+    prisma.audit_logs.findMany({ where: { created_at: { gte: since14 } }, select: { created_at: true } }),
   ]);
+  // Tenants added per month (last 6 months) and changes made per day (last 14 days).
+  const now = new Date();
+  const months = [];
+  for (let i = 5; i >= 0; i--) months.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+  const growth = months.map((m) => ({
+    date: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`,
+    value: tenantDates.filter((t) => t.created_at.getFullYear() === m.getFullYear() && t.created_at.getMonth() === m.getMonth()).length,
+  }));
+  const perDay = new Map();
+  for (const r of auditDates) perDay.set(dateKey(r.created_at), (perDay.get(dateKey(r.created_at)) || 0) + 1);
+  const activity = [];
+  for (let i = 13; i >= 0; i--) {
+    const k = dateKey(daysAgo(i));
+    activity.push({ date: k, value: perDay.get(k) || 0 });
+  }
   return {
     totalTenants,
     activeTenants,
     suspendedTenants: totalTenants - activeTenants,
+    users: userCount,
+    organizations: orgCount,
     byType: Object.fromEntries(byType.map((t) => [t.type, t._count])),
+    modulesRented: rented.map((m) => ({ name: m.module_name, value: m._count })),
+    growth,
+    activity,
     moduleInstances: moduleInstanceCounts.map((m) => ({ module: m.module_name, status: m.status, count: m._count })),
     recentTenants: recentTenants.map((t) => ({ id: Number(t.id), name: t.name, type: t.type, active: t.active, createdAt: t.created_at })),
   };

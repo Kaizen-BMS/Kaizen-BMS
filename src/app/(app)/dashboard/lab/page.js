@@ -13,6 +13,8 @@ export default async function LabPage() {
         canCollect: can(session.role, "lab:collect"),
         canReceive: can(session.role, "lab:receive"),
         canResult: can(session.role, "lab:result"),
+        canWalkin: can(session.role, "lab:walkin"),
+        canManageTests: can(session.role, "labtest:manage"),
       }}
     />
   );

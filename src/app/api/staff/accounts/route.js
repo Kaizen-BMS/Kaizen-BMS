@@ -6,6 +6,7 @@ import { hashPassword } from "@/lib/auth";
 import { tempPassword } from "@/lib/passwordReset";
 import { allowedRoles } from "@/lib/staffRoles";
 import { getTenant } from "@/lib/tenants";
+import { detailsShape, toProfileData } from "@/lib/staffDetails";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ const schema = z.object({
   email: z.string().trim().toLowerCase().email().max(191),
   role: z.string().max(40),
   password: z.string().min(8).max(200).optional(),
+  ...detailsShape,
 });
 
 // The admin/owner creates a login for one of their people: name, email, role
@@ -47,5 +49,7 @@ export const POST = apiRoute("staff:manage", async (request, { session }) => {
     data: { tenant_id: BigInt(session.tenantId), name: body.name, email: body.email, password_hash: await hashPassword(pw), role: body.role },
     select: { id: true, name: true, email: true, role: true },
   });
+  const details = toProfileData(body);
+  if (Object.keys(details).length) await prisma.staff_profiles.create({ data: { tenant_id: BigInt(session.tenantId), user_id: user.id, ...details } });
   return json({ account: { id: Number(user.id), name: user.name, email: user.email, role: user.role }, ...(body.password ? {} : { tempPassword: pw }) }, 201);
 });

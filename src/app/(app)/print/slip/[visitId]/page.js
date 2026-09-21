@@ -4,7 +4,7 @@ import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prismaClient";
 import { resolveBranding } from "@/lib/branding";
 import { merge, PAPERS } from "@/lib/printSettings";
-import SlipView from "@/components/hms/SlipView";
+import LayoutRender from "@/components/hms/LayoutRender";
 import PrintButton from "@/components/hms/PrintButton";
 import AutoPrint from "@/components/hms/AutoPrint";
 
@@ -32,25 +32,34 @@ export default async function SlipPage({ params, searchParams }) {
   const paid = bill ? bill.payments.reduce((s, p) => s + Number(p.amount), 0) : 0;
 
   const p = visit.patients;
+  const layout = settings.slip.layout;
+  const when = new Date(visit.created_at);
   const data = {
-    name: p.name,
-    age: p.age,
-    gender: p.gender,
-    phone: p.phone,
-    token: visit.token_number,
-    reason: visit.reason,
-    when: new Date(visit.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }),
-    fee: paid > 0 ? paid : null,
+    facility: b.header.header_name || tenant?.name || "",
+    address: b.header.address || "",
+    phone: b.header.phone || "",
+    gstin: b.header.gstin || "",
+    footer: [settings.slip.footer, b.header.footer_text].filter(Boolean).join(" · "),
+    patient: p.name,
+    age: p.age ?? "",
+    gender: p.gender ? String(p.gender).charAt(0) + String(p.gender).slice(1).toLowerCase() : "",
+    phone_patient: p.phone || "",
+    token: visit.token_number ?? "",
+    reason: visit.reason || "",
+    date: when.toLocaleDateString([], { dateStyle: "medium" }),
+    time: when.toLocaleTimeString([], { timeStyle: "short" }),
+    fee: paid > 0 ? paid : "",
   };
-  const paper = PAPERS[settings.slip.paper];
+  const paper = PAPERS[layout.paper];
+  const pageSize = layout.paper.startsWith("THERMAL") ? `${paper.width} ${layout.h}mm` : paper.page;
   return (
     <div className="p-4 print:p-0">
-      <style>{`@page { size: ${paper.page}; margin: 6mm; }`}</style>
+      <style>{`@page { size: ${pageSize}; margin: 0; }`}</style>
       <div className="print:hidden">
         <PrintButton label="Print slip" />
-        <p className="mb-3 text-xs text-slate-500">Paper: {paper.label}. Change it in Settings › Printing.</p>
+        <p className="mb-3 text-xs text-slate-500">Paper: {paper.label}. Change the design in Settings › Printing.</p>
       </div>
-      <SlipView settings={settings} branding={{ name: b.header.header_name || tenant?.name, logo: b.header.logo_url, address: b.header.address, phone: b.header.phone }} data={data} />
+      <LayoutRender layout={layout} data={data} logo={b.header.logo_url} />
       {auto === "1" && <AutoPrint />}
     </div>
   );

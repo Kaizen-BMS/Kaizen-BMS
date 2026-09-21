@@ -86,6 +86,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "follow_ups",
   "form_templates",
   "lab_order_items",
+  "lab_tests",
   "lab_orders",
   "leave_requests",
   "module_connections",

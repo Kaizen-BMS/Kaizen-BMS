@@ -1,6 +1,6 @@
 "use strict";
 
-const { tenantDb } = require("./prismaClient");
+const { tenantDb, prisma } = require("./prismaClient");
 
 /**
  * The DB server's current calendar day — same `CURDATE()`-based "today"
@@ -57,4 +57,23 @@ function summarize(log, breaks) {
   };
 }
 
-module.exports = { serverToday, findOpenBreak, computeStatus, computeWorkedMinutes, summarize };
+/**
+ * Who a receptionist / admin / owner is marking attendance for: any LOGIN
+ * person of this facility (`userId`) or a person with no login
+ * (`staffMemberId`). Nobody needs a computer or a login to be marked.
+ */
+async function proxySubject(tenantId, { userId, staffMemberId }) {
+  if (userId) {
+    const u = await prisma.users.findFirst({ where: { id: BigInt(userId), tenant_id: BigInt(tenantId) }, select: { id: true, active: true, role: true } });
+    if (!u || u.role === "SUPER_ADMIN") return null;
+    return { type: "USER", id: u.id };
+  }
+  if (staffMemberId) {
+    const m = await tenantDb.staff_members.findUnique({ where: { id: BigInt(staffMemberId) } });
+    return m ? { type: "STAFF_MEMBER", id: m.id, active: !!m.active } : null;
+  }
+  return null;
+}
+
+module.exports = {
+  proxySubject, serverToday, findOpenBreak, computeStatus, computeWorkedMinutes, summarize };

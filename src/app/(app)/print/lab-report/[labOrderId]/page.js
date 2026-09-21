@@ -42,8 +42,8 @@ export default async function LabReportPrintPage({ params }) {
   const { consultations: c, patients: p, ...rest } = row;
   const order = {
     ...rest,
-    doctor_id: c.doctor_id,
-    doctor_name: c.users.name,
+    doctor_id: c?.doctor_id ?? null,
+    doctor_name: c?.users?.name || row.referred_by || null,
     patient_name: p.name,
     patient_age: p.age,
     patient_gender: p.gender,
@@ -91,9 +91,11 @@ export default async function LabReportPrintPage({ params }) {
           <span className="text-slate-500">Age / Gender: </span>
           {order.patient_age ?? "—"} / {GENDER_LABEL[order.patient_gender] || "—"}
         </p>
-        <p className="col-span-2">
-          <span className="text-slate-500">Referring doctor: </span>Dr. {order.doctor_name}
-        </p>
+        {order.doctor_name && (
+          <p className="col-span-2">
+            <span className="text-slate-500">Referring doctor: </span>{/^dr\.?\s/i.test(order.doctor_name) ? "" : "Dr. "}{order.doctor_name}
+          </p>
+        )}
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2 border-y border-slate-200 py-2 text-xs text-slate-600">

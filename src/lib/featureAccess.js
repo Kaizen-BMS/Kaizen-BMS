@@ -28,6 +28,7 @@ const PREFIX_FEATURE = [
   ["stock:", "pharmacy"],
   ["dispense:", "pharmacy"],
   ["lab:", "lab"],
+  ["labtest:", "lab"],
   ["radiology:", "radiology"],
   ["admission:", "ipd"],
   ["bed:", "ipd"],

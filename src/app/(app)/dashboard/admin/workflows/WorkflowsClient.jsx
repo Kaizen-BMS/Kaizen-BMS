@@ -90,6 +90,15 @@ export default function WorkflowsClient() {
           a lab test from order to result, or a patient from admission to discharge. You do not have to do anything here: it runs by itself.
           Look at it only when something shows <b>Needs attention</b> — open it to see which step is stuck and press Retry.
         </p>
+        <details className="mt-3 max-w-3xl rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600">
+          <summary className="cursor-pointer font-medium text-slate-800">How does this work, and how is it different from a workflow?</summary>
+          <div className="mt-2 space-y-2">
+            <p><b>A workflow</b> is the fixed route a job takes: e.g. <i>prescription → pharmacy → bill</i>, <i>lab order → result → bill</i>, <i>admission → discharge → final bill</i>. Kaizen already has these routes built in — you do not draw or define them.</p>
+            <p><b>The Process Tracker</b> is just the live board that watches every job on its route. Each job shows its steps as a checklist: done, waiting, or stuck.</p>
+            <p><b>Waiting</b> means it needs something first (for example a pharmacy is not connected yet). <b>Needs attention</b> means a step failed — open it and press <b>Retry</b> after fixing the cause.</p>
+            <p>To make a route work, just turn on the departments involved and connect them (Partners / Modules). You only open this page when something is stuck.</p>
+          </div>
+        </details>
       </div>
 
       {err && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}

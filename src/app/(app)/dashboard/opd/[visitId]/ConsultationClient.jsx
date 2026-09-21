@@ -61,6 +61,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
   const [rx, setRx] = useState([emptyRxRow()]);
   const [tests, setTests] = useState([""]);
   const [studyName, setStudyName] = useState("");
+  const [labCatalog, setLabCatalog] = useState([]); // this facility's own priced tests
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
@@ -185,6 +186,10 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
     }
   }
 
+  useEffect(() => {
+    apiGet("/api/lab/catalog").then((d) => setLabCatalog(d.tests || [])).catch(() => {});
+  }, []);
+
   async function saveLabOrder() {
     const list = tests.map((t) => t.trim()).filter(Boolean);
     if (list.length === 0) return;
@@ -194,7 +199,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
       const { labOrder } = await apiSend(
         `/api/opd/consultations/${consultation.id}/lab-orders`,
         "POST",
-        { tests: list },
+        { tests: list.map((name) => { const hit = labCatalog.find((c) => c.name.toLowerCase() === name.toLowerCase()); return hit ? { name, serviceId: hit.serviceId } : name; }) },
       );
       setTests([""]);
       setData((d) => ({ ...d, labOrders: upsertById(d.labOrders, labOrder) }));
@@ -499,6 +504,11 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                 className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
               >
                 <option value="">Add a common test…</option>
+                {labCatalog.length > 0 && (
+                  <optgroup label="Our lab (priced)">
+                    {labCatalog.map((t) => <option key={t.id} value={t.name}>{t.name}{t.price != null ? ` — ₹${t.price}` : ""}</option>)}
+                  </optgroup>
+                )}
                 {Object.entries(LAB_TEST_GROUPS).map(([g, list]) => (
                   <optgroup key={g} label={g}>
                     {list.map((t) => <option key={t} value={t}>{t}</option>)}

@@ -140,6 +140,8 @@ const LAB_TECH = [
   "lab:collect",
   "lab:receive",
   "lab:result",
+  "lab:walkin",
+  "labtest:manage",
   "formtemplate:read",
   "branding:read",
   "branding:manage_own",

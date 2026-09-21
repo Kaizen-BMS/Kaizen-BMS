@@ -145,11 +145,11 @@ function Donut({ data }) {
 
 function StatusBars({ data }) {
   return (
-    <div className="h-36">
+    <div style={{ height: Math.max(144, data.length * 30) }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
           <XAxis type="number" hide allowDecimals={false} />
-          <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+          <YAxis type="category" dataKey="name" width={84} interval={0} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
           <Tooltip cursor={{ fill: "rgba(148,163,184,0.15)" }} />
           <Bar dataKey="value" radius={[0, 4, 4, 0]}>
             {data.map((_, i) => <Cell key={i} fill={PBI_COLORS[i % PBI_COLORS.length]} />)}
@@ -231,36 +231,51 @@ export default function DashboardClient() {
 }
 
 function PlatformDashboard({ data }) {
+  const typeRows = Object.entries(data.byType).map(([name, value]) => ({ name: name.replace(/_/g, " ").toLowerCase(), value }));
+  const modRows = (data.modulesRented || []).map((m) => ({ name: m.name.replace(/_/g, " ").toLowerCase(), value: m.value })).sort((a, b) => b.value - a.value);
+  const activePct = data.totalTenants ? Math.round((data.activeTenants / data.totalTenants) * 100) : 0;
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Kaizen Platform</h1>
-        <p className="text-sm text-slate-500">
-          {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · Signed in as Super Admin
-        </p>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Kaizen Platform</h1>
+          <p className="text-sm text-slate-500">
+            {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · Platform owner view
+          </p>
+        </div>
+        <Link href="/dashboard/platform/tenants/new" className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)]">+ Create tenant</Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiCard label="Total tenants" value={data.totalTenants} href="/dashboard/platform/tenants" />
-        <KpiCard label="Active tenants" value={data.activeTenants} href="/dashboard/platform/tenants" />
-        <KpiCard label="Suspended tenants" value={data.suspendedTenants} href="/dashboard/platform/tenants" />
-        <KpiCard label="Tenant types" value={Object.keys(data.byType).length} />
+      {/* one slim strip instead of big number boxes */}
+      <div className="grid grid-cols-2 divide-x divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white sm:grid-cols-5 sm:divide-y-0">
+        {[["Facilities", data.totalTenants, "/dashboard/platform/tenants"], ["Active", `${data.activeTenants} (${activePct}%)`], ["Suspended", data.suspendedTenants], ["Organizations", data.organizations, "/dashboard/platform/organizations"], ["People with logins", data.users]].map(([l, v, href]) => {
+          const body = <div className="px-4 py-3"><p className="text-[11px] uppercase tracking-wide text-slate-400">{l}</p><p className="text-xl font-semibold tabular-nums">{v}</p></div>;
+          return href ? <Link key={l} href={href} className="hover:bg-slate-50">{body}</Link> : <div key={l}>{body}</div>;
+        })}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <SectionCard title="Facilities by type"><Donut data={typeRows} /></SectionCard>
+        <SectionCard title="Modules in use" empty={modRows.length === 0 ? "No modules rented yet." : null}><StatusBars data={modRows} /></SectionCard>
+        <SectionCard title="Health of the base">
+          <div className="space-y-3 pt-1">
+            <div>
+              <div className="flex justify-between text-xs text-slate-500"><span>Active facilities</span><span>{activePct}%</span></div>
+              <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${activePct}%` }} /></div>
+            </div>
+            {data.moduleInstances.slice(0, 5).map((m, i) => (
+              <Metric key={i} label={`${m.module.replace(/_/g, " ")} — ${m.status.toLowerCase()}`} value={m.count} tone={m.status === "SUSPENDED" ? "warn" : undefined} />
+            ))}
+          </div>
+        </SectionCard>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard title="Tenants by type">
-          {Object.entries(data.byType).map(([type, count]) => (
-            <Metric key={type} label={type.replace(/_/g, " ")} value={count} />
-          ))}
-        </SectionCard>
-        <SectionCard title="Module instances">
-          {data.moduleInstances.map((m, i) => (
-            <Metric key={i} label={`${m.module.replace(/_/g, " ")} — ${m.status.toLowerCase()}`} value={m.count} tone={m.status === "SUSPENDED" ? "warn" : undefined} />
-          ))}
-        </SectionCard>
+        <SectionCard title="Facilities added, month by month"><MiniBarChart data={data.growth.map((g) => ({ date: `${g.date}-01`, value: g.value }))} /></SectionCard>
+        <SectionCard title="Activity across the platform (last 14 days)"><MiniBarChart data={data.activity} /></SectionCard>
       </div>
 
-      <SectionCard title="Recent tenants" href="/dashboard/platform/tenants" empty={data.recentTenants.length === 0 ? "No tenants yet." : null}>
+      <SectionCard title="Recent facilities" href="/dashboard/platform/tenants" empty={data.recentTenants.length === 0 ? "No tenants yet." : null}>
         <div className="space-y-2">
           {data.recentTenants.map((t) => (
             <div key={t.id} className="flex items-center justify-between border-b border-slate-100 py-1.5 last:border-0">
@@ -268,17 +283,11 @@ function PlatformDashboard({ data }) {
                 <span className="text-sm font-medium text-slate-800">{t.name}</span>
                 <span className="ml-2 text-xs text-slate-400">{t.type.replace(/_/g, " ")}</span>
               </div>
-              <span className={`rounded-full px-2 py-0.5 text-xs ${t.active ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"}`}>
-                {t.active ? "Active" : "Suspended"}
-              </span>
+              <span className={`rounded-full px-2 py-0.5 text-xs ${t.active ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"}`}>{t.active ? "Active" : "Suspended"}</span>
             </div>
           ))}
         </div>
       </SectionCard>
-
-      <Link href="/dashboard/platform/tenants/new" className="inline-block rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)]">
-        + Create tenant
-      </Link>
     </div>
   );
 }

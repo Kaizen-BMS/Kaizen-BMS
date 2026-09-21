@@ -1,6 +1,6 @@
 import { apiRoute, json } from "@/lib/apiRoute";
 import { prisma, tenantDb } from "@/lib/prismaClient";
-import { requireTenantId } from "@/lib/requestContext";
+import { serializeProfile } from "@/lib/staffDetails";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +32,7 @@ export const GET = apiRoute("staff:manage", async (_request, { session }) => {
       email: u.email,
       role: u.role,
       active: u.active !== false,
-      joinDate: p?.join_date ?? null,
-      phone: p?.phone ?? null,
-      designation: p?.designation ?? null,
+      ...serializeProfile(p),
     };
   });
   return json({ staff });

@@ -3,6 +3,7 @@ import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { emitToTenant } from "@/lib/realtime";
+import { detailsShape } from "@/lib/staffDetails";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,10 @@ const createSchema = z.object({
   name: z.string().trim().min(1).max(191),
   designation: z.string().trim().max(100).optional().or(z.literal("")),
   phone: z.string().trim().max(32).optional().or(z.literal("")),
+  address: detailsShape.address,
+  nativePlace: detailsShape.nativePlace,
+  aadhaarNo: detailsShape.aadhaarNo,
+  photoDataUrl: detailsShape.photoDataUrl,
 });
 
 export const POST = apiRoute("staffmember:manage", async (request, { session }) => {
@@ -33,6 +38,10 @@ export const POST = apiRoute("staffmember:manage", async (request, { session }) 
       name: body.name,
       designation: body.designation || null,
       phone: body.phone || null,
+      address: body.address || null,
+      native_place: body.nativePlace || null,
+      aadhaar_no: body.aadhaarNo ? body.aadhaarNo.replace(/\s+/g, "") : null,
+      photo_url: body.photoDataUrl || null,
     },
   });
   emitToTenant(session.tenantId, "staffmember:created", { member });

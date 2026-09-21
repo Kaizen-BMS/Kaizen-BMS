@@ -45,6 +45,8 @@ const ACTION_MODULE = {
   "lab:collect": ["LAB"],
   "lab:receive": ["LAB"],
   "lab:result": ["LAB"],
+  "lab:walkin": ["LAB"],
+  "labtest:manage": ["LAB"],
 
   "bill:create": ["BILLING"],
   "fee:collect": ["BILLING"],

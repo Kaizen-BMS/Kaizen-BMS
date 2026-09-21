@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import Icon from "@/components/hms/icons";
+import Avatar from "@/components/hms/Avatar";
+import PersonDetailsFields, { EMPTY_DETAILS, detailsPayload } from "@/components/hms/PersonDetailsFields";
 import { compressImageToDataUrl as compressPhoto } from "@/components/hms/imageCompress";
 
 const STATUS_LABEL = {
@@ -183,6 +185,9 @@ export default function AttendanceClient({ canProxy, canManageStaff }) {
   );
 }
 
+// Everyone's attendance today, in one list: people with a login AND people
+// without. The front desk / admin / owner marks anyone in or out — nobody needs
+// a computer or a login of their own. A photo is optional (📷 button).
 function ProxyRoster({ canManageStaff }) {
   const [roster, setRoster] = useState([]);
   const [msg, setMsg] = useState("");
@@ -191,6 +196,8 @@ function ProxyRoster({ canManageStaff }) {
   const [breakTarget, setBreakTarget] = useState(null);
   const [category, setCategory] = useState("PERSONAL");
   const [reason, setReason] = useState("");
+  const [q, setQ] = useState("");
+  const [compare, setCompare] = useState(null);
   const fileInputRef = useRef(null);
 
   async function load() {
@@ -212,11 +219,24 @@ function ProxyRoster({ canManageStaff }) {
     load,
   );
 
-  function openPhotoCapture(memberId, action) {
-    setPhotoTarget({ memberId, action });
+  const who = (p) => (p.kind === "USER" ? { userId: p.id } : { staffMemberId: p.id });
+  const key = (p) => `${p.kind}:${p.id}`;
+
+  async function call(url, p, extra = {}) {
+    setMsg("");
+    try {
+      await apiSend(url, "POST", { ...who(p), ...extra });
+      await load();
+    } catch (err) {
+      setMsg(err.message === "already_checked_in" ? "Already marked in today." : err.message === "close_break_first" ? "Bring them back from their break first." : err.message);
+    }
+  }
+  const mark = (p, action) => call(`/api/attendance/proxy/${action}`, p);
+
+  function openPhotoCapture(p, action) {
+    setPhotoTarget({ p, action });
     fileInputRef.current?.click();
   }
-
   async function onPhotoChosen(e) {
     const file = e.target.files?.[0];
     const target = photoTarget;
@@ -225,169 +245,136 @@ function ProxyRoster({ canManageStaff }) {
     if (!file || !target) return;
     try {
       const photoDataUrl = await compressPhoto(file, 480);
-      const url =
-        target.action === "check-in" ? "/api/attendance/proxy/check-in" : "/api/attendance/proxy/check-out";
-      await apiSend(url, "POST", { staffMemberId: target.memberId, photoDataUrl });
-      await load();
+      await call(`/api/attendance/proxy/${target.action}`, target.p, { photoDataUrl });
     } catch (err) {
       setMsg(err.message);
     }
   }
 
-  async function endBreak(memberId) {
-    try {
-      await apiSend("/api/attendance/proxy/breaks/end", "POST", { staffMemberId: memberId });
-      await load();
-    } catch (err) {
-      setMsg(err.message);
-    }
-  }
-
-  async function startBreak(memberId) {
+  async function startBreak(p) {
     if (!reason.trim()) return;
+    await call("/api/attendance/proxy/breaks/start", p, { category, reason: reason.trim() });
+    setBreakTarget(null);
+    setReason("");
+  }
+
+  async function markAll() {
+    if (!confirm("Mark everyone who is not yet in as present now?")) return;
+    for (const p of roster.filter((x) => x.status === "NOT_CHECKED_IN")) await call("/api/attendance/proxy/check-in", p);
+  }
+
+  async function removeMember(id) {
     try {
-      await apiSend("/api/attendance/proxy/breaks/start", "POST", {
-        staffMemberId: memberId,
-        category,
-        reason: reason.trim(),
-      });
-      setBreakTarget(null);
-      setReason("");
+      await apiSend(`/api/attendance/staff-members/${id}`, "PATCH", { active: false });
       await load();
     } catch (err) {
       setMsg(err.message);
     }
   }
 
-  async function removeMember(memberId) {
-    try {
-      await apiSend(`/api/attendance/staff-members/${memberId}`, "PATCH", { active: false });
-      await load();
-    } catch (err) {
-      setMsg(err.message);
-    }
-  }
+  const shown = roster.filter((p) => !q || `${p.name} ${p.subtitle}`.toLowerCase().includes(q.toLowerCase()));
+  const count = (s) => roster.filter((p) => p.status === s).length;
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Staff without login</h2>
-        {canManageStaff && (
-          <button
-            onClick={() => setShowAdd((s) => !s)}
-            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50"
-          >
-            {showAdd ? "Close" : "+ Add"}
-          </button>
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Everyone&apos;s attendance today</h2>
+          <p className="text-xs text-slate-400">
+            Mark anyone in or out — with or without a login. {count("CHECKED_IN") + count("OUT")} in · {count("CHECKED_OUT")} left · {count("NOT_CHECKED_IN")} not yet in
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search" className="w-36 rounded-md border border-slate-300 px-2 py-1 text-xs" />
+          {count("NOT_CHECKED_IN") > 0 && (
+            <button onClick={markAll} className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50">Mark everyone present</button>
+          )}
+          {canManageStaff && (
+            <button onClick={() => setShowAdd((s) => !s)} className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50">
+              {showAdd ? "Close" : "+ Add a person without login"}
+            </button>
+          )}
+        </div>
       </div>
-      <p className="text-xs text-slate-400">
-        For employees with no system login (e.g. housekeeping) — mark their attendance here with a photo.
-      </p>
 
       {msg && <p className="mt-2 text-sm text-red-600">{msg}</p>}
-
       {showAdd && canManageStaff && <AddStaffMemberForm onAdded={load} onError={setMsg} />}
+      {compare && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={() => setCompare(null)}>
+          <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-3 text-sm font-semibold">{compare.name} — is it the same person?</p>
+            <div className="grid grid-cols-2 gap-3 text-center text-xs text-slate-500">
+              {[["On file", compare.photo], ["Today's attendance photo", compare.log?.check_in_photo_url]].map(([label, src]) => (
+                <div key={label}>
+                  <div className="grid aspect-square place-items-center overflow-hidden rounded-md bg-slate-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {src ? <img src={src} alt={label} className="h-full w-full object-cover" /> : <span className="px-2">{label === "On file" ? "No photo on file — add one in Staff › Details" : "No photo taken today"}</span>}
+                  </div>
+                  <p className="mt-1">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={onPhotoChosen}
-      />
+      <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhotoChosen} />
 
       <div className="mt-3 space-y-2">
-        {roster.length === 0 && <p className="text-sm text-slate-400">No staff added yet.</p>}
-        {roster.map(({ member, status, log, breaks, workedMinutes }) => (
-          <div key={member.id} className="hms-card flex flex-wrap items-center gap-3 p-3 text-sm">
+        {shown.length === 0 && <p className="text-sm text-slate-400">No one found.</p>}
+        {shown.map((p) => (
+          <div key={key(p)} className="hms-card flex flex-wrap items-center gap-3 p-3 text-sm">
+            <Avatar name={p.name} src={p.photo} size={44} onClick={() => setCompare(p)} title="Compare photos" />
             <div className="min-w-[8rem] flex-1">
-              <p className="font-medium">{member.name}</p>
-              <p className="text-xs text-slate-500">{member.designation || "—"}</p>
+              <p className="font-medium">{p.name}</p>
+              <p className="text-xs text-slate-500">{p.subtitle}{p.kind === "STAFF_MEMBER" ? " · no login" : ""}</p>
             </div>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[status]}`}>
-              {STATUS_LABEL[status]}
-            </span>
-            {log?.check_in_at && (
+            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[p.status]}`}>{STATUS_LABEL[p.status]}</span>
+            {p.log?.check_in_at && (
               <span className="text-xs text-slate-500">
-                In {fmtTime(log.check_in_at)}
-                {log.check_out_at ? ` · Out ${fmtTime(log.check_out_at)}` : ""} · {fmtMinutes(workedMinutes)}
+                In {fmtTime(p.log.check_in_at)}
+                {p.log.check_out_at ? ` · Out ${fmtTime(p.log.check_out_at)}` : ""} · {fmtMinutes(p.workedMinutes)}
               </span>
             )}
 
             <div className="flex flex-wrap items-center gap-1.5">
-              {status === "NOT_CHECKED_IN" && (
-                <button
-                  onClick={() => openPhotoCapture(member.id, "check-in")}
-                  className="flex items-center gap-1 rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)]"
-                >
-                  <Icon name="camera" size={13} /> Check in
-                </button>
-              )}
-              {status === "CHECKED_IN" && (
+              {p.status === "NOT_CHECKED_IN" && (
                 <>
-                  <button
-                    onClick={() => setBreakTarget(breakTarget === member.id ? null : member.id)}
-                    className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50"
-                  >
-                    Step out
-                  </button>
-                  <button
-                    onClick={() => openPhotoCapture(member.id, "check-out")}
-                    className="flex items-center gap-1 rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)]"
-                  >
-                    <Icon name="camera" size={13} /> Check out
-                  </button>
+                  <button onClick={() => mark(p, "check-in")} className="rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)]">Mark in</button>
+                  <button onClick={() => openPhotoCapture(p, "check-in")} title="Mark in with a photo" aria-label="Mark in with a photo" className="rounded-md border border-slate-300 px-2 py-1 text-xs"><Icon name="camera" size={13} /></button>
                 </>
               )}
-              {status === "OUT" && (
-                <button
-                  onClick={() => endBreak(member.id)}
-                  className="rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)]"
-                >
-                  Back
-                </button>
+              {p.status === "CHECKED_IN" && (
+                <>
+                  <button onClick={() => setBreakTarget(breakTarget === key(p) ? null : key(p))} className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50">Step out</button>
+                  <button onClick={() => mark(p, "check-out")} className="rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)]">Mark out</button>
+                  <button onClick={() => openPhotoCapture(p, "check-out")} title="Mark out with a photo" aria-label="Mark out with a photo" className="rounded-md border border-slate-300 px-2 py-1 text-xs"><Icon name="camera" size={13} /></button>
+                </>
               )}
-              {canManageStaff && (
-                <button onClick={() => removeMember(member.id)} className="text-xs text-slate-400 underline hover:text-red-600">
-                  Remove
-                </button>
+              {p.status === "OUT" && (
+                <button onClick={() => call("/api/attendance/proxy/breaks/end", p)} className="rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)]">Back</button>
+              )}
+              {canManageStaff && p.kind === "STAFF_MEMBER" && (
+                <button onClick={() => removeMember(p.id)} className="rounded-md border border-slate-300 px-2 py-1 text-xs text-red-600">Remove</button>
               )}
             </div>
 
-            {breakTarget === member.id && (
+            {breakTarget === key(p) && (
               <div className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-slate-200 pt-2">
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                >
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded-md border border-slate-300 px-2 py-1 text-xs">
                   <option value="PERSONAL">Personal</option>
-                  <option value="HOSPITAL_WORK">Hospital work</option>
+                  <option value="HOSPITAL_WORK">Work</option>
                 </select>
-                <input
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="reason"
-                  className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-xs"
-                />
-                <button
-                  onClick={() => startBreak(member.id)}
-                  disabled={!reason.trim()}
-                  className="rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
-                >
-                  Confirm
-                </button>
+                <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="reason" className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-xs" />
+                <button onClick={() => startBreak(p)} disabled={!reason.trim()} className="rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Confirm</button>
               </div>
             )}
 
-            {status === "CHECKED_OUT" && breaks?.length > 0 && (
+            {p.status === "CHECKED_OUT" && p.breaks?.length > 0 && (
               <div className="mt-1 w-full space-y-0.5 text-xs text-slate-500">
-                {breaks.map((b) => (
+                {p.breaks.map((b) => (
                   <p key={b.id}>
-                    Out {fmtTime(b.out_at)}–{fmtTime(b.in_at)} · {b.category === "PERSONAL" ? "Personal" : "Hospital work"} ·{" "}
-                    {b.reason}
+                    Out {fmtTime(b.out_at)}–{fmtTime(b.in_at)} · {b.category === "PERSONAL" ? "Personal" : "Work"} · {b.reason}
                   </p>
                 ))}
               </div>
@@ -401,14 +388,17 @@ function ProxyRoster({ canManageStaff }) {
 
 function AddStaffMemberForm({ onAdded, onError }) {
   const [form, setForm] = useState({ name: "", designation: "", phone: "" });
+  const [details, setDetails] = useState(EMPTY_DETAILS);
   const [busy, setBusy] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     try {
-      await apiSend("/api/attendance/staff-members", "POST", form);
+      const { joinDate: _j, emergencyContact: _e, ...d } = detailsPayload(details); // eslint-disable-line no-unused-vars
+      await apiSend("/api/attendance/staff-members", "POST", { ...d, name: form.name, designation: d.designation || form.designation, phone: d.phone || form.phone });
       setForm({ name: "", designation: "", phone: "" });
+      setDetails(EMPTY_DETAILS);
       onAdded();
     } catch (err) {
       onError(err.message);
@@ -418,28 +408,13 @@ function AddStaffMemberForm({ onAdded, onError }) {
   }
 
   return (
-    <form onSubmit={submit} className="my-3 grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-4">
-      <input
-        required
-        placeholder="name"
-        value={form.name}
-        onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
-        className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-      />
-      <input
-        placeholder="designation (e.g. Sweeper)"
-        value={form.designation}
-        onChange={(e) => setForm((s) => ({ ...s, designation: e.target.value }))}
-        className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-      />
-      <input
-        placeholder="phone (optional)"
-        value={form.phone}
-        onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
-        className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-      />
+    <form onSubmit={submit} className="my-3 space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <input required placeholder="name" value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} className="rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+      </div>
+      <PersonDetailsFields name={form.name} value={details} onChange={setDetails} showJoin={false} showEmergency={false} />
       <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
-        Add
+        Add person
       </button>
     </form>
   );

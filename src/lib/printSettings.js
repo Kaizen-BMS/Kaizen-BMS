@@ -6,6 +6,8 @@
  * preview and the real print pages use the SAME merge + paper table, so what
  * you preview is what comes out of the printer.
  */
+const { sanitizeLayout, presetLayout } = require("./printLayout");
+
 const PAPERS = {
   A4: { label: "A4 (full page)", width: "210mm", page: "A4" },
   A5: { label: "A5 (half page)", width: "148mm", page: "A5" },
@@ -56,6 +58,11 @@ function merge(saved) {
   }
   if (!PAPERS[out.slip.paper]) out.slip.paper = DEFAULTS.slip.paper;
   if (!PAPERS[out.invoice.paper]) out.invoice.paper = DEFAULTS.invoice.paper;
+  // The designed layout is the source of truth; paper follows it.
+  out.slip.layout = sanitizeLayout(s && s.slip && s.slip.layout) || presetLayout("slip", "parcha");
+  out.invoice.layout = sanitizeLayout(s && s.invoice && s.invoice.layout) || presetLayout("invoice", "classic");
+  out.slip.paper = out.slip.layout.paper;
+  out.invoice.paper = out.invoice.layout.paper;
   out.slip.title = String(out.slip.title).slice(0, 60);
   out.slip.footer = String(out.slip.footer).slice(0, 200);
   return out;

@@ -6,6 +6,7 @@ import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
 import { parseMaybeJson } from "@/components/hms/json";
 import PartnerSend from "@/components/hms/PartnerSend";
+import { WalkInTab, TestsTab, ReportsTab, PayBox } from "./LabExtras";
 
 const FLAGS = ["NORMAL", "HIGH", "LOW", "ABNORMAL"];
 
@@ -14,11 +15,15 @@ export default function LabClient({ permissions }) {
   return (
     <div className="space-y-4">
       <div className="flex gap-1 text-sm">
-        {[["queue", "Lab queue"], ["partner", "Partner orders"]].map(([k, label]) => (
+        {[["queue", "Lab queue"], ...(permissions.canWalkin ? [["walkin", "New walk-in order"]] : []), ["reports", "Reports"], ["tests", "Tests & prices"], ["partner", "Partner orders"]].map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 ${tab === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"}`}>{label}</button>
         ))}
       </div>
-      {tab === "queue" ? <LabQueueView permissions={permissions} /> : <LabPartnerTab canResult={permissions.canResult} />}
+      {tab === "queue" && <LabQueueView permissions={permissions} />}
+      {tab === "walkin" && <WalkInTab onDone={() => setTab("queue")} />}
+      {tab === "reports" && <ReportsTab />}
+      {tab === "tests" && <TestsTab canManage={permissions.canManageTests} />}
+      {tab === "partner" && <LabPartnerTab canResult={permissions.canResult} />}
     </div>
   );
 }
@@ -31,6 +36,7 @@ function LabQueueView({ permissions }) {
   const [rows, setRows] = useState([]);
   const [justResulted, setJustResulted] = useState(null); // { id } — show a Print link briefly
   const [flashIds, setFlashIds] = useState(new Set());
+  const [catalog, setCatalog] = useState({});
 
   function flash(id) {
     setFlashIds((s) => new Set(s).add(id));
@@ -45,6 +51,7 @@ function LabQueueView({ permissions }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch((e) => setMsg(e.message));
+    apiGet("/api/lab/tests").then((d) => setCatalog(Object.fromEntries(d.tests.map((t) => [t.name.toLowerCase(), t])))).catch(() => {});
   }, []);
 
   useRealtime(
@@ -83,7 +90,7 @@ function LabQueueView({ permissions }) {
     const tests = parseMaybeJson(order.tests) || [];
     setRows(
       tests.length
-        ? tests.map((t) => ({ testName: t, result: "", units: "", referenceRange: "", flag: "NORMAL" }))
+        ? tests.map((t) => ({ testName: t, result: "", units: catalog[String(t).toLowerCase()]?.units || "", referenceRange: catalog[String(t).toLowerCase()]?.referenceRange || "", flag: "NORMAL" }))
         : [{ testName: "", result: "", units: "", referenceRange: "", flag: "NORMAL" }],
     );
     setResultingId(order.id);
@@ -146,7 +153,7 @@ function LabQueueView({ permissions }) {
               </div>
               <AllergyBadge allergies={o.patient_allergies} className="mt-1" />
               <p className="mt-1 text-xs text-slate-500">
-                Ref. Dr. {o.referring_doctor} · {tests.join(", ")}
+                {o.source === "WALK_IN" ? "Walk-in" : "Doctor order"}{o.referring_doctor ? ` · Ref. ${o.source === "WALK_IN" ? "" : "Dr. "}${o.referring_doctor}` : ""} · {tests.join(", ")}
               </p>
               <p className="mt-1 text-xs text-slate-400">
                 Ordered {new Date(o.created_at).toLocaleString()}
@@ -154,6 +161,7 @@ function LabQueueView({ permissions }) {
                 {o.received_at && ` · Received ${new Date(o.received_at).toLocaleString()}`}
               </p>
 
+              {o.bill && <div className="mt-2"><PayBox orderId={o.id} bill={o.bill} onPaid={load} /></div>}
               <div className="mt-3 flex gap-2">
                 {!o.collected_at && permissions.canCollect && (
                   <button

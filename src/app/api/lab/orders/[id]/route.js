@@ -21,7 +21,7 @@ export const GET = apiRoute("lab:read", async (_request, ctx) => {
     patient_age: p.age,
     patient_gender: p.gender,
     patient_allergies: p.allergies,
-    referring_doctor: c.users.name,
+    referring_doctor: c?.users?.name || rest.referred_by || null,
   };
   return json({ order });
 });

@@ -3,6 +3,8 @@
 
 import ResetPasswordButton from "@/components/hms/ResetPasswordButton";
 import AddStaffForm from "@/components/hms/AddStaffForm";
+import Avatar from "@/components/hms/Avatar";
+import PersonDetailsFields, { EMPTY_DETAILS } from "@/components/hms/PersonDetailsFields";
 import AccessButton from "@/components/hms/AccessButton";
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
@@ -54,9 +56,11 @@ export default function StaffManagementClient({ canManage, canProxyAttendance, o
 function DirectoryTab({ ownUserId }) {
   const [staff, setStaff] = useState(null);
   const [msg, setMsg] = useState("");
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ joinDate: "", phone: "", designation: "" });
+  const [editing, setEditing] = useState(null); // staff row being edited
+  const [form, setForm] = useState(EMPTY_DETAILS);
   const [busy, setBusy] = useState(false);
+  const [zoom, setZoom] = useState(null);
+  const [onlyNoPhoto, setOnlyNoPhoto] = useState(false);
 
   async function load() {
     const { staff } = await apiGet("/api/staff/profiles");
@@ -78,16 +82,20 @@ function DirectoryTab({ ownUserId }) {
   }
 
   function startEdit(s) {
-    setEditingId(s.userId);
-    setForm({ joinDate: s.joinDate ? s.joinDate.slice(0, 10) : "", phone: s.phone || "", designation: s.designation || "" });
+    setEditing(s);
+    setForm({
+      phone: s.phone || "", designation: s.designation || "", joinDate: s.joinDate ? s.joinDate.slice(0, 10) : "", address: s.address || "",
+      nativePlace: s.nativePlace || "", emergencyContact: s.emergencyContact || "", aadhaarNo: s.aadhaarNo || "", photoDataUrl: "", photo: s.photo || "",
+    });
   }
 
-  async function save(userId) {
+  async function save() {
     setBusy(true);
     setMsg("");
     try {
-      await apiSend(`/api/staff/profiles/${userId}`, "PATCH", form);
-      setEditingId(null);
+      const { photo: _keep, ...rest } = form;
+      await apiSend(`/api/staff/profiles/${editing.userId}`, "PATCH", rest.photoDataUrl === "" ? { ...rest, photoDataUrl: undefined } : rest);
+      setEditing(null);
       await load();
     } catch (err) {
       setMsg(err.message);
@@ -96,85 +104,80 @@ function DirectoryTab({ ownUserId }) {
     }
   }
 
-  if (msg) return <p className="text-sm text-red-600">{msg}</p>;
-  if (!staff) return <p className="text-sm text-slate-400">Loading…</p>;
+  if (!staff) return <p className="text-sm text-slate-400">{msg || "Loading…"}</p>;
 
   return (
     <div className="space-y-3">
-    <AddStaffForm onCreated={load} />
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-            <th className="px-3 py-2">Name</th>
-            <th className="px-3 py-2">Role</th>
-            <th className="px-3 py-2">Designation</th>
-            <th className="px-3 py-2">Phone</th>
-            <th className="px-3 py-2">Joined</th>
-            <th className="px-3 py-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {staff.map((s) => (
-            <tr key={s.userId} className="border-b border-slate-100 last:border-0">
-              {editingId === s.userId ? (
-                <>
-                  <td className="px-3 py-2">{s.name}<p className="text-xs text-slate-400">{s.email}</p></td>
-                  <td className="px-3 py-2 text-slate-500">{s.role}</td>
-                  <td className="px-3 py-2">
-                    <input
-                      value={form.designation}
-                      onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))}
-                      placeholder="e.g. Senior Nurse"
-                      className="w-32 rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      value={form.phone}
-                      onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                      className="w-28 rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="date"
-                      value={form.joinDate}
-                      onChange={(e) => setForm((f) => ({ ...f, joinDate: e.target.value }))}
-                      className="w-36 rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <button onClick={() => save(s.userId)} disabled={busy} className="mr-2 text-xs text-slate-700 underline disabled:opacity-50">
-                      Save
-                    </button>
-                    <button onClick={() => setEditingId(null)} className="text-xs text-slate-400">Cancel</button>
-                  </td>
-                </>
-              ) : (
-                <>
-                  <td className="px-3 py-2">{s.name}{!s.active && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">switched off</span>}<p className="text-xs text-slate-400">{s.email}</p></td>
-                  <td className="px-3 py-2 text-slate-500">{s.role}</td>
-                  <td className="px-3 py-2">{s.designation || "—"}</td>
-                  <td className="px-3 py-2">{s.phone || "—"}</td>
-                  <td className="px-3 py-2">{s.joinDate ? new Date(s.joinDate).toLocaleDateString() : "—"}</td>
-                  <td className="px-3 py-2">
-                    <button onClick={() => startEdit(s)} className="mr-3 text-xs text-slate-400 hover:text-slate-700">edit</button>
-                    <ResetPasswordButton userId={s.userId} name={s.name} />
-                    {s.role !== "HOSPITAL_ADMIN" && <AccessButton userId={s.userId} name={s.name} />}
-                    {s.userId !== ownUserId && (
-                      <button onClick={() => toggleActive(s)} className={`ml-3 text-xs underline ${s.active ? "text-red-600" : "text-emerald-700"}`}>
-                        {s.active ? "Switch off" : "Switch on"}
-                      </button>
-                    )}
-                  </td>
-                </>
-              )}
+      {msg && <p className="text-sm text-red-600">{msg}</p>}
+      <AddStaffForm onCreated={load} />
+      {staff.some((s) => !s.photo && s.active) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span>{staff.filter((s) => !s.photo && s.active).length} of {staff.filter((s) => s.active).length} people have no photo — attendance photos cannot be matched for them.</span>
+          <button onClick={() => setOnlyNoPhoto((v) => !v)} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs">{onlyNoPhoto ? "Show everyone" : "Show only who need a photo"}</button>
+        </div>
+      )}
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+              <th className="px-3 py-2">Name</th>
+              <th className="px-3 py-2">Role</th>
+              <th className="px-3 py-2">Phone</th>
+              <th className="px-3 py-2">From</th>
+              <th className="px-3 py-2">Joined</th>
+              <th className="px-3 py-2" />
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {staff.filter((s) => !onlyNoPhoto || (!s.photo && s.active)).map((s) => (
+              <tr key={s.userId} className="border-b border-slate-100 last:border-0">
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2.5">
+                    <Avatar name={s.name} src={s.photo} size={36} onClick={s.photo ? () => setZoom(s) : undefined} title={s.photo ? "View photo" : undefined} />
+                    <div>
+                      <p>{s.name}{!s.active && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">switched off</span>}</p>
+                      <p className="text-xs text-slate-400">{s.email}{s.designation ? ` · ${s.designation}` : ""}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-slate-500">{s.role}</td>
+                <td className="px-3 py-2">{s.phone || "—"}</td>
+                <td className="px-3 py-2 text-xs text-slate-500">{s.nativePlace || s.address || "—"}{!s.photo && <p className="text-amber-600">no photo yet</p>}</td>
+                <td className="px-3 py-2">{s.joinDate ? new Date(s.joinDate).toLocaleDateString() : "—"}</td>
+                <td className="px-3 py-2">
+                  <button onClick={() => startEdit(s)} className={`mr-3 text-xs underline ${s.photo ? "text-slate-600" : "font-semibold text-amber-700"} hover:text-slate-900`}>{s.photo ? "Details & photo" : "Add photo & details"}</button>
+                  <ResetPasswordButton userId={s.userId} name={s.name} />
+                  {s.role !== "HOSPITAL_ADMIN" && <AccessButton userId={s.userId} name={s.name} />}
+                  {s.userId !== ownUserId && (
+                    <button onClick={() => toggleActive(s)} className={`ml-3 text-xs underline ${s.active ? "text-red-600" : "text-emerald-700"}`}>
+                      {s.active ? "Switch off" : "Switch on"}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editing && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setEditing(null)}>
+          <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="mb-3 text-sm font-semibold">{editing.name} — details</p>
+            <PersonDetailsFields name={editing.name} value={form} onChange={setForm} />
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setEditing(null)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
+              <button onClick={save} disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {zoom && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setZoom(null)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoom.photo} alt={zoom.name} className="max-h-[80vh] rounded-lg" />
+        </div>
+      )}
     </div>
   );
 }

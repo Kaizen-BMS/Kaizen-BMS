@@ -203,7 +203,7 @@ model lab_orders {
   id              BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
   tenant_id       BigInt            @db.UnsignedBigInt
   visit_id        BigInt?           @db.UnsignedBigInt
-  consultation_id BigInt            @db.UnsignedBigInt
+  consultation_id BigInt?           @db.UnsignedBigInt
   patient_id      BigInt            @db.UnsignedBigInt
   tests           String            @db.LongText
   custom_fields   String?           @db.LongText
@@ -215,8 +215,11 @@ model lab_orders {
   resulted_by     BigInt?           @db.UnsignedBigInt
   created_at      DateTime          @default(now())
   resulted_at     DateTime?
+  source          String            @default("DOCTOR") @db.VarChar(16)
+  referred_by     String?
+  bill_id         BigInt?           @db.UnsignedBigInt
   lab_order_items lab_order_items[]
-  consultations   consultations     @relation(fields: [consultation_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_consultation")
+  consultations   consultations?    @relation(fields: [consultation_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_consultation")
   patients        patients          @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_patient")
   tenants         tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_orders_tenant")
   visits          visits?           @relation(fields: [visit_id], references: [id], onUpdate: Restrict, map: "fk_lab_orders_visit")
@@ -462,6 +465,7 @@ model tenants {
   form_templates                                               form_templates[]
   lab_order_items                                              lab_order_items[]
   lab_orders                                                   lab_orders[]
+  lab_tests                                                    lab_tests[]
   leave_requests                                               leave_requests[]
   module_connections                                           module_connections[]
   module_instances                                             module_instances[]
@@ -709,14 +713,18 @@ model attendance_logs {
 }
 
 model staff_members {
-  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id   BigInt   @db.UnsignedBigInt
-  name        String
-  designation String?  @db.VarChar(100)
-  phone       String?  @db.VarChar(32)
-  active      Boolean  @default(true)
-  created_at  DateTime @default(now())
-  tenants     tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_staff_members_tenant")
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id    BigInt   @db.UnsignedBigInt
+  name         String
+  designation  String?  @db.VarChar(100)
+  phone        String?  @db.VarChar(32)
+  active       Boolean  @default(true)
+  created_at   DateTime @default(now())
+  address      String?  @db.VarChar(500)
+  native_place String?
+  aadhaar_no   String?  @db.VarChar(20)
+  photo_url    String?  @db.MediumText
+  tenants      tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_staff_members_tenant")
 
   @@index([tenant_id], map: "idx_staff_members_tenant")
   @@index([tenant_id, active], map: "idx_staff_members_tenant_active")
@@ -862,16 +870,21 @@ model leave_requests {
 }
 
 model staff_profiles {
-  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id   BigInt    @db.UnsignedBigInt
-  user_id     BigInt    @unique(map: "uq_staff_profiles_user") @db.UnsignedBigInt
-  join_date   DateTime? @db.Date
-  phone       String?   @db.VarChar(32)
-  designation String?   @db.VarChar(100)
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @default(now())
-  tenants     tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_staff_profiles_tenant")
-  users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_staff_profiles_user")
+  id                BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id         BigInt    @db.UnsignedBigInt
+  user_id           BigInt    @unique(map: "uq_staff_profiles_user") @db.UnsignedBigInt
+  join_date         DateTime? @db.Date
+  phone             String?   @db.VarChar(32)
+  designation       String?   @db.VarChar(100)
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @default(now())
+  address           String?   @db.VarChar(500)
+  native_place      String?
+  aadhaar_no        String?   @db.VarChar(20)
+  emergency_contact String?   @db.VarChar(64)
+  photo_url         String?   @db.MediumText
+  tenants           tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_staff_profiles_tenant")
+  users             users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_staff_profiles_user")
 
   @@index([tenant_id], map: "idx_staff_profiles_tenant")
 }
@@ -1013,6 +1026,7 @@ model services {
   bill_items                       bill_items[]
   consultations                    consultations[]
   lab_order_items                  lab_order_items[]
+  lab_tests                        lab_tests?
   prescription_items               prescription_items[]
   radiology_orders                 radiology_orders[]
   users_services_created_byTousers users?                @relation("services_created_byTousers", fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_services_created_by")
@@ -1563,6 +1577,22 @@ model audit_logs {
   @@index([tenant_id, feature], map: "idx_audit_tenant_feature")
   @@index([tenant_id, created_at], map: "idx_audit_tenant_time")
   @@index([tenant_id, user_id], map: "idx_audit_tenant_user")
+}
+
+model lab_tests {
+  id               BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id        BigInt   @db.UnsignedBigInt
+  service_id       BigInt   @unique(map: "uq_lab_tests_service") @db.UnsignedBigInt
+  sample_type      String?  @db.VarChar(60)
+  units            String?  @db.VarChar(64)
+  reference_range  String?
+  turnaround_hours Int?     @db.UnsignedInt
+  instructions     String?  @db.VarChar(255)
+  created_at       DateTime @default(now()) @db.DateTime(0)
+  services         services @relation(fields: [service_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_tests_service")
+  tenants          tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_lab_tests_tenant")
+
+  @@index([tenant_id], map: "idx_lab_tests_tenant")
 }
 
 enum beds_ward_type {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "./api";
+import PersonDetailsFields, { EMPTY_DETAILS, detailsPayload } from "./PersonDetailsFields";
 
 const ERR = {
   email_taken: "That email already has a login. Use a different email.",
@@ -15,6 +16,7 @@ export default function AddStaffForm({ onCreated }) {
   const [f, setF] = useState({ name: "", email: "", role: "", password: "" });
   const [msg, setMsg] = useState({ error: "", ok: "", temp: "" });
   const [busy, setBusy] = useState(false);
+  const [details, setDetails] = useState(EMPTY_DETAILS);
 
   useEffect(() => {
     apiGet("/api/staff/accounts").then((d) => {
@@ -28,9 +30,10 @@ export default function AddStaffForm({ onCreated }) {
     setBusy(true);
     setMsg({ error: "", ok: "", temp: "" });
     try {
-      const r = await apiSend("/api/staff/accounts", "POST", { name: f.name, email: f.email, role: f.role, ...(f.password ? { password: f.password } : {}) });
+      const r = await apiSend("/api/staff/accounts", "POST", { name: f.name, email: f.email, role: f.role, ...(f.password ? { password: f.password } : {}), ...detailsPayload(details) });
       setMsg({ error: "", ok: `Login created for ${r.account.name}.`, temp: r.tempPassword || "" });
       setF((x) => ({ ...x, name: "", email: "", password: "" }));
+      setDetails(EMPTY_DETAILS);
       onCreated?.();
     } catch (err) {
       setMsg({ error: ERR[err.message] || `Could not create (${err.message}).`, ok: "", temp: "" });
@@ -55,6 +58,10 @@ export default function AddStaffForm({ onCreated }) {
         <label className="text-xs"><span className="block text-slate-500">Password (blank = generate)</span><input type="text" minLength={8} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} className={input} autoComplete="off" /></label>
         <button disabled={busy || !f.role} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Create login</button>
       </div>
+      <details className="rounded-md border border-slate-200 p-3">
+        <summary className="cursor-pointer text-sm font-medium">Personal details &amp; photo (recommended)</summary>
+        <div className="mt-3"><PersonDetailsFields name={f.name} value={details} onChange={setDetails} /></div>
+      </details>
       <p className="text-xs text-slate-500">The role list only shows what this facility has (for example Pharmacist appears only if Pharmacy is on).</p>
       {msg.error && <p className="text-sm text-red-600">{msg.error}</p>}
       {msg.ok && (

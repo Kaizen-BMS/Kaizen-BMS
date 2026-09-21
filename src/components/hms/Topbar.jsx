@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Icon from "./icons";
-import { apiGet } from "./api";
+import { apiGet, apiSend } from "./api";
+import Avatar from "./Avatar";
+import { compressImageToDataUrl } from "./imageCompress";
 import CommandPalette from "./CommandPalette";
 import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
@@ -171,13 +173,24 @@ function ProfileMenu({ user }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
+  const [photo, setPhoto] = useState(null);
+  const fileRef = useRef(null);
   const ref = useRef(null);
-  const initials = (user.name || "?")
-    .split(" ")
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+
+  useEffect(() => {
+    if (!user.tenantName) return;
+    apiGet("/api/me/photo").then((d) => setPhoto(d.photo)).catch(() => {});
+  }, [user.tenantName]);
+
+  async function onPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const url = await compressImageToDataUrl(file, 360, 0.72);
+    await apiSend("/api/me/photo", "PUT", { photoDataUrl: url });
+    setPhoto(url);
+    setOpen(false);
+  }
 
   useEffect(() => {
     const onDoc = (e) => {
@@ -194,12 +207,10 @@ function ProfileMenu({ user }) {
 
   return (
     <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="grid h-8 w-8 place-items-center rounded-full bg-[var(--hms-accent-soft)] text-xs font-semibold text-[var(--hms-accent)]"
-      >
-        {initials}
+      <button onClick={() => setOpen((o) => !o)} className="rounded-full" aria-label="Profile">
+        <Avatar name={user.name} src={photo} size={32} />
       </button>
+      <input ref={fileRef} type="file" accept="image/*" capture="user" className="hidden" onChange={onPhoto} />
       {open && (
         <div
           className="absolute right-0 top-full mt-1.5 w-56 overflow-hidden rounded-md border bg-white py-1 shadow-lg"
@@ -224,6 +235,11 @@ function ProfileMenu({ user }) {
           >
             Change password
           </button>
+          {user.tenantName && (
+            <button onClick={() => fileRef.current?.click()} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--hms-ink-soft)] hover:bg-slate-50">
+              {photo ? "Change my photo" : "Add my photo"}
+            </button>
+          )}
           <button
             onClick={logout}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--hms-ink-soft)] hover:bg-slate-50"
