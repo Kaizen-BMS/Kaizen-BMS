@@ -53,9 +53,21 @@ function clearAccessCache() {
   cache.clear();
 }
 
-/** A session may act in its tenant if that is the user's home tenant, or the user currently owns it. */
+async function userIsActive(userId) {
+  const key = `active:${userId}`;
+  const hit = cache.get(key);
+  if (hit && hit.exp > Date.now()) return hit.ok;
+  const u = await prisma.users.findUnique({ where: { id: toId(userId) }, select: { active: true } });
+  const ok = !!u && u.active !== false;
+  cache.set(key, { ok, exp: Date.now() + CACHE_TTL_MS });
+  return ok;
+}
+
+/** A session may act in its tenant if that is the user's home tenant, or the user currently owns it — and the login itself is still switched on. */
 async function sessionFacilityOk(session) {
-  if (!session || session.tenantId == null) return true;
+  if (!session) return true;
+  if (session.userId != null && !(await userIsActive(session.userId))) return false;
+  if (session.tenantId == null) return true;
   if (session.homeTenantId == null || session.homeTenantId === session.tenantId) return true;
   return ownsTenant(session.userId, session.tenantId);
 }

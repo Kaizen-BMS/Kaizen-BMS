@@ -504,6 +504,7 @@ model users {
   password_hash                                                String                       @db.VarChar(255)
   role                                                         users_role
   created_at                                                   DateTime                     @default(now())
+  active                                                       Boolean                      @default(true)
   admissions                                                   admissions[]
   appointments                                                 appointments[]
   attendance_logs                                              attendance_logs[]

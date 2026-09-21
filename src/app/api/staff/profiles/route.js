@@ -4,7 +4,7 @@ import { requireTenantId } from "@/lib/requestContext";
 
 export const dynamic = "force-dynamic";
 
-const STAFF_ROLES = ["HOSPITAL_ADMIN", "DOCTOR", "NURSE", "PHARMACIST", "LAB_TECH", "BILLING_STAFF", "RECEPTIONIST"];
+const STAFF_ROLES = ["HOSPITAL_ADMIN", "DOCTOR", "NURSE", "PHARMACIST", "LAB_TECH", "BILLING_STAFF", "RECEPTIONIST", "RADIOLOGY_STAFF"];
 
 // The staff directory: every login account at this tenant, left-joined
 // with its optional staff_profiles row (join date/phone/designation —
@@ -15,7 +15,7 @@ const STAFF_ROLES = ["HOSPITAL_ADMIN", "DOCTOR", "NURSE", "PHARMACIST", "LAB_TEC
 export const GET = apiRoute("staff:manage", async (_request, { session }) => {
   const users = await prisma.users.findMany({
     where: { tenant_id: BigInt(session.tenantId), role: { in: STAFF_ROLES } },
-    select: { id: true, name: true, email: true, role: true, created_at: true },
+    select: { id: true, name: true, email: true, role: true, created_at: true, active: true },
     orderBy: { name: "asc" },
   });
 
@@ -31,6 +31,7 @@ export const GET = apiRoute("staff:manage", async (_request, { session }) => {
       name: u.name,
       email: u.email,
       role: u.role,
+      active: u.active !== false,
       joinDate: p?.join_date ?? null,
       phone: p?.phone ?? null,
       designation: p?.designation ?? null,

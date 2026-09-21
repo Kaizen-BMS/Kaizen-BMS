@@ -38,11 +38,11 @@ export async function POST(request) {
   const user = tenantSlug
     ? await prisma.users.findFirst({
         where: { email, tenants: { slug: tenantSlug } },
-        select: { id: true, tenant_id: true, name: true, email: true, password_hash: true, role: true },
+        select: { id: true, tenant_id: true, name: true, email: true, password_hash: true, role: true, active: true },
       })
     : await prisma.users.findFirst({
         where: { email },
-        select: { id: true, tenant_id: true, name: true, email: true, password_hash: true, role: true },
+        select: { id: true, tenant_id: true, name: true, email: true, password_hash: true, role: true, active: true },
       });
 
   const ok = await verifyPassword(password, user?.password_hash);
@@ -52,6 +52,9 @@ export async function POST(request) {
     // Generic message — don't reveal whether the email exists.
     return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
   }
+
+  // Correct password, but the login was switched off by the admin.
+  if (user.active === false) return NextResponse.json({ error: "account_disabled" }, { status: 403 });
 
   // A suspended tenant blocks every login immediately — apiRoute()/
   // guardPage() also re-check this on every later request, but the login

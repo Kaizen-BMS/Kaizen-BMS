@@ -49,7 +49,7 @@ export default function TenantDetailClient({ tenantId }) {
   if (!tenant) return <p className="text-sm text-slate-400">{msg || "Loading…"}</p>;
 
   const activeSet = new Set(tenant.modules.filter((m) => m.is_active).map((m) => m.module_name));
-  const applicableModules = tenant.type === "HOSPITAL" ? ALL_MODULES : ALL_MODULES.filter((m) => activeSet.has(m));
+  const applicableModules = tenant.type === "HOSPITAL" ? ALL_MODULES : ALL_MODULES.filter((m) => activeSet.has(m) || m === "BILLING");
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -73,7 +73,7 @@ export default function TenantDetailClient({ tenantId }) {
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <p className="text-sm font-semibold">Modules</p>
         <p className="text-xs text-slate-500">
-          {tenant.type === "HOSPITAL" ? "Toggle any combination." : "Solo tenants run exactly one module — toggle off suspends it entirely."}
+          {tenant.type === "HOSPITAL" ? "Toggle any combination." : "Individual packs run one main module; Billing can be added on top."}
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
           {applicableModules.map((m) => (

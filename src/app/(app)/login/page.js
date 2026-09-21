@@ -11,6 +11,7 @@ const ERRORS = {
   invalid_input: "Please check the form and try again.",
   too_many_attempts: "Too many attempts. Wait 15 minutes and try again.",
   unauthorized: "Session expired. Please sign in again.",
+  account_disabled: "This login has been switched off. Please contact your admin.",
   tenant_suspended: "This hospital's account is currently suspended. Contact Kaizen support.",
 };
 

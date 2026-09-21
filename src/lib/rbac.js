@@ -203,6 +203,22 @@ const OWNER_EXTRAS = [
   // Partner organizations (two-sided connection consent) — an owner runs
   // their own facility's partnerships; HOSPITAL_ADMIN via the wildcard.
   "partner:manage",
+  // Their own staff, attendance and billing (the solo pack has no separate admin).
+  "staff:manage",
+  "staffroster:read",
+  "leaverequest:create",
+  "attendance:self",
+  "attendance:proxy",
+  "staffmember:read",
+  "staffmember:manage",
+  "bill:create",
+  "bill:read",
+  "bill:update",
+  "reports:view",
+  "service:read",
+  "tariff:read",
+  "service:manage",
+  "tariff:manage",
 ];
 
 const PERMISSIONS = {

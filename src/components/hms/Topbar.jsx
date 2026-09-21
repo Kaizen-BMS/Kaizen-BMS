@@ -8,6 +8,7 @@ import CommandPalette from "./CommandPalette";
 import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
 import FacilitySwitcher from "./FacilitySwitcher";
+import ChangePassword from "./ChangePassword";
 
 export default function Topbar({ user, navItems, onSidebarToggle }) {
   const router = useRouter();
@@ -151,6 +152,7 @@ function GlobalSearch({ onNavigate }) {
 function ProfileMenu({ user }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [changingPw, setChangingPw] = useState(false);
   const ref = useRef(null);
   const initials = (user.name || "?")
     .split(" ")
@@ -196,6 +198,15 @@ function ProfileMenu({ user }) {
             </p>
           </div>
           <button
+            onClick={() => {
+              setOpen(false);
+              setChangingPw(true);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--hms-ink-soft)] hover:bg-slate-50"
+          >
+            Change password
+          </button>
+          <button
             onClick={logout}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--hms-ink-soft)] hover:bg-slate-50"
           >
@@ -203,6 +214,7 @@ function ProfileMenu({ user }) {
           </button>
         </div>
       )}
+      {changingPw && <ChangePassword onClose={() => setChangingPw(false)} />}
     </div>
   );
 }

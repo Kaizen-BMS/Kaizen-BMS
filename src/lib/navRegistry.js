@@ -40,7 +40,7 @@ const NAV = [
   { key: "radiology", label: "Radiology", section: "CLINICAL", route: "/dashboard/radiology", icon: "radiology", action: "radiology:read", modules: ["RADIOLOGY"], status: "live" },
 
   // ── Operations ──
-  { key: "attendance", label: "Attendance", section: "OPERATIONS", route: "/dashboard/attendance", icon: "attendance", action: "attendance:self", tenantTypes: ["HOSPITAL"], status: "live" },
+  { key: "attendance", label: "Attendance", section: "OPERATIONS", route: "/dashboard/attendance", icon: "attendance", action: "attendance:self", status: "live" },
   { key: "registration", label: "Registration", section: "OPERATIONS", route: "/dashboard/registration", icon: "registration", action: "visit:create", tenantTypes: ["HOSPITAL", "DOCTOR_SOLO"], status: "live" },
   { key: "billing", label: "Billing", section: "OPERATIONS", route: "/dashboard/billing", icon: "billing", action: "bill:create", modules: ["BILLING"], status: "live" },
   { key: "appointments", label: "Appointments", section: "OPERATIONS", route: "/dashboard/appointments", icon: "appointments", action: "appointment:read", modules: ["APPOINTMENTS"], status: "live" },
@@ -48,7 +48,7 @@ const NAV = [
   { key: "analytics", label: "Analytics", section: "OPERATIONS", route: "/dashboard/analytics", icon: "reports", action: "analytics:view", status: "live" },
 
   // ── Administration (admin / owner only) ──
-  { key: "staff", label: "Staff Management", section: "ADMINISTRATION", route: "/dashboard/staff", icon: "staff", action: "staffroster:read", tenantTypes: ["HOSPITAL"], status: "live" },
+  { key: "staff", label: "Staff Management", section: "ADMINISTRATION", route: "/dashboard/staff", icon: "staff", action: "staffroster:read", status: "live" },
   { key: "forms", label: "Form Builder", section: "ADMINISTRATION", route: "/dashboard/admin/forms", icon: "forms", action: "formtemplate:manage", adminOnly: true, status: "live" },
   { key: "pricing", label: "Pricing", section: "ADMINISTRATION", route: "/dashboard/admin/pricing", icon: "billing", action: "service:manage", modules: ["BILLING"], adminOnly: true, status: "live" },
   { key: "myOrganizations", label: "My Facilities", section: "ADMINISTRATION", route: "/dashboard/admin/organizations", icon: "tenants", action: "partner:manage", adminOnly: true, status: "live" },

@@ -13,7 +13,7 @@ const TYPES = [
 const HOSPITAL_MODULES = ["DOCTOR_OPD", "PHARMACY", "LAB", "IPD", "BILLING", "APPOINTMENTS"];
 
 export default function CreateTenantClient() {
-  const [form, setForm] = useState({ name: "", slug: "", type: "HOSPITAL", modules: [], ownerName: "", ownerEmail: "" });
+  const [form, setForm] = useState({ name: "", slug: "", type: "HOSPITAL", modules: [], ownerName: "", ownerEmail: "", ownerPassword: "", withBilling: false });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState(null);
@@ -30,7 +30,8 @@ export default function CreateTenantClient() {
     setBusy(true);
     setError("");
     try {
-      const { tenant, owner } = await apiSend("/api/admin/tenants", "POST", form);
+      const { ownerPassword, ...rest } = form;
+      const { tenant, owner } = await apiSend("/api/admin/tenants", "POST", { ...rest, ...(ownerPassword ? { ownerPassword } : {}) });
       setCreated({ tenant, owner });
     } catch (err) {
       setError(err.message);
@@ -48,12 +49,16 @@ export default function CreateTenantClient() {
           <p className="text-slate-600">/{created.tenant.slug} · {created.tenant.type}</p>
           <p className="mt-3 font-semibold">Owner login — share these once, they won&apos;t be shown again:</p>
           <p className="mt-1">Email: <span className="font-mono">{created.owner.email}</span></p>
-          <p>Temp password: <span className="font-mono">{created.owner.tempPassword}</span></p>
+          {created.owner.tempPassword ? (
+            <p>Temp password: <span className="font-mono">{created.owner.tempPassword}</span></p>
+          ) : (
+            <p>Password: the one you set (the owner can change it any time).</p>
+          )}
         </div>
         <div className="flex gap-3 text-sm">
           <Link href="/dashboard/platform/tenants" className="text-slate-600 underline">Back to tenants</Link>
           <button
-            onClick={() => { setCreated(null); setForm({ name: "", slug: "", type: "HOSPITAL", modules: [], ownerName: "", ownerEmail: "" }); }}
+            onClick={() => { setCreated(null); setForm({ name: "", slug: "", type: "HOSPITAL", modules: [], ownerName: "", ownerEmail: "", ownerPassword: "", withBilling: false }); }}
             className="text-slate-600 underline"
           >
             Create another
@@ -101,6 +106,13 @@ export default function CreateTenantClient() {
         )}
         <Field label="Owner name" value={form.ownerName} onChange={(v) => setForm((s) => ({ ...s, ownerName: v }))} required />
         <Field label="Owner email" type="email" value={form.ownerEmail} onChange={(v) => setForm((s) => ({ ...s, ownerEmail: v }))} required />
+        <Field label="Owner password (optional — leave blank to generate one)" value={form.ownerPassword} onChange={(v) => setForm((s) => ({ ...s, ownerPassword: v }))} />
+        {form.type !== "HOSPITAL" && (
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={form.withBilling} onChange={(e) => setForm((s) => ({ ...s, withBilling: e.target.checked }))} />
+            Include Billing (walk-in bills, payments, receipts)
+          </label>
+        )}
         <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
           {busy ? "Creating…" : "Create tenant"}
         </button>

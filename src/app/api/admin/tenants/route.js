@@ -55,6 +55,10 @@ const createSchema = z
     ownerEmail: z.string().trim().email().max(191),
     // Optional: attach the new facility to an existing organization (one owner, several facilities).
     organizationId: z.coerce.number().int().positive().optional(),
+    // Optional: the owner's own chosen password (otherwise one is generated and shown once).
+    ownerPassword: z.string().min(8).max(200).optional().or(z.literal("")),
+    // Solo packs may add Billing (a hospital just lists it in modules).
+    withBilling: z.boolean().optional(),
   })
   .refine((b) => b.type !== "HOSPITAL" || b.modules.length > 0, {
     message: "select at least one module for a HOSPITAL tenant",
@@ -67,13 +71,13 @@ const createSchema = z
 export const POST = apiRoute("tenant:manage", async (request) => {
   const body = await parseBody(request, createSchema);
 
-  const modules = body.type === "HOSPITAL" ? body.modules : [SOLO_TYPE_MODULE[body.type]];
+  const modules = body.type === "HOSPITAL" ? body.modules : [SOLO_TYPE_MODULE[body.type], ...(body.withBilling ? ["BILLING"] : [])];
   const ownerRole = body.type === "HOSPITAL" ? "HOSPITAL_ADMIN" : SOLO_TYPE_OWNER_ROLE[body.type];
 
   const existingSlug = await prisma.tenants.findUnique({ where: { slug: body.slug }, select: { id: true } });
   if (existingSlug) throw new HttpError(409, "slug_taken");
 
-  const tempPassword = randomTempPassword();
+  const tempPassword = body.ownerPassword || randomTempPassword();
   const passwordHash = await hashPassword(tempPassword);
 
   // Resolved before the transaction so the remote-DB round trips do not eat its timeout.
@@ -122,7 +126,7 @@ export const POST = apiRoute("tenant:manage", async (request) => {
   return json(
     {
       tenant: { ...tenant, activeModules: modules },
-      owner: { id: owner.id, name: owner.name, email: owner.email, role: owner.role, tempPassword },
+      owner: { id: owner.id, name: owner.name, email: owner.email, role: owner.role, ...(body.ownerPassword ? { passwordSetByAdmin: true } : { tempPassword }) },
     },
     201,
   );

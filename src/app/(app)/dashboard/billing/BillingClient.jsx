@@ -11,6 +11,81 @@ const STATUS_STYLE = {
   REFUNDED: "bg-red-100 text-red-700",
 };
 
+function WalkInBill({ onCreated, onError }) {
+  const [f, setF] = useState({ customerName: "", phone: "" });
+  const [items, setItems] = useState([{ description: "", quantity: 1, unitPrice: "" }]);
+  const [busy, setBusy] = useState(false);
+  const [prices, setPrices] = useState([]);
+  useEffect(() => {
+    apiGet("/api/billing/price-list").then((d) => setPrices(d.items || [])).catch(() => {});
+  }, []);
+  const total = items.reduce((a, i) => {
+    const line = (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0);
+    return a + (i.serviceId && i.taxPercent && !i.taxInclusive ? line * (1 + i.taxPercent / 100) : line);
+  }, 0);
+  const upd = (idx, patch) => setItems((xs) => xs.map((x, j) => (j === idx ? { ...x, ...patch } : x)));
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const { bill } = await apiSend("/api/billing/walk-in", "POST", {
+        customerName: f.customerName,
+        ...(f.phone ? { phone: f.phone } : {}),
+        items: items
+          .filter((i) => i.serviceId || i.description.trim())
+          .map((i) => (i.serviceId ? { serviceId: i.serviceId, quantity: Number(i.quantity) } : { description: i.description, quantity: Number(i.quantity), unitPrice: Number(i.unitPrice) })),
+      });
+      setF({ customerName: "", phone: "" });
+      setItems([{ description: "", quantity: 1, unitPrice: "" }]);
+      onCreated(bill.id);
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
+  return (
+    <form onSubmit={submit} className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
+      <p className="text-sm font-semibold">New bill (walk-in customer)</p>
+      <div className="flex flex-wrap gap-2">
+        <input required placeholder="Customer name" value={f.customerName} onChange={(e) => setF({ ...f, customerName: e.target.value })} className={input} />
+        <input placeholder="Phone (optional)" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} className={input} />
+      </div>
+      {prices.length > 0 && (
+        <select
+          aria-label="Add from price list"
+          value=""
+          onChange={(e) => {
+            const p = prices.find((x) => String(x.serviceId) === e.target.value);
+            if (!p) return;
+            const row = { description: p.name, quantity: 1, unitPrice: p.price, serviceId: p.serviceId, taxPercent: p.taxPercent, taxInclusive: p.taxInclusive };
+            setItems((xs) => (xs.length === 1 && !xs[0].description && !xs[0].unitPrice ? [row] : [...xs, row]));
+          }}
+          className={input}
+        >
+          <option value="">Add from price list…</option>
+          {prices.map((p) => <option key={p.serviceId} value={p.serviceId}>{p.name} — ₹{p.price}{p.taxPercent ? ` (+${p.taxPercent}% GST)` : ""}</option>)}
+        </select>
+      )}
+      {items.map((it, idx) => (
+        <div key={idx} className="flex flex-wrap items-center gap-2">
+          <input placeholder="Item / medicine / test" value={it.description} readOnly={!!it.serviceId} onChange={(e) => upd(idx, { description: e.target.value })} className={`${input} min-w-[12rem] flex-1`} />
+          <input type="number" min="0.01" step="any" value={it.quantity} onChange={(e) => upd(idx, { quantity: e.target.value })} className={`${input} w-20`} aria-label="Quantity" />
+          <input type="number" min="0" step="any" placeholder="₹ price" value={it.unitPrice} readOnly={!!it.serviceId} onChange={(e) => upd(idx, { unitPrice: e.target.value })} className={`${input} w-28`} />
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" onClick={() => setItems((xs) => [...xs, { description: "", quantity: 1, unitPrice: "" }])} className="rounded-md border border-slate-300 px-2 py-1 text-xs">+ item</button>
+        <span className="text-sm font-medium">Total ₹{total.toFixed(2)}</span>
+        <button disabled={busy || total <= 0 && !items.some((i) => i.description.trim())} className="ml-auto rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Create bill</button>
+      </div>
+    </form>
+  );
+}
+
 export default function BillingClient({ permissions }) {
   const [bills, setBills] = useState([]);
   const [openId, setOpenId] = useState(null);
@@ -80,7 +155,11 @@ export default function BillingClient({ permissions }) {
       </div>
       {msg && <p className="text-sm text-red-600">{msg}</p>}
 
-      {permissions.canCreate && (
+      {permissions.canCreate && permissions.soloWalkIn && (
+        <WalkInBill onError={setMsg} onCreated={async (id) => { await loadList(); openBill(id); }} />
+      )}
+
+      {permissions.canCreate && !permissions.soloWalkIn && (
         <form onSubmit={createOpdBill} className="flex items-end gap-2 rounded-lg border border-slate-200 bg-white p-4">
           <div>
             <p className="text-sm font-semibold">Create OPD bill</p>

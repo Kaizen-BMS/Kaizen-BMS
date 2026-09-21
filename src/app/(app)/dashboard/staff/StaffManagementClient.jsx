@@ -2,6 +2,7 @@
 
 
 import ResetPasswordButton from "@/components/hms/ResetPasswordButton";
+import AddStaffForm from "@/components/hms/AddStaffForm";
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
@@ -40,7 +41,7 @@ export default function StaffManagementClient({ canManage, canProxyAttendance, o
         ))}
       </div>
 
-      {tab === "directory" && canManage && <DirectoryTab />}
+      {tab === "directory" && canManage && <DirectoryTab ownUserId={ownUserId} />}
       {tab === "roster" && <DutyRosterTab canManage={canManage} />}
       {tab === "leave" && <LeaveRequestsTab canManage={canManage} ownUserId={ownUserId} />}
       {tab === "attendance" && <AttendanceClient canProxy={canProxyAttendance} canManageStaff={canManage} />}
@@ -49,7 +50,7 @@ export default function StaffManagementClient({ canManage, canProxyAttendance, o
   );
 }
 
-function DirectoryTab() {
+function DirectoryTab({ ownUserId }) {
   const [staff, setStaff] = useState(null);
   const [msg, setMsg] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -64,6 +65,16 @@ function DirectoryTab() {
   useEffect(() => {
     load().catch((e) => setMsg(e.message));
   }, []);
+
+  async function toggleActive(s) {
+    setMsg("");
+    try {
+      await apiSend(`/api/staff/accounts/${s.userId}`, "PATCH", { active: !s.active });
+      await load();
+    } catch (err) {
+      setMsg(err.message === "cannot_disable_owner" ? "An owner's login cannot be switched off." : err.message);
+    }
+  }
 
   function startEdit(s) {
     setEditingId(s.userId);
@@ -88,6 +99,8 @@ function DirectoryTab() {
   if (!staff) return <p className="text-sm text-slate-400">Loading…</p>;
 
   return (
+    <div className="space-y-3">
+    <AddStaffForm onCreated={load} />
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
       <table className="w-full text-sm">
         <thead>
@@ -139,7 +152,7 @@ function DirectoryTab() {
                 </>
               ) : (
                 <>
-                  <td className="px-3 py-2">{s.name}<p className="text-xs text-slate-400">{s.email}</p></td>
+                  <td className="px-3 py-2">{s.name}{!s.active && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">switched off</span>}<p className="text-xs text-slate-400">{s.email}</p></td>
                   <td className="px-3 py-2 text-slate-500">{s.role}</td>
                   <td className="px-3 py-2">{s.designation || "—"}</td>
                   <td className="px-3 py-2">{s.phone || "—"}</td>
@@ -147,6 +160,11 @@ function DirectoryTab() {
                   <td className="px-3 py-2">
                     <button onClick={() => startEdit(s)} className="mr-3 text-xs text-slate-400 hover:text-slate-700">edit</button>
                     <ResetPasswordButton userId={s.userId} name={s.name} />
+                    {s.userId !== ownUserId && (
+                      <button onClick={() => toggleActive(s)} className={`ml-3 text-xs underline ${s.active ? "text-red-600" : "text-emerald-700"}`}>
+                        {s.active ? "Switch off" : "Switch on"}
+                      </button>
+                    )}
                   </td>
                 </>
               )}
@@ -154,6 +172,7 @@ function DirectoryTab() {
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }
