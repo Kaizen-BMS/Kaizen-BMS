@@ -33,7 +33,7 @@ export const GET = apiRoute("appointment:read", async (request, { session }) => 
 
   const doctorWhere = doctorIdParam
     ? { doctor_user_id: BigInt(doctorIdParam) }
-    : session.role === "DOCTOR"
+    : session.role === "DOCTOR" || session.role === "OWNER_DOCTOR"
       ? { doctor_user_id: BigInt(session.userId) }
       : {};
 

@@ -263,3 +263,18 @@ select:disabled {
     color-scheme: dark;
   }
 }
+
+/* Text-only buttons (underlined links-that-are-buttons, grey "edit" words, …) get a
+   proper button look so they are obviously clickable. Buttons that already carry a
+   background, border or rounded shape keep their own styling. */
+.hms-shell button:not([class*="bg-"]):not([class*="border"]):not([class*="rounded"]):not([aria-label="Close"]):not(.hms-plain) {
+  border: 1px solid var(--hms-border-strong, var(--hms-border));
+  border-radius: 6px;
+  padding: 2px 10px;
+  text-decoration: none;
+  font-weight: 500;
+  background-color: var(--color-white);
+}
+.hms-shell button:not([class*="bg-"]):not([class*="border"]):not([class*="rounded"]):not([aria-label="Close"]):not(.hms-plain):hover:not(:disabled) {
+  background-color: var(--color-slate-100);
+}

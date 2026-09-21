@@ -175,12 +175,13 @@ function LiveBadge({ at }) {
 export default function DashboardClient() {
   const [data, setData] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [days, setDays] = useState(7);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
   const debounceRef = useRef(null);
 
   const load = useCallback(() => {
-    apiGet("/api/dashboard/overview")
+    apiGet(`/api/dashboard/overview?days=${days}`)
       .then((d) => {
         setData(d);
         setUpdatedAt(Date.now());
@@ -188,7 +189,7 @@ export default function DashboardClient() {
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }, [days]);
 
   useEffect(() => {
     load();
@@ -226,7 +227,7 @@ export default function DashboardClient() {
   }
 
   if (data.scope === "PLATFORM") return <PlatformDashboard data={data} />;
-  return <TenantDashboard data={data} updatedAt={updatedAt} />;
+  return <TenantDashboard data={data} updatedAt={updatedAt} days={days} setDays={setDays} />;
 }
 
 function PlatformDashboard({ data }) {
@@ -282,7 +283,27 @@ function PlatformDashboard({ data }) {
   );
 }
 
-function TenantDashboard({ data, updatedAt }) {
+function Slicer({ days, setDays }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+      <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Period</span>
+      {[[7, "Last 7 days"], [14, "14 days"], [30, "30 days"], [90, "90 days"]].map(([d, l]) => (
+        <button
+          key={d}
+          onClick={() => setDays(d)}
+          className={`rounded-full px-3 py-1 text-xs font-medium ${days === d ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+        >
+          {l}
+        </button>
+      ))}
+      <span className="ml-auto text-xs text-slate-400">Charts and totals follow the period you pick</span>
+    </div>
+  );
+}
+
+const sum = (rows) => (rows || []).reduce((a, r) => a + Number(r.value || 0), 0);
+
+function TenantDashboard({ data, updatedAt, days, setDays }) {
   const has = (k) => data.widgets.includes(k);
   const failed = (k) => data.failedWidgets?.includes(k);
   const money = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
@@ -313,6 +334,17 @@ function TenantDashboard({ data, updatedAt }) {
         </div>
       )}
 
+      {data.charts && <Slicer days={days} setDays={setDays} />}
+
+      {data.charts && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <KpiCard label={`Visits · ${days} days`} value={sum(data.charts.patientVisits)} />
+          {data.charts.appointments && <KpiCard label={`Appointments booked · ${days} days`} value={sum(data.charts.appointments)} />}
+          {data.charts.revenue && <KpiCard label={`Collected · ${days} days`} value={money(sum(data.charts.revenue))} />}
+          <KpiCard label="Busiest day (visits)" value={(() => { const r = [...(data.charts.patientVisits || [])].sort((a, b) => b.value - a.value)[0]; return r && r.value ? `${r.date.slice(5)} · ${r.value}` : "—"; })()} />
+        </div>
+      )}
+
       {(data.patientFlow || data.appointments || data.charts) && (
         <div className="grid gap-4 lg:grid-cols-3">
           {data.patientFlow && (
@@ -335,7 +367,7 @@ function TenantDashboard({ data, updatedAt }) {
             </SectionCard>
           )}
           {data.charts?.patientVisits && (
-            <SectionCard title="Visits — last 7 days">
+            <SectionCard title={`Visits — last ${days} days`}>
               <MiniBarChart data={data.charts.patientVisits} />
             </SectionCard>
           )}

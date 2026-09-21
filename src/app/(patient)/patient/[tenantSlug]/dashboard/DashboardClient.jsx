@@ -1,5 +1,7 @@
 "use client";
 
+import { wall } from "@/lib/wallClock";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -33,7 +35,7 @@ const TABS = [
 ];
 
 function fmtDateTime(iso) {
-  return iso ? new Date(iso).toLocaleString() : "—";
+  return iso ? wall(iso).toLocaleString() : "—";
 }
 function fmtDate(iso) {
   return iso ? new Date(iso).toLocaleDateString() : "—";
@@ -187,8 +189,8 @@ function AppointmentsList({ state, busyId, onCancel }) {
   const fallback = <TabState state={state} emptyLabel="No appointments yet." />;
   if (fallback) return fallback;
   const now = Date.now();
-  const upcoming = state.items.filter((a) => new Date(a.slotTime).getTime() >= now && a.status !== "CANCELLED");
-  const past = state.items.filter((a) => !(new Date(a.slotTime).getTime() >= now && a.status !== "CANCELLED"));
+  const upcoming = state.items.filter((a) => wall(a.slotTime).getTime() >= now && a.status !== "CANCELLED");
+  const past = state.items.filter((a) => !(wall(a.slotTime).getTime() >= now && a.status !== "CANCELLED"));
   return (
     <div className="space-y-4">
       <div>

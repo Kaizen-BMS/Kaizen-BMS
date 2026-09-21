@@ -1,6 +1,7 @@
 "use strict";
 
 const { can } = require("./rbac");
+const { NAV_FEATURE } = require("./featureAccess");
 
 /**
  * Single source of truth for dashboard navigation. The sidebar, command
@@ -43,16 +44,18 @@ const NAV = [
   { key: "attendance", label: "Attendance", section: "OPERATIONS", route: "/dashboard/attendance", icon: "attendance", action: "attendance:self", status: "live" },
   { key: "registration", label: "Registration", section: "OPERATIONS", route: "/dashboard/registration", icon: "registration", action: "visit:create", tenantTypes: ["HOSPITAL", "DOCTOR_SOLO"], status: "live" },
   { key: "billing", label: "Billing", section: "OPERATIONS", route: "/dashboard/billing", icon: "billing", action: "bill:create", modules: ["BILLING"], status: "live" },
+  { key: "todayAppointments", label: "Today's Appointments", section: "OPERATIONS", route: "/dashboard/appointments/today", icon: "appointments", action: "appointment:read", modules: ["APPOINTMENTS"], status: "live" },
   { key: "appointments", label: "Appointments", section: "OPERATIONS", route: "/dashboard/appointments", icon: "appointments", action: "appointment:read", modules: ["APPOINTMENTS"], status: "live" },
   { key: "reports", label: "Reports", section: "OPERATIONS", route: "/dashboard/reports", icon: "reports", action: "reports:view", modules: ["BILLING"], status: "live" },
   { key: "analytics", label: "Analytics", section: "OPERATIONS", route: "/dashboard/analytics", icon: "reports", action: "analytics:view", status: "live" },
 
   // ── Administration (admin / owner only) ──
   { key: "staff", label: "Staff Management", section: "ADMINISTRATION", route: "/dashboard/staff", icon: "staff", action: "staffroster:read", status: "live" },
-  { key: "forms", label: "Form Builder", section: "ADMINISTRATION", route: "/dashboard/admin/forms", icon: "forms", action: "formtemplate:manage", adminOnly: true, status: "live" },
+  { key: "forms", label: "Form Builder", section: "ADMINISTRATION", route: "/dashboard/admin/forms", icon: "forms", action: "formtemplate:manage", adminOnly: true, tenantTypes: ["HOSPITAL", "DOCTOR_SOLO"], status: "live" },
   { key: "pricing", label: "Pricing", section: "ADMINISTRATION", route: "/dashboard/admin/pricing", icon: "billing", action: "service:manage", modules: ["BILLING"], adminOnly: true, status: "live" },
   { key: "myOrganizations", label: "My Facilities", section: "ADMINISTRATION", route: "/dashboard/admin/organizations", icon: "tenants", action: "partner:manage", adminOnly: true, status: "live" },
   { key: "partnerOrganizations", label: "Partners", section: "ADMINISTRATION", route: "/dashboard/admin/partners", icon: "registry", action: "partner:manage", adminOnly: true, status: "live" },
+  { key: "activityLog", label: "Activity Log", section: "ADMINISTRATION", route: "/dashboard/admin/activity-log", icon: "reports", action: "staff:manage", status: "live" },
   { key: "settings", label: "Settings", section: "ADMINISTRATION", route: "/dashboard/admin/settings", icon: "forms", action: "formtemplate:manage", adminOnly: true, status: "live" },
   { key: "branding", label: "Branding", section: "ADMINISTRATION", route: "/dashboard/branding", icon: "branding", action: "branding:read", adminOnly: false, status: "live" },
 
@@ -93,6 +96,8 @@ function visibleNav(ctx) {
     }
 
     if (n.action && !can(ctx.role, n.action)) return false;
+    // Features the admin switched off for this person disappear from their menu.
+    if (ctx.deny && ctx.deny.length && NAV_FEATURE[n.key] && ctx.deny.includes(NAV_FEATURE[n.key])) return false;
     return true;
   });
 }

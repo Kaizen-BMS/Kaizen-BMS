@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { apiGet } from "./api";
+import { wall } from "@/lib/wallClock";
 
 const fmt = (d) => new Date(d).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+const fmtWall = (d) => wall(d).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 // "How many times has this patient come, and what happened each time."
 export default function PatientHistory({ patientId, currentVisitId, defaultOpen = false, children }) {
@@ -29,7 +31,7 @@ export default function PatientHistory({ patientId, currentVisitId, defaultOpen 
       </div>
       {data.upcomingAppointments.length > 0 && (
         <p className="mt-1 text-xs text-emerald-700">
-          Upcoming: {data.upcomingAppointments.map((a) => fmt(a.at)).join(" · ")}
+          Upcoming: {data.upcomingAppointments.map((a) => fmtWall(a.at)).join(" · ")}
         </p>
       )}
       {children}

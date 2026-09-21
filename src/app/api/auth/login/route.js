@@ -5,6 +5,7 @@ import { verifyPassword, signSession } from "@/lib/auth";
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "@/lib/authConstants";
 import { listFacilitiesForUser } from "@/lib/orgAccess";
 import { loginRateCheck, loginRateHit, loginRateReset } from "@/lib/rateLimit";
+import { logActivity } from "@/lib/audit";
 
 const bodySchema = z.object({
   email: z.string().trim().toLowerCase().email().max(191),
@@ -83,6 +84,7 @@ export async function POST(request) {
   const userId = Number(user.id);
 
   const token = signSession({ userId, tenantId, role: sessionRole, homeTenantId });
+  if (tenantId != null) logActivity({ session: { userId, tenantId, role: sessionRole }, method: "POST", path: "/api/auth/login", status: 200, summary: "Signed in", feature: "account" });
 
   const res = NextResponse.json({
     user: {

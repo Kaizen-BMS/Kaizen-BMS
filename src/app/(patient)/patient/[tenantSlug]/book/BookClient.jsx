@@ -1,5 +1,7 @@
 "use client";
 
+
+import { wall } from "@/lib/wallClock";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
@@ -128,8 +130,8 @@ export default function BookClient({ tenantSlug, profiles }) {
   }
 
   const days = view === "day" ? [anchor] : Array.from({ length: 7 }, (_, i) => addDays(range.from, i));
-  const rowTimes = [...new Set(slots.map((s) => minutesOfDay(new Date(s.slotTime))))].sort((a, b) => a - b);
-  const byKey = new Map(slots.map((s) => [`${toDateStr(new Date(s.slotTime))}|${minutesOfDay(new Date(s.slotTime))}`, s]));
+  const rowTimes = [...new Set(slots.map((s) => minutesOfDay(wall(s.slotTime))))].sort((a, b) => a - b);
+  const byKey = new Map(slots.map((s) => [`${toDateStr(wall(s.slotTime))}|${minutesOfDay(wall(s.slotTime))}`, s]));
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
@@ -224,7 +226,7 @@ export default function BookClient({ tenantSlug, profiles }) {
       {confirmTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onMouseDown={() => setConfirmTarget(null)}>
           <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-4 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
-            <p className="mb-3 text-sm font-semibold">{new Date(confirmTarget.slotTime).toLocaleString()}</p>
+            <p className="mb-3 text-sm font-semibold">{wall(confirmTarget.slotTime).toLocaleString()}</p>
             {profiles.length > 1 && (
               <label className="mb-2 block space-y-1">
                 <span className="text-xs text-slate-500">For</span>

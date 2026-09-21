@@ -25,6 +25,7 @@
 const { prisma } = require("./prismaClient");
 const { runWithContext } = require("./requestContext");
 const { getWebhookSecret } = require("./externalCredentials");
+const { peerWebhookSecret, isPeerProvider } = require("./peerSecret");
 const { verifySignature, verifyTimestamp } = require("./webhookAuth");
 const { recordFailure } = require("./integrationHealth");
 const { isPeerConnectionActive } = require("./partners");
@@ -43,9 +44,11 @@ async function authenticateWebhook({ providerId, providerType, rawBody, signatur
   }
 
   const tenantIdForSecret = Number(provider.tenant_id);
-  const secret = await runWithContext({ tenantId: tenantIdForSecret }, async () => {
-    return await getWebhookSecret(tenantIdForSecret, provider.id);
-  });
+  const secret = isPeerProvider(provider.provider_code)
+    ? peerWebhookSecret(provider.id)
+    : await runWithContext({ tenantId: tenantIdForSecret }, async () => {
+        return await getWebhookSecret(tenantIdForSecret, provider.id);
+      });
   if (!secret || !verifySignature(rawBody, signatureHeader, secret)) {
     await recordFailure(prisma, provider.id, { errorCategory: "signature_invalid" });
     return { ok: false, status: 401, error: "invalid_signature" };

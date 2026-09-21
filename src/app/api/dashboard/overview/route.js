@@ -29,7 +29,8 @@ export const dynamic = "force-dynamic";
  * comes from the verified session (`tenantDb`'s auto-injection, or the
  * SUPER_ADMIN platform branch below) — never a client parameter.
  */
-export const GET = apiRoute(null, async (_request, { session }) => {
+export const GET = apiRoute(null, async (request, { session }) => {
+  const days = Number(new URL(request.url).searchParams.get("days")) || 7;
   if (session.tenantId == null) {
     const overview = await getPlatformOverview(prisma);
     return json({ scope: "PLATFORM", role: session.role, ...overview });
@@ -77,7 +78,7 @@ export const GET = apiRoute(null, async (_request, { session }) => {
     has("lab") ? safe("lab", getLabStatus(tenantDb)) : null,
     has("radiology") ? safe("radiology", getRadiologyStatus(tenantDb)) : null,
     has("billing") ? safe("billing", getBillingStatus(tenantDb)) : null,
-    has("charts") ? safe("charts", getWeeklyCharts(tenantDb, { tenantCreatedAt: tenant.created_at, activeModules })) : null,
+    has("charts") ? safe("charts", getWeeklyCharts(tenantDb, { tenantCreatedAt: tenant.created_at, activeModules, days })) : null,
     has("recentActivity") ? safe("recentActivity", getRecentActivity(tenantDb, ctx)) : null,
     has("workflows") ? safe("workflows", getWorkflowSummary(tenantDb)) : null,
   ]);

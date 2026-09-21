@@ -156,7 +156,7 @@ function deriveHealth(row, { hasCredential } = {}) {
   if (!row.active) return "DISABLED";
 
   const isMock = needsNoUrl(row.provider_code);
-  if (hasCredential === false) return "CONFIG_ERROR";
+  if (hasCredential === false && !String(row.provider_code).startsWith("PEER_")) return "CONFIG_ERROR";
   if (!isMock && !resolveBaseUrl(row)) return "CONFIG_ERROR";
 
   if (row.last_error_category && AUTH_ERROR_CATEGORIES.has(row.last_error_category)) return "AUTH_FAILED";

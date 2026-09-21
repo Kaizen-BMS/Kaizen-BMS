@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const GET = apiRoute("appointment:read", async () => {
   const tid = requireTenantId();
   const doctors = await prisma.users.findMany({
-    where: { tenant_id: BigInt(tid), role: "DOCTOR" },
+    where: { tenant_id: BigInt(tid), role: { in: ["DOCTOR", "OWNER_DOCTOR"] } },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

@@ -14,6 +14,8 @@
  */
 const { prisma } = require("./prismaClient");
 
+const { parseDeny } = require("./featureAccess");
+
 const CACHE_TTL_MS = 20_000;
 const cache = new Map();
 
@@ -53,14 +55,22 @@ function clearAccessCache() {
   cache.clear();
 }
 
-async function userIsActive(userId) {
-  const key = `active:${userId}`;
+/** { active, deny[] } for a login — cached with the same short TTL as ownership. */
+async function userState(userId) {
+  const key = `ustate:${userId}`;
   const hit = cache.get(key);
-  if (hit && hit.exp > Date.now()) return hit.ok;
-  const u = await prisma.users.findUnique({ where: { id: toId(userId) }, select: { active: true } });
-  const ok = !!u && u.active !== false;
-  cache.set(key, { ok, exp: Date.now() + CACHE_TTL_MS });
-  return ok;
+  if (hit && hit.exp > Date.now()) return hit.v;
+  const u = await prisma.users.findUnique({ where: { id: toId(userId) }, select: { active: true, access_deny: true } });
+  const v = { active: !!u && u.active !== false, deny: parseDeny(u?.access_deny) };
+  cache.set(key, { v, exp: Date.now() + CACHE_TTL_MS });
+  return v;
+}
+async function userIsActive(userId) {
+  return (await userState(userId)).active;
+}
+/** Features the admin switched OFF for this person. */
+async function userDenyList(userId) {
+  return (await userState(userId)).deny;
 }
 
 /** A session may act in its tenant if that is the user's home tenant, or the user currently owns it — and the login itself is still switched on. */
@@ -113,4 +123,4 @@ async function listFacilitiesForUser(userId, activeTenantId) {
   }));
 }
 
-module.exports = { ownsTenant, sessionFacilityOk, listFacilitiesForUser, ownedOrganizationIds, clearAccessCache };
+module.exports = { userDenyList, ownsTenant, sessionFacilityOk, listFacilitiesForUser, ownedOrganizationIds, clearAccessCache };

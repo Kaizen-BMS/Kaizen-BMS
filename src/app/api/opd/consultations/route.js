@@ -22,13 +22,9 @@ const createSchema = z
     fee: z.coerce.number().min(0).max(1_000_000).optional(),
     serviceId: z.coerce.number().int().positive().optional(),
     customFields: z.record(z.string(), z.unknown()).optional(),
-  })
-  .refine((b) => b.serviceId != null || b.fee != null, {
-    message: "fee is required unless serviceId is given",
-    path: ["fee"],
   });
 
-export const POST = apiRoute("consultation:create", async (request, { session }) => {
+export const POST = apiRoute("consultation:create", async (request, { session, tenant }) => {
   const body = await parseBody(request, createSchema);
 
   const visit = await tenantDb.visits.findUnique({
@@ -49,7 +45,12 @@ export const POST = apiRoute("consultation:create", async (request, { session })
   // Preferred path: a CONSULTATION-type Service was chosen — resolve its
   // current tariff and price the fee from it (Decimal-safe, with GST).
   // "Pricing not configured" is a clean 400, never a silent ₹0 fee.
-  let feeData = { fee: body.fee, fee_source: "MANUAL" };
+  // A hospital's reception collects the fee, so the doctor need not enter one
+  // (recorded as 0 here); a solo clinic doctor must still give a fee or a service.
+  if (body.serviceId == null && body.fee == null) {
+    if (tenant?.type !== "HOSPITAL") throw new HttpError(400, "fee: fee is required unless serviceId is given");
+  }
+  let feeData = { fee: body.fee ?? 0, fee_source: "MANUAL" };
   if (body.serviceId != null) {
     const category = await resolvePatientCategory(tenantDb, visit.patient_id);
     const priced = await resolveAndPriceService(tenantDb, body.serviceId, category, 1);

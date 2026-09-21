@@ -6,7 +6,9 @@ const { canPlatform } = require("./rbac");
 const { requiredModules, anyModuleActive } = require("./modules");
 const { runWithContext } = require("./requestContext");
 const { getTenant } = require("./tenants");
-const { sessionFacilityOk } = require("./orgAccess");
+const { sessionFacilityOk, userDenyList } = require("./orgAccess");
+const { featureOfAction } = require("./featureAccess");
+const { logActivity } = require("./audit");
 
 const json = (data, status) => NextResponse.json(data, { status });
 
@@ -53,6 +55,11 @@ function apiRoute(action, handler) {
       if (mods.length && !(await anyModuleActive(session.tenantId, mods))) {
         return json({ error: "forbidden" }, 403);
       }
+      // The admin may have switched this feature off for this particular person.
+      const feature = session.tenantId != null ? featureOfAction(action) : null;
+      if (feature && (await userDenyList(session.userId)).includes(feature)) {
+        return json({ error: "feature_off" }, 403);
+      }
     }
 
     return runWithContext(
@@ -64,7 +71,12 @@ function apiRoute(action, handler) {
       },
       async () => {
         try {
-          return await handler(request, { ...routeCtx, session, tenant });
+          const res = await handler(request, { ...routeCtx, session, tenant });
+          // Activity log: every successful change, who + what + when.
+          if (request.method !== "GET" && request.method !== "HEAD" && res && res.status < 400) {
+            logActivity({ session, method: request.method, path: new URL(request.url).pathname, status: res.status });
+          }
+          return res;
         } catch (err) {
           // Duck-typed, not `instanceof HttpError` — parseBody() (validate.js)
           // and patientApiRoute.js's own HttpError are both separate classes

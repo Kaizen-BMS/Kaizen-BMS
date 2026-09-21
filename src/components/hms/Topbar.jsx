@@ -9,13 +9,20 @@ import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
 import FacilitySwitcher from "./FacilitySwitcher";
 import ChangePassword from "./ChangePassword";
+import QuickRegister from "./QuickRegister";
 
 export default function Topbar({ user, navItems, onSidebarToggle }) {
   const router = useRouter();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const canRegister = (navItems || []).some((i) => i.key === "registration");
 
   useEffect(() => {
     const onKey = (e) => {
+      if (canRegister && e.altKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        setRegisterOpen(true);
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((o) => !o);
@@ -23,7 +30,7 @@ export default function Topbar({ user, navItems, onSidebarToggle }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [canRegister]);
 
   return (
     <header
@@ -50,6 +57,17 @@ export default function Topbar({ user, navItems, onSidebarToggle }) {
         <Icon name="command" size={13} />
         <span>K</span>
       </button>
+
+      {canRegister && (
+        <button
+          onClick={() => setRegisterOpen(true)}
+          className="flex items-center gap-1.5 rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)]"
+          title="Register a patient (Alt + R)"
+        >
+          + Register
+        </button>
+      )}
+      {registerOpen && <QuickRegister canCollectFee={!!user.canCollectFee} onClose={() => setRegisterOpen(false)} />}
 
       <ThemeToggle />
 

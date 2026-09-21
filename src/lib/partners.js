@@ -26,7 +26,7 @@ const { prisma } = require("./prismaClient");
 const { HttpError } = require("./apiRoute");
 const { runWithContext } = require("./requestContext");
 const { emitToTenant } = require("./realtime");
-const { setCredential, getWebhookSecret } = require("./externalCredentials");
+const { peerWebhookSecret } = require("./peerSecret");
 const catalog = require("./partnerCatalog");
 
 const OPEN_STATUSES = ["REQUESTED", "REVIEWING", "ACCEPTED", "ACTIVE", "PAUSED"];
@@ -263,12 +263,7 @@ async function provisionRequesterSide(tx, conn, receiverName, approvedFields, de
   // The signing secret the partner's result webhook is verified with —
   // generated here, encrypted at rest like every other credential, never
   // shown to either party.
-  await setCredential(tx, {
-    tenantId: conn.requester_tenant_id,
-    providerId: provider.id,
-    fields: { webhookSecret: crypto.randomBytes(32).toString("hex") },
-    actorUserId: decidedBy,
-  });
+  // (derived from JWT_SECRET — see peerSecret.js — so no stored credential / extra key is needed)
   const ext = await tx.external_connections.create({
     data: {
       tenant_id: conn.requester_tenant_id,
@@ -514,10 +509,7 @@ async function completeInbound(session, id, { findings, quantityFulfilled, amoun
   }
   if (!conn.requester_provider_id) throw new HttpError(409, "connection_not_provisioned");
 
-  const secret = await runWithContext({ tenantId: requesterTenant }, async () => {
-    return await getWebhookSecret(requesterTenant, conn.requester_provider_id);
-  });
-  if (!secret) throw new HttpError(409, "no_webhook_secret");
+  const secret = peerWebhookSecret(conn.requester_provider_id);
 
   const payload = parseJson(order.payload, {});
   const body =

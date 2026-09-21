@@ -26,7 +26,7 @@ export const GET = apiRoute(null, async (request, { session }) => {
     orderBy: { updated_at: "desc" },
   });
   const providers = conns
-    .filter((c) => c.external_providers?.active && c.external_providers.provider_type === type)
+    .filter((c) => c.external_providers?.active && c.external_providers.provider_type === type && String(c.external_providers.provider_code).startsWith("PEER_"))
     .map((c) => ({ id: Number(c.provider_id), name: c.external_providers.name }));
   return json({ providers });
 });

@@ -47,6 +47,7 @@ const ACTION_MODULE = {
   "lab:result": ["LAB"],
 
   "bill:create": ["BILLING"],
+  "fee:collect": ["BILLING"],
   "bill:read": ["BILLING"],
   "bill:update": ["BILLING"],
   "service:read": ["BILLING"],

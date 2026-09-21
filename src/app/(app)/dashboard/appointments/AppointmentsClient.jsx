@@ -1,5 +1,7 @@
 "use client";
 
+
+import { wall } from "@/lib/wallClock";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
@@ -239,7 +241,9 @@ export default function AppointmentsClient({ canBook, canUpdate, canManageSlots,
         ))}
       </div>
 
-      {showSlotManager && canManageSlots && <SlotManager onError={setMsg} />}
+      {showSlotManager && canManageSlots && (
+        <SlotManager onError={setMsg} doctors={doctors} isDoctor={isDoctor} ownUserId={ownUserId} defaultDoctorId={selectedDoctorIds[0]} onChanged={() => loadRef.current()} />
+      )}
 
       {view === "month" && (
         <MonthGrid anchor={anchor} slots={slots} onDayClick={(d) => { setAnchor(d); setView("day"); }} />
@@ -302,7 +306,7 @@ function MonthGrid({ anchor, slots, onDayClick }) {
   const countsByDay = new Map();
   for (const s of slots) {
     if (!s.appointment || s.appointment.status === "CANCELLED") continue;
-    const key = toDateStr(new Date(s.slotTime));
+    const key = toDateStr(wall(s.slotTime));
     countsByDay.set(key, (countsByDay.get(key) || 0) + 1);
   }
   const todayKey = toDateStr(new Date());
@@ -400,9 +404,9 @@ function TimeGridTable({ rowTimes, columns, cellFor, onEmptyClick, onApptClick }
 function WeekGrid({ weekStart, doctorUserId, slots, onEmptyClick, onApptClick }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const byKey = new Map(
-    slots.map((s) => [`${toDateStr(new Date(s.slotTime))}|${minutesOfDay(new Date(s.slotTime))}`, s]),
+    slots.map((s) => [`${toDateStr(wall(s.slotTime))}|${minutesOfDay(wall(s.slotTime))}`, s]),
   );
-  const rowTimes = [...new Set(slots.map((s) => minutesOfDay(new Date(s.slotTime))))].sort((a, b) => a - b);
+  const rowTimes = [...new Set(slots.map((s) => minutesOfDay(wall(s.slotTime))))].sort((a, b) => a - b);
   const columns = days.map((d) => ({
     key: toDateStr(d),
     label: `${WEEKDAY_NAMES[d.getDay()]} ${d.getDate()}`,
@@ -419,9 +423,9 @@ function WeekGrid({ weekStart, doctorUserId, slots, onEmptyClick, onApptClick })
 
 function DayGrid({ date, doctors, slots, onEmptyClick, onApptClick }) {
   const dateKey = toDateStr(date);
-  const relevant = slots.filter((s) => toDateStr(new Date(s.slotTime)) === dateKey);
-  const byKey = new Map(relevant.map((s) => [`${s.doctorUserId}|${minutesOfDay(new Date(s.slotTime))}`, s]));
-  const rowTimes = [...new Set(relevant.map((s) => minutesOfDay(new Date(s.slotTime))))].sort((a, b) => a - b);
+  const relevant = slots.filter((s) => toDateStr(wall(s.slotTime)) === dateKey);
+  const byKey = new Map(relevant.map((s) => [`${s.doctorUserId}|${minutesOfDay(wall(s.slotTime))}`, s]));
+  const rowTimes = [...new Set(relevant.map((s) => minutesOfDay(wall(s.slotTime))))].sort((a, b) => a - b);
   const columns = doctors.map((d) => ({ key: String(d.id), label: d.name, doctorUserId: d.id }));
 
   function cellFor(col, t) {
@@ -469,7 +473,7 @@ function BookingPopover({ target, onClose, onBooked, onError }) {
   }
 
   return (
-    <Modal title={`Book ${new Date(target.slotTime).toLocaleString()}`} onClose={onClose}>
+    <Modal title={`Book ${wall(target.slotTime).toLocaleString()}`} onClose={onClose}>
       <div className="space-y-4">
         <div>
           <p className="text-sm font-semibold">Find existing patient</p>
@@ -557,7 +561,7 @@ function DetailsPopover({ slot, canUpdate, onClose, onChanged, onError }) {
   const finalized = ["CANCELLED", "COMPLETED", "NO_SHOW"].includes(appt.status);
 
   return (
-    <Modal title={new Date(slot.slotTime).toLocaleString()} onClose={onClose}>
+    <Modal title={wall(slot.slotTime).toLocaleString()} onClose={onClose}>
       <div className="space-y-3 text-sm">
         <p className="font-medium">{appt.patientName} · {appt.patientAge}y</p>
         {appt.reason && <p className="text-slate-500">Reason: {appt.reason}</p>}
@@ -591,32 +595,44 @@ function DetailsPopover({ slot, canUpdate, onClose, onChanged, onError }) {
   );
 }
 
-function SlotManager({ onError }) {
+function SlotManager({ onError, doctors, isDoctor, ownUserId, defaultDoctorId, onChanged }) {
+  const [doctorId, setDoctorId] = useState(isDoctor ? ownUserId : defaultDoctorId || doctors[0]?.id || "");
   const [slots, setSlots] = useState([]);
+  // The doctor list / selection can arrive after this panel opens.
+  useEffect(() => {
+    if (!isDoctor && !doctorId) {
+      const first = defaultDoctorId || doctors[0]?.id;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (first) setDoctorId(first);
+    }
+  }, [doctors, defaultDoctorId, doctorId, isDoctor]);
   const [form, setForm] = useState({ dayOfWeek: "1", startTime: "09:00", endTime: "13:00", slotMinutes: "15" });
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const { slots } = await apiGet("/api/appointments/slots");
+    if (!doctorId) return setSlots([]);
+    const { slots } = await apiGet(`/api/appointments/slots?doctorId=${doctorId}`);
     setSlots(slots);
   }
 
   useEffect(() => {
     load().catch((e) => onError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [doctorId]);
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     try {
       await apiSend("/api/appointments/slots", "POST", {
+        ...(isDoctor ? {} : { doctorUserId: Number(doctorId) }),
         dayOfWeek: Number(form.dayOfWeek),
         startTime: form.startTime,
         endTime: form.endTime,
         slotMinutes: Number(form.slotMinutes),
       });
       await load();
+      onChanged?.();
     } catch (err) {
       onError(err.message);
     } finally {
@@ -628,6 +644,7 @@ function SlotManager({ onError }) {
     try {
       await apiSend(`/api/appointments/slots/${slot.id}`, "PATCH", { active: !slot.active });
       await load();
+      onChanged?.();
     } catch (err) {
       onError(err.message);
     }
@@ -635,7 +652,17 @@ function SlotManager({ onError }) {
 
   return (
     <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-      <p className="text-sm font-semibold">Weekly availability</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">Weekly availability</p>
+        {!isDoctor && (
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            Doctor
+            <select value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900">
+              {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
       <div className="space-y-1.5">
         {slots.length === 0 && <p className="text-sm text-slate-400">No availability set up yet.</p>}
         {slots.map((s) => (

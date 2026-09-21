@@ -36,6 +36,7 @@ const ROLES = [
 const STAFF_SELF_SERVICE = ["staffroster:read", "leaverequest:create"];
 
 const RECEPTIONIST = [
+  "fee:collect", // the front desk collects the consultation fee
   "patient:create",
   "patient:read",
   "patient:update",
@@ -162,6 +163,7 @@ const RADIOLOGY_STAFF = [
 ];
 
 const BILLING_STAFF = [
+  "fee:collect",
   "patient:read",
   "visit:read",
   "visit:update",

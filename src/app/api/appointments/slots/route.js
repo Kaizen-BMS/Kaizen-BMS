@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
-import { tenantDb } from "@/lib/prismaClient";
+import { tenantDb, prisma } from "@/lib/prismaClient";
 import { hhmmToTimeValue } from "@/lib/appointments";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export const GET = apiRoute("appointment:read", async (request, { session }) => 
   const doctorIdParam = url.searchParams.get("doctorId");
   const doctorId = doctorIdParam
     ? BigInt(doctorIdParam)
-    : session.role === "DOCTOR"
+    : session.role === "DOCTOR" || session.role === "OWNER_DOCTOR"
       ? BigInt(session.userId)
       : null;
 
@@ -26,6 +26,8 @@ export const GET = apiRoute("appointment:read", async (request, { session }) => 
 });
 
 const createSchema = z.object({
+  // Admin / reception set availability FOR a doctor; a doctor always sets their own.
+  doctorUserId: z.coerce.number().int().positive().optional(),
   dayOfWeek: z.coerce.number().int().min(0).max(6),
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
@@ -40,9 +42,19 @@ export const POST = apiRoute("doctorslot:manage", async (request, { session }) =
     return json({ error: "endTime must be after startTime" }, 400);
   }
 
+  let doctorId = BigInt(session.userId);
+  if (body.doctorUserId && session.role !== "DOCTOR" && session.role !== "OWNER_DOCTOR") {
+    const target = await prisma.users.findFirst({
+      where: { id: BigInt(body.doctorUserId), tenant_id: BigInt(session.tenantId), role: { in: ["DOCTOR", "OWNER_DOCTOR"] } },
+      select: { id: true },
+    });
+    if (!target) return json({ error: "doctor_not_found" }, 404);
+    doctorId = target.id;
+  }
+
   const slot = await tenantDb.doctor_slots.create({
     data: {
-      doctor_user_id: BigInt(session.userId),
+      doctor_user_id: doctorId,
       day_of_week: body.dayOfWeek,
       start_time: hhmmToTimeValue(body.startTime),
       end_time: hhmmToTimeValue(body.endTime),

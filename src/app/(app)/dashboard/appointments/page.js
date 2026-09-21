@@ -12,7 +12,7 @@ export default async function AppointmentsPage() {
       canBook={can(session.role, "appointment:create")}
       canUpdate={can(session.role, "appointment:update")}
       canManageSlots={can(session.role, "doctorslot:manage")}
-      isDoctor={session.role === "DOCTOR"}
+      isDoctor={session.role === "DOCTOR" || session.role === "OWNER_DOCTOR"}
       ownUserId={session.userId}
     />
   );

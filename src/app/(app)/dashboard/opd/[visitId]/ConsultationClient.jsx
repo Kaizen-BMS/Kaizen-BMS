@@ -136,7 +136,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
         visitId,
         notes: core.notes || "",
         diagnosis: core.diagnosis || "",
-        fee: core.fee,
+        ...(core.fee !== undefined && core.fee !== "" ? { fee: core.fee } : {}),
         customFields: custom,
       });
       setValues({});
@@ -313,7 +313,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                 {consultation.notes && (
                   <p className="mt-1 text-slate-600">{consultation.notes}</p>
                 )}
-                <p className="mt-1 text-slate-500">Fee: {consultation.fee}</p>
+                {Number(consultation.fee) > 0 && <p className="mt-1 text-slate-500">Fee: {consultation.fee}</p>}
               </div>
               {doctorUserId && (
                 <button

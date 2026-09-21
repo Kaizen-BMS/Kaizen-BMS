@@ -271,9 +271,9 @@ function bucketByDay(rows, dayKeys) {
  * auto-scoping doesn't cover raw queries, and a 7-day window is small
  * enough that fetching-then-bucketing is simpler and just as fast.
  */
-async function getWeeklyCharts(tenantDb, { tenantCreatedAt, activeModules }) {
+async function getWeeklyCharts(tenantDb, { tenantCreatedAt, activeModules, days = 7 }) {
   const active = new Set(activeModules);
-  const maxDays = 7;
+  const maxDays = [7, 14, 30, 90].includes(days) ? days : 7;
   const tenantAgeDays = Math.floor((startOfDay() - startOfDay(tenantCreatedAt)) / 86400000);
   const span = Math.max(1, Math.min(maxDays, tenantAgeDays + 1));
   const dayKeys = [];

@@ -112,6 +112,12 @@ async function resolveForm(tenantId, formType) {
       }
     }
   }
+  // A hospital's front desk collects the consultation fee (not the doctor);
+  // a solo clinic doctor still records it themselves.
+  if (formType === "CONSULTATION" && tenantId != null) {
+    const t = await prisma.tenants.findUnique({ where: { id: BigInt(tenantId) }, select: { type: true } });
+    if (t?.type === "HOSPITAL") return { formType, core: core.filter((f) => f.fieldName !== "fee"), extra };
+  }
   return { formType, core, extra };
 }
 

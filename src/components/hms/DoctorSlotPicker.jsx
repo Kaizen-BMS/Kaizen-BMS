@@ -1,5 +1,7 @@
 "use client";
 
+
+import { wall } from "@/lib/wallClock";
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiSend } from "./api";
 
@@ -83,8 +85,8 @@ export default function DoctorSlotPicker({ doctorUserId, patientId, onBooked, on
   }
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(range.from, i));
-  const rowTimes = [...new Set(slots.map((s) => minutesOfDay(new Date(s.slotTime))))].sort((a, b) => a - b);
-  const byKey = new Map(slots.map((s) => [`${toDateStr(new Date(s.slotTime))}|${minutesOfDay(new Date(s.slotTime))}`, s]));
+  const rowTimes = [...new Set(slots.map((s) => minutesOfDay(wall(s.slotTime))))].sort((a, b) => a - b);
+  const byKey = new Map(slots.map((s) => [`${toDateStr(wall(s.slotTime))}|${minutesOfDay(wall(s.slotTime))}`, s]));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hms-btn-bg)]/30 p-4" onMouseDown={onClose}>
@@ -156,7 +158,7 @@ export default function DoctorSlotPicker({ doctorUserId, patientId, onBooked, on
 
         {confirmTarget && (
           <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
-            <p className="text-sm font-medium">{new Date(confirmTarget.slotTime).toLocaleString()}</p>
+            <p className="text-sm font-medium">{wall(confirmTarget.slotTime).toLocaleString()}</p>
             <input
               value={reason}
               onChange={(e) => setReason(e.target.value)}

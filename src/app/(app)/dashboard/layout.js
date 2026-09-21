@@ -5,7 +5,7 @@ import { getActiveModules } from "@/lib/modules";
 import { getTenant } from "@/lib/tenants";
 import { groupedNav } from "@/lib/navRegistry";
 import { can } from "@/lib/rbac";
-import { sessionFacilityOk } from "@/lib/orgAccess";
+import { sessionFacilityOk, userDenyList } from "@/lib/orgAccess";
 import DashboardShell from "./DashboardShell";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +40,7 @@ export default async function DashboardLayout({ children }) {
     tenantType: tenant?.type ?? null,
     activeModules,
     allowDoctorBranding: !!tenant?.allow_doctor_branding,
+    deny: session.tenantId != null ? await userDenyList(session.userId) : [],
   };
   const groups = groupedNav(navCtx);
 
@@ -55,6 +56,7 @@ export default async function DashboardLayout({ children }) {
         role: session.role,
         tenantName: tenant?.name ?? null,
         canBranding,
+        canCollectFee: can(session.role, "fee:collect") && tenant?.type === "HOSPITAL" && activeModules.includes("BILLING"),
       }}
       groups={groups}
     >

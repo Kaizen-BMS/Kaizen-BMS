@@ -36,7 +36,7 @@ const inList = (ids) => (ids.length ? ids.join(",") : "NULL");
 const q = (sql, ...p) => prisma.$queryRawUnsafe(sql, ...p);
 
 async function main() {
-  const combo = await q(`SELECT id FROM tenants WHERE name LIKE 'TEST Combo %' AND slug LIKE 't-%' AND created_at >= ?`, SINCE);
+  const combo = await q(`SELECT id FROM tenants WHERE name LIKE 'TEST Combo %' AND (slug LIKE 't-%' OR slug LIKE 'p-%') AND created_at >= ?`, SINCE);
   const comboIds = num(combo);
   const orgs = await q(`SELECT id FROM organizations WHERE name LIKE 'TEST Combo %' AND created_at >= ?`, SINCE);
   const orgIds = num(orgs);
@@ -135,6 +135,7 @@ async function main() {
         await run(`DELETE FROM users WHERE tenant_id IN (${inList(comboIds)})`);
         await run(`DELETE FROM tenants WHERE id IN (${inList(comboIds)})`);
       }
+      await run(`DELETE FROM audit_logs WHERE tenant_id IS NOT NULL AND tenant_id NOT IN (SELECT id FROM tenants)`);
       if (orgIds.length) await run(`DELETE FROM organizations WHERE id IN (${inList(orgIds)}) AND id NOT IN (SELECT organization_id FROM tenants WHERE organization_id IS NOT NULL)`);
     },
     { maxWait: 20000, timeout: 120000 },

@@ -3,6 +3,9 @@
  * Every real-time event in the app is emitted from an API route in the same
  * process, so there is never a poll / debounce / background-job hop.
  */
+// Appointment slot times are wall-clock values; a fixed server timezone keeps
+// them identical no matter where the app is hosted or who opens it.
+process.env.TZ = "UTC";
 require("./scripts/loadEnv");
 
 const { createServer } = require("http");
