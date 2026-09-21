@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import Icon from "@/components/hms/icons";
+import CameraCapture from "@/components/hms/CameraCapture";
 import Avatar from "@/components/hms/Avatar";
 import PersonDetailsFields, { EMPTY_DETAILS, detailsPayload } from "@/components/hms/PersonDetailsFields";
 import { compressImageToDataUrl as compressPhoto } from "@/components/hms/imageCompress";
@@ -124,6 +125,15 @@ export default function AttendanceClient({ canProxy, canManageStaff }) {
               </button>
             </>
           )}
+          {status === "CHECKED_OUT" && (
+            <button
+              disabled={busy}
+              onClick={() => act(() => apiSend("/api/attendance/check-in", "POST"))}
+              className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+            >
+              I&rsquo;m back at work
+            </button>
+          )}
           {status === "OUT" && (
             <button
               disabled={busy}
@@ -235,20 +245,12 @@ function ProxyRoster({ canManageStaff }) {
 
   function openPhotoCapture(p, action) {
     setPhotoTarget({ p, action });
-    fileInputRef.current?.click();
   }
-  async function onPhotoChosen(e) {
-    const file = e.target.files?.[0];
+  async function onPhotoChosen(photoDataUrl) {
     const target = photoTarget;
-    e.target.value = "";
     setPhotoTarget(null);
-    if (!file || !target) return;
-    try {
-      const photoDataUrl = await compressPhoto(file, 480);
-      await call(`/api/attendance/proxy/${target.action}`, target.p, { photoDataUrl });
-    } catch (err) {
-      setMsg(err.message);
-    }
+    if (!target) return;
+    await call(`/api/attendance/proxy/${target.action}`, target.p, { photoDataUrl });
   }
 
   async function startBreak(p) {
@@ -318,7 +320,7 @@ function ProxyRoster({ canManageStaff }) {
         </div>
       )}
 
-      <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhotoChosen} />
+      {photoTarget && <CameraCapture title={`Photo — ${photoTarget.p.name}`} onCapture={onPhotoChosen} onClose={() => setPhotoTarget(null)} />}
 
       <div className="mt-3 space-y-2">
         {shown.length === 0 && <p className="text-sm text-slate-400">No one found.</p>}
@@ -349,6 +351,12 @@ function ProxyRoster({ canManageStaff }) {
                   <button onClick={() => setBreakTarget(breakTarget === key(p) ? null : key(p))} className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50">Step out</button>
                   <button onClick={() => mark(p, "check-out")} className="rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)]">Mark out</button>
                   <button onClick={() => openPhotoCapture(p, "check-out")} title="Mark out with a photo" aria-label="Mark out with a photo" className="rounded-md border border-slate-300 px-2 py-1 text-xs"><Icon name="camera" size={13} /></button>
+                </>
+              )}
+              {p.status === "CHECKED_OUT" && (
+                <>
+                  <button onClick={() => mark(p, "check-in")} className="rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)]">Back at work</button>
+                  <button onClick={() => openPhotoCapture(p, "check-in")} title="Back at work, with a photo" aria-label="Back at work, with a photo" className="rounded-md border border-slate-300 px-2 py-1 text-xs"><Icon name="camera" size={13} /></button>
                 </>
               )}
               {p.status === "OUT" && (

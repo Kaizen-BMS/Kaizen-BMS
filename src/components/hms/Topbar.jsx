@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Icon from "./icons";
 import { apiGet, apiSend } from "./api";
 import Avatar from "./Avatar";
-import { compressImageToDataUrl } from "./imageCompress";
+import CameraCapture from "./CameraCapture";
 import CommandPalette from "./CommandPalette";
 import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
@@ -174,7 +174,6 @@ function ProfileMenu({ user }) {
   const [open, setOpen] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
   const [photo, setPhoto] = useState(null);
-  const fileRef = useRef(null);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -182,16 +181,13 @@ function ProfileMenu({ user }) {
     apiGet("/api/me/photo").then((d) => setPhoto(d.photo)).catch(() => {});
   }, [user.tenantName]);
 
-  async function onPhoto(e) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    const url = await compressImageToDataUrl(file, 360, 0.72);
+  const [cam, setCam] = useState(false);
+  async function onPhoto(url) {
+    setCam(false);
     await apiSend("/api/me/photo", "PUT", { photoDataUrl: url });
     setPhoto(url);
     setOpen(false);
   }
-
   useEffect(() => {
     const onDoc = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
@@ -210,7 +206,7 @@ function ProfileMenu({ user }) {
       <button onClick={() => setOpen((o) => !o)} className="rounded-full" aria-label="Profile">
         <Avatar name={user.name} src={photo} size={32} />
       </button>
-      <input ref={fileRef} type="file" accept="image/*" capture="user" className="hidden" onChange={onPhoto} />
+      {cam && <CameraCapture title="My profile photo" maxWidth={360} onCapture={onPhoto} onClose={() => setCam(false)} />}
       {open && (
         <div
           className="absolute right-0 top-full mt-1.5 w-56 overflow-hidden rounded-md border bg-white py-1 shadow-lg"
@@ -236,7 +232,7 @@ function ProfileMenu({ user }) {
             Change password
           </button>
           {user.tenantName && (
-            <button onClick={() => fileRef.current?.click()} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--hms-ink-soft)] hover:bg-slate-50">
+            <button onClick={() => { setOpen(false); setCam(true); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--hms-ink-soft)] hover:bg-slate-50">
               {photo ? "Change my photo" : "Add my photo"}
             </button>
           )}

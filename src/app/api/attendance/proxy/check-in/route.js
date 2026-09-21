@@ -3,7 +3,7 @@ import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { emitToTenant } from "@/lib/realtime";
-import { serverToday, findOpenBreak, proxySubject } from "@/lib/attendance";
+import { serverToday, findOpenBreak, proxySubject, reopenDay } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,8 @@ export const POST = apiRoute("attendance:proxy", async (request, { session }) =>
   const workDate = await serverToday();
   const log = await tenantDb.$transaction(async (tx) => {
     const existing = await tx.attendance_logs.findFirst({ where: { subject_type: subj.type, subject_id: subj.id, work_date: workDate } });
-    if (existing?.check_in_at) throw new HttpError(409, "already_checked_in");
+    if (existing?.check_in_at && !existing.check_out_at) throw new HttpError(409, "already_checked_in");
+    if (existing?.check_out_at) return reopenDay(tx, existing, body.photoDataUrl);
     return tx.attendance_logs.create({
       data: { subject_type: subj.type, subject_id: subj.id, work_date: workDate, check_in_at: new Date(), check_in_photo_url: body.photoDataUrl || null, marked_by: BigInt(session.userId) },
     });

@@ -75,5 +75,21 @@ async function proxySubject(tenantId, { userId, staffMemberId }) {
   return null;
 }
 
+/**
+ * The person left (checked out) and now comes back the same day: reopen the
+ * day. The time they were away is kept as a PERSONAL break, so worked time is
+ * still right, and nothing about the first check-in is lost.
+ */
+async function reopenDay(tx, log, photoDataUrl) {
+  await tx.attendance_breaks.create({
+    data: { attendance_log_id: log.id, out_at: log.check_out_at, in_at: new Date(), category: "PERSONAL", reason: "Left and came back" },
+  });
+  return tx.attendance_logs.update({
+    where: { id: log.id },
+    data: { check_out_at: null, check_out_photo_url: null, ...(photoDataUrl ? { check_in_photo_url: photoDataUrl } : {}) },
+  });
+}
+
 module.exports = {
+  reopenDay,
   proxySubject, serverToday, findOpenBreak, computeStatus, computeWorkedMinutes, summarize };
