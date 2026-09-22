@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { apiGet } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
+import { MyDutyCard, TeamDutyCard } from "@/components/hms/DutyWidget";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, BarChart, Bar } from "recharts";
 
 // The events that plausibly change something on this dashboard — reused
@@ -461,6 +462,9 @@ function TenantDashboard({ data, updatedAt, days, setDays }) {
           </SectionCard>
         )}
         {has("workflows") && !data.workflows && failed("workflows") && <FailedCard title="Workflows" />}
+
+        {has("myDuty") && <MyDutyCard />}
+        {has("teamDuty") && <TeamDutyCard />}
       </div>
 
       {has("charts") && data.charts && (

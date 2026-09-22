@@ -30,6 +30,11 @@ const WIDGETS = [
   { key: "charts", title: "Last 7 days", category: "CHART", requiredModule: null, roles: ["HOSPITAL_ADMIN", "OWNER_DOCTOR", "OWNER_PHARMACIST", "OWNER_LAB_TECH"], tenantTypes: null, size: "large" },
   { key: "recentActivity", title: "Recent Activity", category: "ACTIVITY", requiredModule: null, roles: "*", tenantTypes: null, size: "medium" },
   { key: "quickActions", title: "Quick Actions", category: "ACTIVITY", requiredModule: null, roles: "*", tenantTypes: null, size: "small" },
+  // Attendance is core (not module-gated) and HOSPITAL-only (see
+  // CLAUDE.md "Attendance"). Every role that can reach a HOSPITAL tenant
+  // has attendance:self, so no role filter is needed beyond tenantTypes.
+  { key: "myDuty", title: "My duty", category: "ACTIVITY", requiredModule: null, roles: "*", tenantTypes: ["HOSPITAL"], size: "small" },
+  { key: "teamDuty", title: "Who's on duty", category: "ACTIVITY", requiredModule: null, roles: ["HOSPITAL_ADMIN", "RECEPTIONIST"], tenantTypes: ["HOSPITAL"], size: "small" },
 ];
 
 /**
@@ -58,6 +63,7 @@ const QUICK_ACTIONS = {
     { label: "Pharmacy", href: "/dashboard/pharmacy", requiredModule: "PHARMACY" },
     { label: "Lab", href: "/dashboard/lab", requiredModule: "LAB" },
     { label: "Billing", href: "/dashboard/billing", requiredModule: "BILLING" },
+    { label: "Attendance", href: "/dashboard/attendance" },
   ],
   RECEPTIONIST: [
     { label: "Register Patient", href: "/dashboard/registration" },
@@ -67,14 +73,16 @@ const QUICK_ACTIONS = {
   DOCTOR: [
     { label: "OPD Queue", href: "/dashboard/opd" },
     { label: "Appointments", href: "/dashboard/appointments", requiredModule: "APPOINTMENTS" },
+    { label: "Attendance", href: "/dashboard/attendance" },
   ],
   OWNER_DOCTOR: [{ label: "OPD Queue", href: "/dashboard/opd" }, { label: "Appointments", href: "/dashboard/appointments", requiredModule: "APPOINTMENTS" }],
   NURSE: [{ label: "IPD / Beds", href: "/dashboard/ipd", requiredModule: "IPD" }, { label: "Attendance", href: "/dashboard/attendance" }],
-  PHARMACIST: [{ label: "Pharmacy Queue", href: "/dashboard/pharmacy" }],
+  PHARMACIST: [{ label: "Pharmacy Queue", href: "/dashboard/pharmacy" }, { label: "Attendance", href: "/dashboard/attendance" }],
   OWNER_PHARMACIST: [{ label: "Pharmacy Queue", href: "/dashboard/pharmacy" }],
-  LAB_TECH: [{ label: "Lab Queue", href: "/dashboard/lab" }],
+  LAB_TECH: [{ label: "Lab Queue", href: "/dashboard/lab" }, { label: "Attendance", href: "/dashboard/attendance" }],
   OWNER_LAB_TECH: [{ label: "Lab Queue", href: "/dashboard/lab" }],
-  BILLING_STAFF: [{ label: "Billing", href: "/dashboard/billing" }],
+  BILLING_STAFF: [{ label: "Billing", href: "/dashboard/billing" }, { label: "Attendance", href: "/dashboard/attendance" }],
+  RADIOLOGY_STAFF: [{ label: "Radiology", href: "/dashboard/radiology" }, { label: "Attendance", href: "/dashboard/attendance" }],
 };
 
 function quickActionsFor(role, activeModules) {
