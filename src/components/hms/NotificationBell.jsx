@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Icon from "./icons";
 import { apiGet } from "./api";
 import { useRealtime } from "./useRealtime";
+import { fmtDDMMYY } from "@/lib/dateFormat";
 
 // Alerts & Notifications Center (the phase after Workflow Automation) —
 // a computed, on-demand summary of business conditions that already exist
@@ -173,17 +174,40 @@ export default function NotificationBell() {
                 </p>
               ) : (
                 <div className="divide-y" style={{ borderColor: "var(--hms-border)" }}>
-                  {categories.pharmacy && (categories.pharmacy.lowStockCount > 0 || categories.pharmacy.expiringSoonCount > 0 || categories.pharmacy.expiredCount > 0) && (
-                    <button onClick={() => go("/dashboard/pharmacy")} className="block w-full px-3 py-2.5 text-left hover:bg-slate-50">
-                      <p className="flex items-center gap-2 text-sm">
-                        <Icon name="pharmacy" size={15} className="text-[var(--hms-ink-faint)]" />
-                        Pharmacy — {categories.pharmacy.instanceName}
-                      </p>
+                  {categories.pharmacy?.lowStockCount > 0 && (
+                    <button onClick={() => go("/dashboard/pharmacy?tab=inventory&filter=low")} className="block w-full px-3 py-2.5 text-left hover:bg-slate-50">
+                      <p className="flex items-center gap-2 text-sm">🟡 Low Stock</p>
                       <ul className="mt-1 space-y-0.5 pl-6 text-xs text-[var(--hms-ink-faint)]">
-                        {categories.pharmacy.lowStockCount > 0 && <li>{categories.pharmacy.lowStockCount} medicine(s) low on stock</li>}
-                        {categories.pharmacy.expiringSoonCount > 0 && <li>{categories.pharmacy.expiringSoonCount} medicine(s) with batches expiring soon</li>}
-                        {categories.pharmacy.expiredCount > 0 && <li>{categories.pharmacy.expiredCount} medicine(s) with expired batches</li>}
+                        {categories.pharmacy.lowStock.map((m, i) => (
+                          <li key={i}>{m.medicineName} — Stock: {m.totalQuantity}, Reorder Level: {m.threshold}</li>
+                        ))}
+                        {categories.pharmacy.lowStockCount > categories.pharmacy.lowStock.length && <li>+{categories.pharmacy.lowStockCount - categories.pharmacy.lowStock.length} more</li>}
                       </ul>
+                      <p className="mt-1 pl-6 text-xs font-medium text-slate-500">View Inventory →</p>
+                    </button>
+                  )}
+                  {categories.pharmacy?.expiringSoonCount > 0 && (
+                    <button onClick={() => go("/dashboard/pharmacy?tab=inventory&filter=expiring")} className="block w-full px-3 py-2.5 text-left hover:bg-slate-50">
+                      <p className="flex items-center gap-2 text-sm">🟠 Expiry Soon</p>
+                      <ul className="mt-1 space-y-0.5 pl-6 text-xs text-[var(--hms-ink-faint)]">
+                        {categories.pharmacy.expiringSoon.map((b, i) => (
+                          <li key={i}>{b.medicineName} · Batch: {b.batch || "—"} · Expiry: {fmtDDMMYY(b.expiryDate)} · Days Remaining: {b.daysRemaining}</li>
+                        ))}
+                        {categories.pharmacy.expiringSoonCount > categories.pharmacy.expiringSoon.length && <li>+{categories.pharmacy.expiringSoonCount - categories.pharmacy.expiringSoon.length} more</li>}
+                      </ul>
+                      <p className="mt-1 pl-6 text-xs font-medium text-slate-500">View Batch →</p>
+                    </button>
+                  )}
+                  {categories.pharmacy?.expiredCount > 0 && (
+                    <button onClick={() => go("/dashboard/pharmacy?tab=inventory&filter=expired")} className="block w-full px-3 py-2.5 text-left hover:bg-slate-50">
+                      <p className="flex items-center gap-2 text-sm">🔴 Expired Medicines</p>
+                      <ul className="mt-1 space-y-0.5 pl-6 text-xs text-[var(--hms-ink-faint)]">
+                        {categories.pharmacy.expired.map((b, i) => (
+                          <li key={i}>{b.medicineName} · Batch: {b.batch || "—"} · Expired: {fmtDDMMYY(b.expiredOn)} · Quantity: {b.quantity}</li>
+                        ))}
+                        {categories.pharmacy.expiredCount > categories.pharmacy.expired.length && <li>+{categories.pharmacy.expiredCount - categories.pharmacy.expired.length} more</li>}
+                      </ul>
+                      <p className="mt-1 pl-6 text-xs font-medium text-slate-500">View Expired Stock →</p>
                     </button>
                   )}
 

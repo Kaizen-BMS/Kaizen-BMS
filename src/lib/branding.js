@@ -40,9 +40,9 @@ async function resolveBranding(tenantId, doctorUserId) {
   if (doctorUserId && tenantRow?.allow_doctor_branding) {
     const docRow = await prisma.print_branding.findFirst({
       where: { tenant_id: BigInt(tenantId), scope: "DOCTOR", doctor_user_id: BigInt(doctorUserId) },
-      select: { header_name: true, qualifications: true },
+      select: { header_name: true, qualifications: true, signature_image: true },
     });
-    if (docRow) signature = { name: docRow.header_name, qualifications: docRow.qualifications };
+    if (docRow) signature = { name: docRow.header_name, qualifications: docRow.qualifications, image: docRow.signature_image || null };
   }
 
   return { header, signature };

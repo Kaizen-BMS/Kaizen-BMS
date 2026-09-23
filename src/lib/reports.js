@@ -292,18 +292,26 @@ function getRadiologyRevenue(tenantId, opts) {
  */
 async function getPharmacyRevenue(tenantId, { from, to } = {}) {
   const { fromDate, toExclusive } = resolveRange(from, to);
+  // Two distinct paths land in Pharmacy revenue: (a) a prescription line
+  // dispensed then billed at hospital checkout — no bi.stock_id of its own,
+  // the batch is found via the dispense movement; (b) a direct walk-in
+  // sale (Phase "pharmacy walk-in-sale") — bi.stock_id is set directly on
+  // the line itself. COALESCE the two so neither path is silently dropped.
   const rows = await tenantDb.$queryRawUnsafe(
-    `SELECT bi.description AS line, bi.source AS source, mi.name AS moduleInstance,
+    `SELECT bi.description AS line, bi.source AS source, COALESCE(mi_direct.name, mi_rx.name) AS moduleInstance,
             COALESCE(SUM(bi.quantity), COUNT(*)) AS quantity, SUM(bi.amount) AS billed
        FROM bill_items bi
        JOIN bills b ON b.id = bi.bill_id
+       LEFT JOIN pharmacy_stock ps_direct ON bi.reference_type = 'pharmacy_stock_movement' AND ps_direct.id = bi.stock_id
+       LEFT JOIN module_instances mi_direct ON mi_direct.id = ps_direct.module_instance_id
        LEFT JOIN prescription_items pi ON bi.reference_type = 'prescription_item' AND pi.id = bi.reference_id
        LEFT JOIN pharmacy_stock_movements psm ON psm.prescription_item_id = pi.id AND psm.type = 'DISPENSE'
-       LEFT JOIN pharmacy_stock ps ON ps.id = psm.stock_id
-       LEFT JOIN module_instances mi ON mi.id = ps.module_instance_id
-      WHERE b.tenant_id = ? AND bi.source IN ('PHARMACY', 'SERVICE') AND bi.reference_type = 'prescription_item'
+       LEFT JOIN pharmacy_stock ps_rx ON ps_rx.id = psm.stock_id
+       LEFT JOIN module_instances mi_rx ON mi_rx.id = ps_rx.module_instance_id
+      WHERE b.tenant_id = ? AND bi.source IN ('PHARMACY', 'SERVICE')
+        AND bi.reference_type IN ('prescription_item', 'pharmacy_stock_movement')
         AND b.created_at >= ? AND b.created_at < ?
-      GROUP BY bi.id, bi.description, bi.source, mi.name
+      GROUP BY bi.id, bi.description, bi.source, mi_direct.name, mi_rx.name
       ORDER BY billed DESC`,
     tenantId,
     fromDate,

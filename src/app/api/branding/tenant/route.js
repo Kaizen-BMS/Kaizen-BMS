@@ -14,6 +14,11 @@ const putSchema = z.object({
   phone: z.string().trim().max(64).optional().or(z.literal("")),
   gstin: z.string().trim().max(20).optional().or(z.literal("")),
   footerText: z.string().trim().max(500).optional().or(z.literal("")),
+  // A solo tenant has no separate per-doctor branding layer — this TENANT
+  // row IS their own practice, so their signature image lives here too
+  // (see CLAUDE.md "Print branding" — "the TENANT row's qualifications
+  // field doubles as their own" applies the same way to the signature).
+  signatureImage: z.string().max(400_000).regex(/^data:image\/(jpeg|png|webp);base64,/).optional().or(z.literal("")),
 });
 
 // The tenant's own branding — the default header on every printed document.
@@ -33,6 +38,7 @@ export const PUT = apiRoute("branding:manage_tenant", async (request, { session 
     phone: body.phone || null,
     gstin: body.gstin || null,
     footer_text: body.footerText || null,
+    ...(body.signatureImage !== undefined ? { signature_image: body.signatureImage || null } : {}),
   };
 
   if (existing) {

@@ -418,10 +418,26 @@ function TenantDashboard({ data, updatedAt, days, setDays }) {
 
         {has("pharmacy") && data.pharmacy && (
           <SectionCard title={`Pharmacy — ${data.pharmacy.instanceName}`} href="/dashboard/pharmacy">
-            <Metric label="Low stock medicines" value={data.pharmacy.lowStock} tone={data.pharmacy.lowStock > 0 ? "warn" : undefined} />
-            <Metric label="Near expiry" value={data.pharmacy.nearExpiry} tone={data.pharmacy.nearExpiry > 0 ? "warn" : undefined} />
+            <div className="mb-2 grid grid-cols-3 gap-1.5">
+              <Link href="/dashboard/pharmacy?tab=inventory&filter=low" className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-center hover:border-amber-300">
+                <p className="text-lg font-semibold text-amber-700">🟡 {data.pharmacy.lowStock}</p>
+                <p className="text-[10px] text-amber-700">Low Stock</p>
+              </Link>
+              <Link href="/dashboard/pharmacy?tab=inventory&filter=expiring" className="rounded-md border border-orange-200 bg-orange-50 px-2 py-1.5 text-center hover:border-orange-300">
+                <p className="text-lg font-semibold text-orange-700">🟠 {data.pharmacy.nearExpiry}</p>
+                <p className="text-[10px] text-orange-700">Expiry Soon</p>
+              </Link>
+              <Link href="/dashboard/pharmacy?tab=inventory&filter=expired" className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-center hover:border-red-300">
+                <p className="text-lg font-semibold text-red-700">🔴 {data.pharmacy.expired ?? 0}</p>
+                <p className="text-[10px] text-red-700">Expired</p>
+              </Link>
+            </div>
+            <Metric label="Total medicines" value={data.pharmacy.totalMedicines ?? "—"} />
+            <Metric label="Total stock units" value={data.pharmacy.totalStockUnits ?? "—"} />
+            <Metric label="Total stock value" value={data.pharmacy.totalStockValue != null ? money(data.pharmacy.totalStockValue) : "—"} />
+            <Metric label="Today's sales" value={data.pharmacy.todaysSales != null ? money(data.pharmacy.todaysSales) : "—"} />
             <Metric label="Dispensed today" value={data.pharmacy.dispensedToday} />
-            <Metric label="Pending fulfillment" value={data.pharmacy.pendingFulfillment} />
+            <Metric label="Pending prescriptions" value={data.pharmacy.pendingFulfillment} />
           </SectionCard>
         )}
         {has("pharmacy") && !data.pharmacy && (failed("pharmacy") ? <FailedCard title="Pharmacy" /> : <SectionCard title="Pharmacy" empty="No pharmacy instance configured yet." />)}

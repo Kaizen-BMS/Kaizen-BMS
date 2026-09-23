@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
+import { compressImageToDataUrl } from "@/components/hms/imageCompress";
 
 const EMPTY_TENANT = {
   headerName: "",
@@ -11,8 +12,9 @@ const EMPTY_TENANT = {
   phone: "",
   gstin: "",
   footerText: "",
+  signatureImage: "",
 };
-const EMPTY_OWN = { headerName: "", qualifications: "" };
+const EMPTY_OWN = { headerName: "", qualifications: "", signatureImage: "" };
 
 export default function BrandingClient() {
   const [data, setData] = useState(null);
@@ -33,12 +35,14 @@ export default function BrandingClient() {
         phone: d.tenantBranding.phone || "",
         gstin: d.tenantBranding.gstin || "",
         footerText: d.tenantBranding.footer_text || "",
+        signatureImage: d.tenantBranding.signature_image || "",
       });
     }
     if (d.ownBranding) {
       setOwnForm({
         headerName: d.ownBranding.header_name || "",
         qualifications: d.ownBranding.qualifications || "",
+        signatureImage: d.ownBranding.signature_image || "",
       });
     }
   }
@@ -111,7 +115,41 @@ export default function BrandingClient() {
           <Field label="Header name" value={tenantForm.headerName} onChange={(v) => setTenantForm((s) => ({ ...s, headerName: v }))} required />
           <Field label="Logo URL" value={tenantForm.logoUrl} onChange={(v) => setTenantForm((s) => ({ ...s, logoUrl: v }))} />
           {isSolo && (
-            <Field label="Qualifications (e.g. MBBS, MD)" value={tenantForm.qualifications} onChange={(v) => setTenantForm((s) => ({ ...s, qualifications: v }))} />
+            <>
+              <Field label="Qualifications (e.g. MBBS, MD)" value={tenantForm.qualifications} onChange={(v) => setTenantForm((s) => ({ ...s, qualifications: v }))} />
+              <div className="space-y-1.5 text-sm">
+                <span className="font-medium">Signature</span>
+                <p className="text-xs text-slate-500">Shown as an image at the signature line on your prescriptions and reports.</p>
+                <div className="flex items-center gap-3">
+                  {tenantForm.signatureImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={tenantForm.signatureImage} alt="Your signature" className="h-14 rounded border border-slate-200 bg-white px-2" />
+                  ) : (
+                    <span className="text-xs text-slate-400">No signature uploaded yet.</span>
+                  )}
+                  <label className="cursor-pointer rounded-md border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-50">
+                    {tenantForm.signatureImage ? "Change" : "Upload"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        const url = await compressImageToDataUrl(file, 400, 0.8);
+                        setTenantForm((s) => ({ ...s, signatureImage: url }));
+                      }}
+                    />
+                  </label>
+                  {tenantForm.signatureImage && (
+                    <button type="button" onClick={() => setTenantForm((s) => ({ ...s, signatureImage: "" }))} className="text-xs text-red-600 underline">
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
           )}
           <Field label="Address" value={tenantForm.address} onChange={(v) => setTenantForm((s) => ({ ...s, address: v }))} />
           <Field label="Phone" value={tenantForm.phone} onChange={(v) => setTenantForm((s) => ({ ...s, phone: v }))} />
@@ -153,6 +191,38 @@ export default function BrandingClient() {
           </p>
           <Field label="Your name" value={ownForm.headerName} onChange={(v) => setOwnForm((s) => ({ ...s, headerName: v }))} required />
           <Field label="Qualifications" value={ownForm.qualifications} onChange={(v) => setOwnForm((s) => ({ ...s, qualifications: v }))} placeholder="MBBS, MD (Medicine)" />
+          <div className="space-y-1.5 text-sm">
+            <span className="font-medium">Signature</span>
+            <p className="text-xs text-slate-500">Shown as an image at the signature line on your prescriptions and reports (e.g. lab reports you finalize) — not just your typed name.</p>
+            <div className="flex items-center gap-3">
+              {ownForm.signatureImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={ownForm.signatureImage} alt="Your signature" className="h-14 rounded border border-slate-200 bg-white px-2" />
+              ) : (
+                <span className="text-xs text-slate-400">No signature uploaded yet.</span>
+              )}
+              <label className="cursor-pointer rounded-md border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-50">
+                {ownForm.signatureImage ? "Change" : "Upload"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    const url = await compressImageToDataUrl(file, 400, 0.8);
+                    setOwnForm((s) => ({ ...s, signatureImage: url }));
+                  }}
+                />
+              </label>
+              {ownForm.signatureImage && (
+                <button type="button" onClick={() => setOwnForm((s) => ({ ...s, signatureImage: "" }))} className="text-xs text-red-600 underline">
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
           <button
             disabled={busy}
             className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"

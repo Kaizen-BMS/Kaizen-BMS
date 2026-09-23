@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 
@@ -150,7 +150,6 @@ export function TestsTab({ canManage }) {
 
   const load = () => apiGet("/api/lab/tests").then((d) => setTests(d.tests));
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch((e) => setMsg(e.message));
   }, []);
 
@@ -258,18 +257,26 @@ export function TestsTab({ canManage }) {
 export function ReportsTab() {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
-  const load = () => apiGet("/api/lab/reports").then((d) => setRows(d.reports));
+  const [q, setQ] = useState("");
+  const searchGenRef = useRef(0);
+  const load = () => {
+    const gen = ++searchGenRef.current;
+    return apiGet(`/api/lab/reports${q ? `?q=${encodeURIComponent(q)}` : ""}`).then((d) => {
+      if (searchGenRef.current === gen) setRows(d.reports);
+    });
+  };
   const reload = () => load().catch(() => {});
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch((e) => setErr(e.message));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
   useRealtime({ "laborder:updated": load, "lab:result": load }, load);
 
   if (!rows) return <p className="text-sm text-slate-400">{err || "Loading…"}</p>;
   const toDoctor = rows.filter((r) => r.doctor).length;
   return (
     <div className="space-y-3">
+      <input placeholder="Find an old bill / report — patient name, phone, or order #" value={q} onChange={(e) => setQ(e.target.value)} className="w-full max-w-md rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
       <div className="grid gap-3 sm:grid-cols-3">
         {[["Reports ready", rows.length], ["Sent to doctors", toDoctor], ["To print & hand over", rows.length - toDoctor]].map(([l, v]) => (
           <div key={l} className="rounded-lg border border-slate-200 bg-white p-3"><p className="text-xs text-slate-500">{l}</p><p className="text-2xl font-semibold tabular-nums">{v}</p></div>

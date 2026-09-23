@@ -235,6 +235,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
   async function savePrice(itemId) {
     try {
       await apiSend(`/api/billing/${bill.id}/items/${itemId}`, "PATCH", { amount: Number(priceEdits[itemId]) });
+      onChanged();
     } catch (err) {
       onError(err.message);
     }

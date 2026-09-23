@@ -35,12 +35,25 @@ async function getPharmacyAlerts(db, tenantId) {
   const lowStock = medicines.filter((m) => m.lowStock);
   const expiringSoon = medicines.filter((m) => m.batches.some((b) => b.expiringSoon && !b.expired));
   const expired = medicines.filter((m) => m.batches.some((b) => b.expired));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daysLeft = (d) => Math.round((new Date(d) - today) / 86400000);
+
+  // Three genuinely separate categories — never merged into one generic
+  // "pharmacy has issues" notice (CLAUDE.md-style discipline: each is its
+  // own card with its own example detail and its own "view" target).
   return {
     instanceName: instance.name,
     lowStockCount: lowStock.length,
     lowStock: lowStock.slice(0, 5).map((m) => ({ medicineName: m.medicineName, totalQuantity: m.totalQuantity, threshold: m.threshold })),
     expiringSoonCount: expiringSoon.length,
+    expiringSoon: expiringSoon.slice(0, 5).flatMap((m) =>
+      m.batches.filter((b) => b.expiringSoon && !b.expired).map((b) => ({ medicineName: m.medicineName, batch: b.batch_number, expiryDate: b.expiry_date, daysRemaining: daysLeft(b.expiry_date) })),
+    ).slice(0, 5),
     expiredCount: expired.length,
+    expired: expired.slice(0, 5).flatMap((m) =>
+      m.batches.filter((b) => b.expired).map((b) => ({ medicineName: m.medicineName, batch: b.batch_number, expiredOn: b.expiry_date, quantity: b.quantity })),
+    ).slice(0, 5),
   };
 }
 

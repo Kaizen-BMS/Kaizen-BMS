@@ -115,7 +115,12 @@ export default async function PrescriptionPrintPage({ params }) {
 
       <div className="mt-20 flex justify-end">
         <div className="text-right text-sm">
-          <div className="mb-1 w-40 border-b border-slate-400" />
+          {(branding.signature?.image || branding.header.signature_image) ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={branding.signature?.image || branding.header.signature_image} alt="Signature" className="mb-1 ml-auto h-12" />
+          ) : (
+            <div className="mb-1 w-40 border-b border-slate-400" />
+          )}
           <p className="font-semibold">{signatureName}</p>
           {signatureQualifications && (
             <p className="text-xs text-slate-500">{signatureQualifications}</p>

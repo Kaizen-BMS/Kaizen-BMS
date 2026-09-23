@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiRoute, json } from "@/lib/apiRoute";
+import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { requireTenantId } from "@/lib/requestContext";
@@ -27,7 +27,10 @@ export const GET = apiRoute("bed:read", async () => {
 });
 
 const createSchema = z.object({
-  wardType: z.enum(["GENERAL", "PRIVATE", "ICU"]),
+  // A ward's own `code` (see the wards master, "ward:manage") — no longer
+  // a fixed 3-value set, re-verified against the tenant's real wards below
+  // rather than trusted bare.
+  wardType: z.string().trim().min(1).max(30),
   bedNumber: z.string().trim().min(1).max(50),
   dailyRate: z.coerce.number().min(0).max(1_000_000).optional().default(0),
   // Optional link to a ROOM-type Service Master entry (Phase 7 — CLAUDE.md
@@ -41,6 +44,8 @@ const createSchema = z.object({
 // Add a bed to the master list.
 export const POST = apiRoute("bed:manage", async (request, { session }) => {
   const body = await parseBody(request, createSchema);
+  const ward = await tenantDb.wards.findFirst({ where: { code: body.wardType, active: true } });
+  if (!ward) throw new HttpError(400, "unknown_ward");
   const bed = await tenantDb.beds.create({
     data: {
       ward_type: body.wardType,

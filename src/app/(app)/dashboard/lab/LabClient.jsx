@@ -10,6 +10,30 @@ import { WalkInTab, TestsTab, ReportsTab, PayBox } from "./LabExtras";
 
 const FLAGS = ["NORMAL", "HIGH", "LOW", "ABNORMAL"];
 
+// A numeric reference range ("70-110", "13.5 - 17.5") auto-flags the result
+// the moment both are entered — no reason to make staff pick Normal/High/Low
+// by hand for the common case. Non-numeric ranges (e.g. "Negative") simply
+// can't be auto-computed, so the manual dropdown stays available for those.
+function parseRangeBounds(referenceRange) {
+  const m = String(referenceRange || "").match(/(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const min = parseFloat(m[1]);
+  const max = parseFloat(m[2]);
+  if (Number.isNaN(min) || Number.isNaN(max) || min > max) return null;
+  return [min, max];
+}
+
+function computeFlag(result, referenceRange) {
+  const range = parseRangeBounds(referenceRange);
+  if (!range) return null;
+  const val = parseFloat(String(result).trim());
+  if (Number.isNaN(val)) return null;
+  const [min, max] = range;
+  if (val < min) return "LOW";
+  if (val > max) return "HIGH";
+  return "NORMAL";
+}
+
 export default function LabClient({ permissions }) {
   const [tab, setTab] = useState("queue");
   return (
@@ -31,7 +55,7 @@ export default function LabClient({ permissions }) {
 function LabQueueView({ permissions }) {
   const [orders, setOrders] = useState([]);
   const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyId, setBusyId] = useState(null);
   const [resultingId, setResultingId] = useState(null);
   const [rows, setRows] = useState([]);
   const [justResulted, setJustResulted] = useState(null); // { id } — show a Print link briefly
@@ -62,27 +86,34 @@ function LabQueueView({ permissions }) {
     load,
   );
 
+  // Apply the server's own response straight to local state — instant for
+  // the tech who clicked, no waiting on the realtime round trip (which
+  // still fires, for every OTHER open screen watching this queue).
   async function collect(id) {
-    setBusy(true);
+    setBusyId(id);
     setMsg("");
     try {
-      await apiSend(`/api/lab/orders/${id}/collect`, "POST", {});
+      const { labOrder } = await apiSend(`/api/lab/orders/${id}/collect`, "POST", {});
+      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...labOrder } : o)));
+      flash(id);
     } catch (err) {
       setMsg(err.message);
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
 
   async function receive(id) {
-    setBusy(true);
+    setBusyId(id);
     setMsg("");
     try {
-      await apiSend(`/api/lab/orders/${id}/receive`, "POST", {});
+      const { labOrder } = await apiSend(`/api/lab/orders/${id}/receive`, "POST", {});
+      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...labOrder } : o)));
+      flash(id);
     } catch (err) {
       setMsg(err.message);
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
 
@@ -99,17 +130,18 @@ function LabQueueView({ permissions }) {
   async function submitResults() {
     const results = rows.filter((r) => r.testName.trim() && r.result.trim());
     if (results.length === 0) return;
-    setBusy(true);
+    setBusyId(resultingId);
     setMsg("");
     try {
-      await apiSend(`/api/lab/orders/${resultingId}/result`, "POST", { results });
+      const { labOrder } = await apiSend(`/api/lab/orders/${resultingId}/result`, "POST", { results });
+      setOrders((prev) => prev.map((o) => (o.id === resultingId ? { ...o, ...labOrder } : o)));
       setJustResulted({ id: resultingId });
       setResultingId(null);
       setRows([]);
     } catch (err) {
       setMsg(err.message);
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
 
@@ -166,25 +198,25 @@ function LabQueueView({ permissions }) {
                 {!o.collected_at && permissions.canCollect && (
                   <button
                     onClick={() => collect(o.id)}
-                    disabled={busy}
+                    disabled={busyId === o.id}
                     className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                   >
-                    Mark collected
+                    {busyId === o.id ? "Marking…" : "Mark collected"}
                   </button>
                 )}
                 {o.collected_at && !o.received_at && permissions.canReceive && (
                   <button
                     onClick={() => receive(o.id)}
-                    disabled={busy}
+                    disabled={busyId === o.id}
                     className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                   >
-                    Mark received
+                    {busyId === o.id ? "Marking…" : "Mark received"}
                   </button>
                 )}
                 {o.received_at && permissions.canResult && (
                   <button
                     onClick={() => startResult(o)}
-                    disabled={busy}
+                    disabled={busyId === o.id}
                     className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                   >
                     Enter results
@@ -194,7 +226,9 @@ function LabQueueView({ permissions }) {
 
               {resultingId === o.id && (
                 <div className="mt-4 space-y-2 border-t border-slate-200 pt-3">
-                  {rows.map((r, i) => (
+                  {rows.map((r, i) => {
+                    const abnormal = r.flag && r.flag !== "NORMAL";
+                    return (
                     <div key={i} className="grid grid-cols-5 gap-1.5">
                       <input
                         placeholder="test"
@@ -205,8 +239,13 @@ function LabQueueView({ permissions }) {
                       <input
                         placeholder="result"
                         value={r.result}
-                        onChange={(e) => setRows((xs) => xs.map((x, j) => (j === i ? { ...x, result: e.target.value } : x)))}
-                        className="rounded border border-slate-300 px-1.5 py-1 text-xs"
+                        onChange={(e) => setRows((xs) => xs.map((x, j) => {
+                          if (j !== i) return x;
+                          const next = { ...x, result: e.target.value };
+                          const auto = computeFlag(next.result, next.referenceRange);
+                          return auto ? { ...next, flag: auto } : next;
+                        }))}
+                        className={`rounded border px-1.5 py-1 text-xs ${abnormal ? "border-red-300 font-bold text-red-700" : "border-slate-300"}`}
                       />
                       <input
                         placeholder="units"
@@ -217,20 +256,27 @@ function LabQueueView({ permissions }) {
                       <input
                         placeholder="reference range"
                         value={r.referenceRange}
-                        onChange={(e) => setRows((xs) => xs.map((x, j) => (j === i ? { ...x, referenceRange: e.target.value } : x)))}
+                        onChange={(e) => setRows((xs) => xs.map((x, j) => {
+                          if (j !== i) return x;
+                          const next = { ...x, referenceRange: e.target.value };
+                          const auto = computeFlag(next.result, next.referenceRange);
+                          return auto ? { ...next, flag: auto } : next;
+                        }))}
                         className="rounded border border-slate-300 px-1.5 py-1 text-xs"
                       />
                       <select
                         value={r.flag}
                         onChange={(e) => setRows((xs) => xs.map((x, j) => (j === i ? { ...x, flag: e.target.value } : x)))}
-                        className="rounded border border-slate-300 px-1.5 py-1 text-xs"
+                        title="Auto-set from result + reference range when both are numeric — override here if needed"
+                        className={`rounded border px-1.5 py-1 text-xs ${abnormal ? "border-red-300 font-bold text-red-700" : "border-slate-300"}`}
                       >
                         {FLAGS.map((f) => (
                           <option key={f} value={f}>{f}</option>
                         ))}
                       </select>
                     </div>
-                  ))}
+                    );
+                  })}
                   <div className="flex gap-2">
                     <button
                       onClick={() => setRows((xs) => [...xs, { testName: "", result: "", units: "", referenceRange: "", flag: "NORMAL" }])}
@@ -240,10 +286,10 @@ function LabQueueView({ permissions }) {
                     </button>
                     <button
                       onClick={submitResults}
-                      disabled={busy}
+                      disabled={busyId === resultingId}
                       className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                     >
-                      Finalize report
+                      {busyId === resultingId ? "Finalizing…" : "Finalize report"}
                     </button>
                     <button
                       onClick={() => { setResultingId(null); setRows([]); }}

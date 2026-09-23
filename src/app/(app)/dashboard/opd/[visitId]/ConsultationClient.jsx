@@ -120,6 +120,10 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
     load,
   );
 
+  useEffect(() => {
+    apiGet("/api/lab/catalog").then((d) => setLabCatalog(d.tests || [])).catch(() => {});
+  }, []);
+
   if (!data) {
     return <p className="text-sm text-slate-400">{msg || "Loading…"}</p>;
   }
@@ -185,10 +189,6 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
       setBusy(false);
     }
   }
-
-  useEffect(() => {
-    apiGet("/api/lab/catalog").then((d) => setLabCatalog(d.tests || [])).catch(() => {});
-  }, []);
 
   async function saveLabOrder() {
     const list = tests.map((t) => t.trim()).filter(Boolean);

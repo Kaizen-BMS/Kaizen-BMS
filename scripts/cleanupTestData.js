@@ -36,7 +36,12 @@ const inList = (ids) => (ids.length ? ids.join(",") : "NULL");
 const q = (sql, ...p) => prisma.$queryRawUnsafe(sql, ...p);
 
 async function main() {
-  const combo = await q(`SELECT id FROM tenants WHERE name LIKE 'TEST Combo %' AND (slug LIKE 't-%' OR slug LIKE 'p-%') AND created_at >= ?`, SINCE);
+  // Slug prefix is single-letter-dash (t-, p-, u-, v-, …) — test scripts in
+  // this project pick a fresh throwaway letter per tenant within one run to
+  // avoid slug collisions, so this stays a REGEXP rather than an enumerated
+  // list. Still safe: ANDed with the exact "TEST Combo %" name and the date
+  // cutoff below, never a match on those alone.
+  const combo = await q(`SELECT id FROM tenants WHERE name LIKE 'TEST Combo %' AND slug REGEXP '^[a-z]-' AND created_at >= ?`, SINCE);
   const comboIds = num(combo);
   const orgs = await q(`SELECT id FROM organizations WHERE name LIKE 'TEST Combo %' AND created_at >= ?`, SINCE);
   const orgIds = num(orgs);

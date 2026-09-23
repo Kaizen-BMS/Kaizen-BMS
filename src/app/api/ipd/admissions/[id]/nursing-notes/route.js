@@ -6,17 +6,14 @@ import { emitToModule } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
 
+// Vitals are a per-tenant configurable field set (see CLAUDE.md
+// "vital_parameters") — no fixed bp/pulse/temp/spo2 shape anymore. A plain
+// key->string record is accepted here and re-validated below against the
+// tenant's own ACTIVE parameter list, never trusted bare (same discipline
+// as the custom-fields pattern the rest of this project already uses).
 const createSchema = z.object({
   note: z.string().trim().max(4000).optional().default(""),
-  vitals: z
-    .object({
-      bp: z.string().trim().max(20).optional(),
-      pulse: z.coerce.number().min(0).max(300).optional(),
-      temp: z.coerce.number().min(80).max(115).optional(),
-      spo2: z.coerce.number().min(0).max(100).optional(),
-    })
-    .partial()
-    .optional(),
+  vitals: z.record(z.string().max(40), z.string().trim().max(30)).optional(),
 });
 
 export const POST = apiRoute("nursingnote:create", async (request, ctx) => {
@@ -29,12 +26,24 @@ export const POST = apiRoute("nursingnote:create", async (request, ctx) => {
   if (!admission) return json({ error: "not_found" }, 404);
 
   const body = await parseBody(request, createSchema);
+
+  const params = await tenantDb.vital_parameters.findMany({ where: { active: true } });
+  const byKey = new Map(params.map((p) => [p.field_key, p]));
+  const vitals = {};
+  for (const [key, value] of Object.entries(body.vitals || {})) {
+    const param = byKey.get(key);
+    if (!param || !value) continue;
+    if (param.value_type === "NUMBER" && !/^-?\d+(\.\d+)?$/.test(value)) continue;
+    if (param.value_type === "BP" && !/^\d{2,3}\s*\/\s*\d{2,3}$/.test(value)) continue;
+    vitals[key] = value;
+  }
+
   const created = await tenantDb.nursing_notes.create({
     data: {
       admission_id: admissionId,
       author_user_id: BigInt(ctx.session.userId),
       note: body.note || null,
-      vitals: body.vitals && Object.keys(body.vitals).length ? JSON.stringify(body.vitals) : null,
+      vitals: Object.keys(vitals).length ? JSON.stringify(vitals) : null,
     },
   });
 

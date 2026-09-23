@@ -5,7 +5,6 @@ import Link from "next/link";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 
-const WARD_LABEL = { GENERAL: "General Ward", PRIVATE: "Private Rooms", ICU: "ICU" };
 const STATUS_LABEL = {
   VACANT: "Vacant — ready for a new patient",
   OCCUPIED: "Occupied",
@@ -34,13 +33,21 @@ function upsertBed(list, bed) {
 export default function BedBoardClient({ permissions }) {
   const { canAdmit, canDischarge, canManageBeds } = permissions;
   const [beds, setBeds] = useState([]);
+  const [wards, setWards] = useState([]);
   const [msg, setMsg] = useState("");
   const [admitBed, setAdmitBed] = useState(null); // bed being admitted onto
   const [summaryBed, setSummaryBed] = useState(null); // occupied bed clicked
   const [maintenanceBed, setMaintenanceBed] = useState(null); // bed being set to/cleared from maintenance
   const [showManage, setShowManage] = useState(false);
+  const [showWards, setShowWards] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [flashIds, setFlashIds] = useState(new Set());
+
+  const wardLabel = (code) => {
+    const w = wards.find((w) => w.code === code);
+    return w ? (w.floor ? `${w.name} · ${w.floor}` : w.name) : code;
+  };
+  const wardName = (code) => wards.find((w) => w.code === code)?.name || code;
 
   function flash(id) {
     setFlashIds((s) => new Set(s).add(id));
@@ -58,9 +65,15 @@ export default function BedBoardClient({ permissions }) {
     setBeds(beds);
   }
 
+  async function loadWards() {
+    const { wards } = await apiGet("/api/ipd/wards?all=1");
+    setWards(wards);
+  }
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch((e) => setMsg(e.message));
+    loadWards().catch((e) => setMsg(e.message));
   }, []);
 
   useRealtime(
@@ -71,6 +84,7 @@ export default function BedBoardClient({ permissions }) {
       },
       "admission:created": () => load(),
       "admission:discharged": () => load(),
+      "ward:updated": () => loadWards(),
     },
     load,
   );
@@ -92,10 +106,19 @@ export default function BedBoardClient({ permissions }) {
     }
   }
 
-  const wards = ["GENERAL", "PRIVATE", "ICU"].map((w) => ({
+  // Group by every ward_type actually present on a bed — covers both an
+  // active ward's beds and a since-deactivated ward's beds (deactivating a
+  // ward is blocked while it still has beds, but this keeps the board
+  // correct even for older data / a direct DB edit).
+  const wardCodes = [...new Set(beds.map((b) => b.ward_type))].sort((a, b) => {
+    const oa = wards.find((w) => w.code === a)?.display_order ?? 999;
+    const ob = wards.find((w) => w.code === b)?.display_order ?? 999;
+    return oa - ob || a.localeCompare(b);
+  });
+  const wardGroups = wardCodes.map((w) => ({
     ward: w,
     beds: beds.filter((b) => b.ward_type === w),
-  })).filter((g) => g.beds.length > 0);
+  }));
 
   const counts = beds.reduce((acc, b) => {
     acc[b.status] = (acc[b.status] || 0) + 1;
@@ -134,6 +157,14 @@ export default function BedBoardClient({ permissions }) {
           </button>
           {canManageBeds && (
             <button
+              onClick={() => setShowWards((s) => !s)}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+            >
+              {showWards ? "Close" : "Manage wards"}
+            </button>
+          )}
+          {canManageBeds && (
+            <button
               onClick={() => setShowManage((s) => !s)}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
             >
@@ -145,10 +176,14 @@ export default function BedBoardClient({ permissions }) {
 
       {msg && <p className="text-sm text-red-600">{msg}</p>}
 
-      {showReport && <OccupancyReport />}
+      {showReport && <OccupancyReport wardName={wardName} />}
+
+      {showWards && canManageBeds && (
+        <ManageWardsPanel wards={wards} onChanged={loadWards} onError={setMsg} />
+      )}
 
       {showManage && canManageBeds && (
-        <AddBedForm onAdded={() => { load(); }} onError={setMsg} />
+        <AddBedForm wards={wards} onAdded={() => { load(); }} onError={setMsg} />
       )}
 
       {/* Legend — what the colors mean, up front, not left for staff to guess */}
@@ -170,10 +205,10 @@ export default function BedBoardClient({ permissions }) {
         </p>
       )}
 
-      {wards.map((g) => (
+      {wardGroups.map((g) => (
         <div key={g.ward}>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-            {WARD_LABEL[g.ward]}
+            {wardLabel(g.ward)}
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-6">
             {g.beds.map((b) => {
@@ -252,6 +287,7 @@ export default function BedBoardClient({ permissions }) {
         <SummaryPopover
           bed={summaryBed}
           beds={beds}
+          wardName={wardName}
           canDischarge={canDischarge}
           onClose={() => setSummaryBed(null)}
           onError={setMsg}
@@ -264,9 +300,16 @@ export default function BedBoardClient({ permissions }) {
   );
 }
 
-function AddBedForm({ onAdded, onError }) {
-  const [form, setForm] = useState({ wardType: "GENERAL", bedNumber: "", dailyRate: "" });
+function AddBedForm({ wards, onAdded, onError }) {
+  const [form, setForm] = useState({ wardType: "", bedNumber: "", dailyRate: "" });
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!form.wardType && wards.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setForm((s) => ({ ...s, wardType: wards[0].code }));
+    }
+  }, [wards, form.wardType]);
 
   async function submit(e) {
     e.preventDefault();
@@ -292,15 +335,23 @@ function AddBedForm({ onAdded, onError }) {
       className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-4"
     >
       <p className="col-span-2 text-sm font-semibold sm:col-span-4">Add a bed</p>
-      <select
-        value={form.wardType}
-        onChange={(e) => setForm((s) => ({ ...s, wardType: e.target.value }))}
-        className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-      >
-        <option value="GENERAL">General Ward</option>
-        <option value="PRIVATE">Private Rooms</option>
-        <option value="ICU">ICU</option>
-      </select>
+      {wards.length === 0 ? (
+        <p className="col-span-2 text-xs text-amber-600 sm:col-span-4">
+          No wards defined yet — use “Manage wards” above to add one first.
+        </p>
+      ) : (
+        <select
+          value={form.wardType}
+          onChange={(e) => setForm((s) => ({ ...s, wardType: e.target.value }))}
+          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+        >
+          {wards.map((w) => (
+            <option key={w.code} value={w.code}>
+              {w.name}{w.floor ? ` · ${w.floor}` : ""}
+            </option>
+          ))}
+        </select>
+      )}
       <input
         placeholder="bed number (e.g. G-104)"
         required
@@ -317,7 +368,7 @@ function AddBedForm({ onAdded, onError }) {
         className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
       />
       <button
-        disabled={busy}
+        disabled={busy || !form.wardType}
         className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
       >
         Add bed
@@ -326,6 +377,84 @@ function AddBedForm({ onAdded, onError }) {
         Daily rate is used to calculate the room charge automatically when a patient is discharged.
       </p>
     </form>
+  );
+}
+
+function ManageWardsPanel({ wards, onChanged, onError }) {
+  const [form, setForm] = useState({ name: "", floor: "" });
+  const [busy, setBusy] = useState(false);
+
+  async function addWard(e) {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setBusy(true);
+    try {
+      await apiSend("/api/ipd/wards", "POST", { name: form.name.trim(), floor: form.floor.trim() });
+      setForm({ name: "", floor: "" });
+      onChanged();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleActive(ward) {
+    try {
+      await apiSend(`/api/ipd/wards/${ward.id}`, "PATCH", { active: !ward.active });
+      onChanged();
+    } catch (err) {
+      onError(err.message);
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+      <p className="text-sm font-semibold">Wards</p>
+      <p className="text-xs text-slate-400">
+        Define how this hospital&apos;s floors and wards are organized — not fixed to General/ICU.
+      </p>
+
+      {wards.length > 0 && (
+        <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+          {wards.map((w) => (
+            <div key={w.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+              <span className={w.active ? "" : "text-slate-400 line-through"}>
+                {w.name}
+                {w.floor && <span className="text-slate-400"> · {w.floor}</span>}
+              </span>
+              <button
+                onClick={() => toggleActive(w)}
+                className="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50"
+              >
+                {w.active ? "Deactivate" : "Reactivate"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={addWard} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <input
+          placeholder="ward name (e.g. Maternity Ward)"
+          value={form.name}
+          onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+          className="col-span-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm sm:col-span-1"
+        />
+        <input
+          placeholder="floor (e.g. 2nd Floor)"
+          value={form.floor}
+          onChange={(e) => setForm((s) => ({ ...s, floor: e.target.value }))}
+          className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+        />
+        <button
+          disabled={busy || !form.name.trim()}
+          className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+        >
+          Add ward
+        </button>
+      </form>
+    </div>
   );
 }
 
@@ -443,7 +572,7 @@ function AdmitModal({ bed, onClose, onError }) {
   );
 }
 
-function SummaryPopover({ bed, beds, canDischarge, onClose, onError }) {
+function SummaryPopover({ bed, beds, wardName, canDischarge, onClose, onError }) {
   const [dischargeType, setDischargeType] = useState("ROUTINE");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
@@ -518,7 +647,7 @@ function SummaryPopover({ bed, beds, canDischarge, onClose, onError }) {
                   <option value="">Select a vacant bed…</option>
                   {vacantBeds.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {WARD_LABEL[b.ward_type]} · {b.bed_number}
+                      {wardName(b.ward_type)} · {b.bed_number}
                     </option>
                   ))}
                 </select>
@@ -622,14 +751,14 @@ function MaintenanceModal({ bed, onClose, onError }) {
           Set to maintenance
         </button>
         <p className="text-xs text-slate-400">
-          Excludes this bed from the available pool until it's cleared back to vacant.
+          Excludes this bed from the available pool until it&apos;s cleared back to vacant.
         </p>
       </div>
     </Modal>
   );
 }
 
-function OccupancyReport() {
+function OccupancyReport({ wardName }) {
   const [wards, setWards] = useState(null);
   const [msg, setMsg] = useState("");
 
@@ -660,7 +789,7 @@ function OccupancyReport() {
         <tbody>
           {wards.map((w) => (
             <tr key={w.wardType} className="border-b border-slate-100 last:border-0">
-              <td className="px-3 py-2 font-medium">{WARD_LABEL[w.wardType] || w.wardType}</td>
+              <td className="px-3 py-2 font-medium">{wardName(w.wardType)}</td>
               <td className="px-3 py-2">{w.occupancyPct}% <span className="text-slate-400">({w.occupied}/{w.total})</span></td>
               <td className="px-3 py-2">{w.vacant}</td>
               <td className="px-3 py-2">{w.occupied}</td>

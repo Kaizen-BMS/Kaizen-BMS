@@ -14,6 +14,7 @@
  */
 
 const { getDefaultInstance } = require("../moduleInstances");
+const { EXPIRY_WARNING_DAYS } = require("../pharmacyConstants");
 
 function startOfDay(d = new Date()) {
   const x = new Date(d);
@@ -135,30 +136,45 @@ async function getPharmacyStatus(tenantDb, tenantId) {
   const today = startOfDay();
   const tomorrow = endOfDay();
   const warnBy = new Date();
-  warnBy.setDate(warnBy.getDate() + 30); // same EXPIRY_WARNING_DAYS as the Pharmacy inventory screen
+  warnBy.setDate(warnBy.getDate() + EXPIRY_WARNING_DAYS);
 
-  const [batches, thresholds, dispensedToday, pendingFulfillment] = await Promise.all([
-    tenantDb.pharmacy_stock.findMany({ where: { module_instance_id: instance.id }, select: { medicine_name: true, quantity: true, expiry_date: true } }),
+  const [batches, thresholds, dispensedToday, pendingFulfillment, medicineCount, salesToday] = await Promise.all([
+    tenantDb.pharmacy_stock.findMany({ where: { module_instance_id: instance.id }, select: { medicine_name: true, quantity: true, expiry_date: true, purchase_rate: true, mrp: true } }),
     tenantDb.pharmacy_thresholds.findMany({ select: { medicine_name: true, low_stock_threshold: true } }),
     tenantDb.pharmacy_stock_movements.count({
       where: { type: "DISPENSE", created_at: { gte: today, lt: tomorrow }, pharmacy_stock: { module_instance_id: instance.id } },
     }),
     tenantDb.prescription_items.count({ where: { status: { in: ["PENDING", "OUT_OF_STOCK"] } } }),
+    tenantDb.medicines.count({ where: { active: true } }),
+    tenantDb.bill_items.aggregate({
+      _sum: { amount: true },
+      where: { source: "PHARMACY", created_at: { gte: today, lt: tomorrow } },
+    }),
   ]);
 
   const thresholdMap = new Map(thresholds.map((t) => [t.medicine_name, t.low_stock_threshold]));
   const totals = new Map();
   let nearExpiry = 0;
+  let expired = 0;
+  let totalStockUnits = 0;
+  let totalStockValue = 0;
   for (const b of batches) {
     totals.set(b.medicine_name, (totals.get(b.medicine_name) || 0) + b.quantity);
     if (b.expiry_date && b.expiry_date >= today && b.expiry_date <= warnBy) nearExpiry++;
+    if (b.expiry_date && b.expiry_date < today) expired++;
+    totalStockUnits += b.quantity;
+    totalStockValue += b.quantity * Number(b.purchase_rate ?? b.mrp ?? 0);
   }
   let lowStock = 0;
   for (const [name, total] of totals) {
     if (total <= (thresholdMap.get(name) ?? 10)) lowStock++;
   }
 
-  return { instanceName: instance.name, lowStock, nearExpiry, dispensedToday, pendingFulfillment };
+  return {
+    instanceName: instance.name, lowStock, nearExpiry, expired, dispensedToday, pendingFulfillment,
+    totalMedicines: medicineCount, totalStockUnits, totalStockValue: Math.round(totalStockValue * 100) / 100,
+    todaysSales: Number(salesToday._sum.amount || 0),
+  };
 }
 
 /** Pending orders / results awaiting entry / completed today. */

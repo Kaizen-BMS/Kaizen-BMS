@@ -73,4 +73,35 @@ If you did not ask for this, ignore this email — your password is unchanged.`,
   });
 }
 
-module.exports = { sendOtpEmail, sendPasswordResetEmail };
+function partnerSalesReportHtml({ fromTenantName, toTenantName, date, items, totalQuantity, totalAmount }) {
+  const rows = items
+    .map(
+      (it) =>
+        `<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">${it.medicineName}</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${it.quantity}</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${it.amount != null ? `₹${it.amount}` : "—"}</td></tr>`,
+    )
+    .join("");
+  return `
+    <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin: 0 auto; color: #111;">
+      <p style="font-size: 14px; color: #555;">Daily partner pharmacy sales report from <b>${fromTenantName}</b> for <b>${toTenantName}</b> — ${date}</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+        <thead><tr style="text-align:left;color:#777"><th style="padding:4px 8px;border-bottom:2px solid #ddd">Medicine</th><th style="padding:4px 8px;border-bottom:2px solid #ddd;text-align:right">Qty</th><th style="padding:4px 8px;border-bottom:2px solid #ddd;text-align:right">Amount</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="3" style="padding:8px;color:#999">No orders fulfilled this day.</td></tr>`}</tbody>
+        <tfoot><tr style="font-weight:600"><td style="padding:6px 8px">Total</td><td style="padding:6px 8px;text-align:right">${totalQuantity}</td><td style="padding:6px 8px;text-align:right">${totalAmount ? `₹${totalAmount}` : "—"}</td></tr></tfoot>
+      </table>
+      <p style="font-size: 12px; color: #999; margin-top: 16px;">Sent from Kaizen HMS on behalf of ${fromTenantName}.</p>
+    </div>
+  `.trim();
+}
+
+/** Share one day's partner-connection pharmacy sales with the connected (requester) hospital's owner. Throws on failure — the caller decides how to surface that. */
+async function sendPartnerSalesReportEmail(toEmail, report) {
+  const t = getTransporter();
+  await t.sendMail({
+    from: `"Kaizen HMS" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: `Partner pharmacy sales — ${report.fromTenantName} — ${report.date}`,
+    html: partnerSalesReportHtml(report),
+  });
+}
+
+module.exports = { sendOtpEmail, sendPasswordResetEmail, sendPartnerSalesReportEmail };

@@ -35,7 +35,7 @@ model admissions {
 model beds {
   id                                            BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
   tenant_id                                     BigInt          @db.UnsignedBigInt
-  ward_type                                     beds_ward_type
+  ward_type                                     String          @db.VarChar(30)
   bed_number                                    String          @db.VarChar(50)
   daily_rate                                    Decimal         @default(0.00) @db.Decimal(10, 2)
   service_id                                    BigInt?         @db.UnsignedBigInt
@@ -74,6 +74,12 @@ model bill_items {
   igst_amount    Decimal?          @db.Decimal(12, 2)
   tax_amount     Decimal?          @db.Decimal(12, 2)
   created_at     DateTime          @default(now())
+  stock_id       BigInt?           @db.UnsignedBigInt
+  medicine_id    BigInt?           @db.UnsignedBigInt
+  batch_number   String?           @db.VarChar(80)
+  expiry_date    DateTime?         @db.Date
+  mrp            Decimal?          @db.Decimal(12, 2)
+  purchase_rate  Decimal?          @db.Decimal(12, 2)
   bills          bills             @relation(fields: [bill_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_bill_items_bill")
   services       services?         @relation(fields: [service_id], references: [id], onUpdate: Restrict, map: "fk_bill_items_service")
   tariffs        tariffs?          @relation(fields: [tariff_id], references: [id], onUpdate: Restrict, map: "fk_bill_items_tariff")
@@ -286,11 +292,23 @@ model pharmacy_stock {
   id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
   tenant_id                BigInt                     @db.UnsignedBigInt
   module_instance_id       BigInt?                    @db.UnsignedBigInt
+  medicine_id              BigInt?                    @db.UnsignedBigInt
   medicine_name            String
   batch_number             String?
   expiry_date              DateTime?                  @db.Date
+  manufacturing_date       DateTime?                  @db.Date
   quantity                 Int                        @default(0)
+  purchase_rate            Decimal?                   @db.Decimal(12, 2)
+  mrp                      Decimal?                   @db.Decimal(12, 2)
+  selling_rate             Decimal?                   @db.Decimal(12, 2)
+  rack                     String?                    @db.VarChar(20)
+  shelf                    String?                    @db.VarChar(20)
+  bin                      String?                    @db.VarChar(20)
+  supplier_id              BigInt?                    @db.UnsignedBigInt
+  grn_id                   BigInt?                    @db.UnsignedBigInt
   module_instances         module_instances?          @relation(fields: [module_instance_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_pharmacy_stock_instance")
+  medicines                medicines?                 @relation(fields: [medicine_id], references: [id], onUpdate: Restrict, map: "fk_pharmacy_stock_medicine")
+  suppliers                suppliers?                 @relation(fields: [supplier_id], references: [id], onUpdate: Restrict, map: "fk_pharmacy_stock_supplier")
   tenants                  tenants                    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_stock_tenant")
   pharmacy_stock_movements pharmacy_stock_movements[]
 
@@ -298,6 +316,8 @@ model pharmacy_stock {
   @@index([tenant_id], map: "idx_stock_hospital")
   @@index([tenant_id, medicine_name], map: "idx_stock_hospital_medicine")
   @@index([module_instance_id], map: "idx_pharmacy_stock_instance")
+  @@index([supplier_id], map: "fk_pharmacy_stock_supplier")
+  @@index([medicine_id], map: "idx_pharmacy_stock_medicine")
 }
 
 model pharmacy_stock_movements {
@@ -310,6 +330,8 @@ model pharmacy_stock_movements {
   prescription_item_id BigInt?                       @db.UnsignedBigInt
   performed_by         BigInt?                       @db.UnsignedBigInt
   created_at           DateTime                      @default(now())
+  reference_type       String?                       @db.VarChar(30)
+  reference_id         BigInt?                       @db.UnsignedBigInt
   prescription_items   prescription_items?           @relation(fields: [prescription_item_id], references: [id], onUpdate: Restrict, map: "fk_stock_movements_item")
   pharmacy_stock       pharmacy_stock                @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_stock_movements_stock")
   tenants              tenants                       @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_stock_movements_tenant")
@@ -328,6 +350,7 @@ model pharmacy_thresholds {
   medicine_name       String
   low_stock_threshold Int      @default(10) @db.UnsignedInt
   updated_at          DateTime @default(now())
+  max_stock           Int?     @db.UnsignedInt
   tenants             tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_pharmacy_thresholds_tenant")
 
   @@unique([tenant_id, medicine_name], map: "uq_pharmacy_thresholds")
@@ -395,20 +418,21 @@ model prescriptions {
 }
 
 model print_branding {
-  id             BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id      BigInt               @db.UnsignedBigInt
-  scope          print_branding_scope @default(TENANT)
-  doctor_user_id BigInt?              @db.UnsignedBigInt
-  header_name    String
-  logo_url       String?              @db.VarChar(500)
-  qualifications String?              @db.VarChar(255)
-  address        String?              @db.VarChar(500)
-  phone          String?              @db.VarChar(64)
-  gstin          String?              @db.VarChar(20)
-  footer_text    String?              @db.VarChar(500)
-  updated_at     DateTime             @default(now())
-  users          users?               @relation(fields: [doctor_user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_print_branding_doctor")
-  tenants        tenants              @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_print_branding_tenant")
+  id              BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id       BigInt               @db.UnsignedBigInt
+  scope           print_branding_scope @default(TENANT)
+  doctor_user_id  BigInt?              @db.UnsignedBigInt
+  header_name     String
+  logo_url        String?              @db.VarChar(500)
+  qualifications  String?              @db.VarChar(255)
+  address         String?              @db.VarChar(500)
+  phone           String?              @db.VarChar(64)
+  gstin           String?              @db.VarChar(20)
+  footer_text     String?              @db.VarChar(500)
+  updated_at      DateTime             @default(now())
+  signature_image String?              @db.MediumText
+  users           users?               @relation(fields: [doctor_user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_print_branding_doctor")
+  tenants         tenants              @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_print_branding_tenant")
 
   @@unique([tenant_id, doctor_user_id], map: "uq_print_branding_doctor")
   @@index([doctor_user_id], map: "fk_print_branding_doctor")
@@ -452,6 +476,7 @@ model tenants {
   bills                                                        bills[]
   consent_forms                                                consent_forms[]
   consultations                                                consultations[]
+  customer_returns                                             customer_returns[]
   departments                                                  departments[]
   doctor_slots                                                 doctor_slots[]
   duty_shifts                                                  duty_shifts[]
@@ -463,10 +488,13 @@ model tenants {
   feedback                                                     feedback[]
   follow_ups                                                   follow_ups[]
   form_templates                                               form_templates[]
+  grn_items                                                    grn_items[]
+  grns                                                         grns[]
   lab_order_items                                              lab_order_items[]
   lab_orders                                                   lab_orders[]
   lab_tests                                                    lab_tests[]
   leave_requests                                               leave_requests[]
+  medicines                                                    medicines[]
   module_connections                                           module_connections[]
   module_instances                                             module_instances[]
   nursing_notes                                                nursing_notes[]
@@ -483,17 +511,24 @@ model tenants {
   prescription_items                                           prescription_items[]
   prescriptions                                                prescriptions[]
   print_branding                                               print_branding[]
+  purchase_order_items                                         purchase_order_items[]
+  purchase_orders                                              purchase_orders[]
   radiology_orders                                             radiology_orders[]
   referral_sources                                             referral_sources[]
   services                                                     services[]
   staff_members                                                staff_members[]
   staff_profiles                                               staff_profiles[]
+  stock_transfers                                              stock_transfers[]
+  supplier_returns                                             supplier_returns[]
+  suppliers                                                    suppliers[]
   tariffs                                                      tariffs[]
   tenant_modules                                               tenant_modules[]
   organizations                                                organizations?              @relation(fields: [organization_id], references: [id], onUpdate: Restrict, map: "fk_tenants_organization")
   token_overrides                                              token_overrides[]
   users                                                        users[]
   visits                                                       visits[]
+  vital_parameters                                             vital_parameters[]
+  wards                                                        wards[]
   webhook_events                                               webhook_events[]
   workflow_instance_steps                                      workflow_instance_steps[]
   workflow_instances                                           workflow_instances[]
@@ -1595,10 +1630,249 @@ model lab_tests {
   @@index([tenant_id], map: "idx_lab_tests_tenant")
 }
 
-enum beds_ward_type {
-  GENERAL
-  PRIVATE
-  ICU
+model customer_returns {
+  id                   BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id            BigInt   @db.UnsignedBigInt
+  bill_id              BigInt?  @db.UnsignedBigInt
+  bill_item_id         BigInt?  @db.UnsignedBigInt
+  prescription_item_id BigInt?  @db.UnsignedBigInt
+  stock_id             BigInt   @db.UnsignedBigInt
+  medicine_id          BigInt?  @db.UnsignedBigInt
+  quantity             Int      @db.UnsignedInt
+  reason               String   @db.VarChar(255)
+  refund_amount        Decimal  @default(0.00) @db.Decimal(12, 2)
+  refund_id            BigInt?  @db.UnsignedBigInt
+  created_by           BigInt?  @db.UnsignedBigInt
+  created_at           DateTime @default(now()) @db.DateTime(0)
+  tenants              tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_customer_returns_tenant")
+
+  @@index([bill_id], map: "idx_customer_returns_bill")
+  @@index([tenant_id], map: "idx_customer_returns_tenant")
+}
+
+model grn_items {
+  id                 BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id          BigInt    @db.UnsignedBigInt
+  grn_id             BigInt    @db.UnsignedBigInt
+  medicine_id        BigInt    @db.UnsignedBigInt
+  batch_number       String    @db.VarChar(80)
+  manufacturing_date DateTime? @db.Date
+  expiry_date        DateTime? @db.Date
+  received_quantity  Int       @db.UnsignedInt
+  free_quantity      Int       @default(0) @db.UnsignedInt
+  damaged_quantity   Int       @default(0) @db.UnsignedInt
+  purchase_rate      Decimal   @default(0.00) @db.Decimal(12, 2)
+  mrp                Decimal   @default(0.00) @db.Decimal(12, 2)
+  discount_percent   Decimal   @default(0.00) @db.Decimal(5, 2)
+  gst_rate           Decimal   @default(0.00) @db.Decimal(5, 2)
+  accepted_quantity  Int       @db.UnsignedInt
+  rejected_quantity  Int       @default(0) @db.UnsignedInt
+  stock_id           BigInt?   @db.UnsignedBigInt
+  grns               grns      @relation(fields: [grn_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_grn_items_grn")
+  medicines          medicines @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_grn_items_medicine")
+  tenants            tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_grn_items_tenant")
+
+  @@index([grn_id], map: "idx_grn_items_grn")
+  @@index([medicine_id], map: "idx_grn_items_medicine")
+  @@index([tenant_id], map: "idx_grn_items_tenant")
+}
+
+model grns {
+  id                      BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id               BigInt           @db.UnsignedBigInt
+  module_instance_id      BigInt?          @db.UnsignedBigInt
+  grn_number              String           @db.VarChar(40)
+  grn_date                DateTime         @db.Date
+  supplier_id             BigInt?          @db.UnsignedBigInt
+  supplier_invoice_number String?          @db.VarChar(80)
+  supplier_invoice_date   DateTime?        @db.Date
+  notes                   String?          @db.VarChar(500)
+  created_by              BigInt?          @db.UnsignedBigInt
+  created_at              DateTime         @default(now()) @db.DateTime(0)
+  po_id                   BigInt?          @db.UnsignedBigInt
+  grn_items               grn_items[]
+  purchase_orders         purchase_orders? @relation(fields: [po_id], references: [id], onUpdate: Restrict, map: "fk_grns_po")
+  suppliers               suppliers?       @relation(fields: [supplier_id], references: [id], onUpdate: Restrict, map: "fk_grns_supplier")
+  tenants                 tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_grns_tenant")
+
+  @@unique([tenant_id, grn_number], map: "uq_grns_tenant_number")
+  @@index([supplier_id], map: "idx_grns_supplier")
+  @@index([tenant_id], map: "idx_grns_tenant")
+  @@index([po_id], map: "fk_grns_po")
+}
+
+model medicines {
+  id                    BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id             BigInt                 @db.UnsignedBigInt
+  name                  String
+  generic_name          String?
+  brand_name            String?
+  medicine_type         String                 @default("OTHER") @db.VarChar(20)
+  strength              String?                @db.VarChar(60)
+  dosage_form           String?                @db.VarChar(60)
+  manufacturer          String?
+  composition           String?                @db.VarChar(255)
+  category              String?                @db.VarChar(100)
+  schedule              String?                @db.VarChar(20)
+  prescription_required Boolean                @default(false)
+  barcode               String?                @db.VarChar(64)
+  hsn_code              String?                @db.VarChar(20)
+  gst_rate              Decimal                @default(0.00) @db.Decimal(5, 2)
+  pack_size             String?                @db.VarChar(60)
+  unit                  String?                @db.VarChar(30)
+  reorder_level         Int                    @default(10) @db.UnsignedInt
+  max_stock             Int?                   @db.UnsignedInt
+  rack                  String?                @db.VarChar(20)
+  shelf                 String?                @db.VarChar(20)
+  bin                   String?                @db.VarChar(20)
+  active                Boolean                @default(true)
+  created_by            BigInt?                @db.UnsignedBigInt
+  updated_by            BigInt?                @db.UnsignedBigInt
+  created_at            DateTime               @default(now()) @db.DateTime(0)
+  updated_at            DateTime               @default(now()) @db.DateTime(0)
+  grn_items             grn_items[]
+  tenants               tenants                @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_medicines_tenant")
+  pharmacy_stock        pharmacy_stock[]
+  purchase_order_items  purchase_order_items[]
+
+  @@index([tenant_id], map: "idx_medicines_tenant")
+  @@index([tenant_id, barcode], map: "idx_medicines_tenant_barcode")
+  @@index([tenant_id, name], map: "idx_medicines_tenant_name")
+}
+
+model stock_transfers {
+  id               BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id        BigInt   @db.UnsignedBigInt
+  medicine_id      BigInt?  @db.UnsignedBigInt
+  from_instance_id BigInt   @db.UnsignedBigInt
+  to_instance_id   BigInt   @db.UnsignedBigInt
+  from_stock_id    BigInt   @db.UnsignedBigInt
+  to_stock_id      BigInt   @db.UnsignedBigInt
+  batch_number     String?  @db.VarChar(80)
+  quantity         Int      @db.UnsignedInt
+  reason           String?  @db.VarChar(255)
+  performed_by     BigInt?  @db.UnsignedBigInt
+  created_at       DateTime @default(now()) @db.DateTime(0)
+  tenants          tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_transfers_tenant")
+
+  @@index([tenant_id], map: "idx_transfers_tenant")
+}
+
+model supplier_returns {
+  id          BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id   BigInt                  @db.UnsignedBigInt
+  stock_id    BigInt                  @db.UnsignedBigInt
+  medicine_id BigInt?                 @db.UnsignedBigInt
+  supplier_id BigInt?                 @db.UnsignedBigInt
+  quantity    Int                     @db.UnsignedInt
+  reason      supplier_returns_reason
+  notes       String?                 @db.VarChar(255)
+  created_by  BigInt?                 @db.UnsignedBigInt
+  created_at  DateTime                @default(now()) @db.DateTime(0)
+  tenants     tenants                 @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_supplier_returns_tenant")
+
+  @@index([tenant_id], map: "idx_supplier_returns_tenant")
+}
+
+model suppliers {
+  id              BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id       BigInt            @db.UnsignedBigInt
+  name            String
+  company_name    String?
+  contact_person  String?
+  phone           String?           @db.VarChar(32)
+  email           String?
+  address         String?           @db.VarChar(500)
+  gstin           String?           @db.VarChar(20)
+  drug_licence_no String?           @db.VarChar(60)
+  payment_terms   String?           @db.VarChar(100)
+  credit_days     Int?              @db.UnsignedInt
+  active          Boolean           @default(true)
+  created_at      DateTime          @default(now()) @db.DateTime(0)
+  grns            grns[]
+  pharmacy_stock  pharmacy_stock[]
+  purchase_orders purchase_orders[]
+  tenants         tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_suppliers_tenant")
+
+  @@index([tenant_id], map: "idx_suppliers_tenant")
+}
+
+model purchase_order_items {
+  id                BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id         BigInt          @db.UnsignedBigInt
+  po_id             BigInt          @db.UnsignedBigInt
+  medicine_id       BigInt          @db.UnsignedBigInt
+  quantity          Int             @db.UnsignedInt
+  free_quantity     Int             @default(0) @db.UnsignedInt
+  purchase_rate     Decimal         @default(0.00) @db.Decimal(12, 2)
+  discount_percent  Decimal         @default(0.00) @db.Decimal(5, 2)
+  gst_rate          Decimal         @default(0.00) @db.Decimal(5, 2)
+  notes             String?         @db.VarChar(255)
+  received_quantity Int             @default(0) @db.UnsignedInt
+  medicines         medicines       @relation(fields: [medicine_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_poi_medicine")
+  purchase_orders   purchase_orders @relation(fields: [po_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_poi_po")
+  tenants           tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_poi_tenant")
+
+  @@index([medicine_id], map: "fk_poi_medicine")
+  @@index([po_id], map: "idx_poi_po")
+  @@index([tenant_id], map: "idx_poi_tenant")
+}
+
+model purchase_orders {
+  id                     BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id              BigInt                 @db.UnsignedBigInt
+  module_instance_id     BigInt?                @db.UnsignedBigInt
+  po_number              String                 @db.VarChar(40)
+  po_date                DateTime               @db.Date
+  supplier_id            BigInt?                @db.UnsignedBigInt
+  expected_delivery_date DateTime?              @db.Date
+  status                 purchase_orders_status @default(DRAFT)
+  notes                  String?                @db.VarChar(500)
+  created_by             BigInt?                @db.UnsignedBigInt
+  created_at             DateTime               @default(now()) @db.DateTime(0)
+  updated_at             DateTime               @default(now()) @db.DateTime(0)
+  grns                   grns[]
+  purchase_order_items   purchase_order_items[]
+  suppliers              suppliers?             @relation(fields: [supplier_id], references: [id], onUpdate: Restrict, map: "fk_po_supplier")
+  tenants                tenants                @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_po_tenant")
+
+  @@unique([tenant_id, po_number], map: "uq_po_tenant_number")
+  @@index([supplier_id], map: "idx_po_supplier")
+  @@index([tenant_id], map: "idx_po_tenant")
+}
+
+model vital_parameters {
+  id            BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id     BigInt                      @db.UnsignedBigInt
+  field_key     String                      @db.VarChar(40)
+  label         String                      @db.VarChar(100)
+  unit          String?                     @db.VarChar(30)
+  value_type    vital_parameters_value_type @default(NUMBER)
+  range_config  String?                     @db.Text
+  display_order Int                         @default(0) @db.UnsignedInt
+  active        Boolean                     @default(true)
+  created_at    DateTime                    @default(now()) @db.DateTime(0)
+  updated_at    DateTime                    @default(now()) @db.DateTime(0)
+  tenants       tenants                     @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_vital_params_tenant")
+
+  @@unique([tenant_id, field_key], map: "uq_vital_params_tenant_key")
+  @@index([tenant_id], map: "idx_vital_params_tenant")
+}
+
+model wards {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id     BigInt   @db.UnsignedBigInt
+  code          String   @db.VarChar(30)
+  name          String   @db.VarChar(100)
+  floor         String?  @db.VarChar(50)
+  display_order Int      @default(0) @db.UnsignedInt
+  active        Boolean  @default(true)
+  created_at    DateTime @default(now()) @db.DateTime(0)
+  updated_at    DateTime @default(now()) @db.DateTime(0)
+  tenants       tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_wards_tenant")
+
+  @@unique([tenant_id, code], map: "uq_wards_tenant_code")
+  @@index([tenant_id], map: "idx_wards_tenant")
 }
 
 enum form_templates_form_type {
@@ -1618,12 +1892,6 @@ enum tenants_type {
   DOCTOR_SOLO
   PHARMACY_SOLO
   LAB_SOLO
-}
-
-enum pharmacy_stock_movements_type {
-  IN
-  DISPENSE
-  ADJUSTMENT
 }
 
 enum visits_entry_type {
@@ -1973,4 +2241,38 @@ enum org_connections_service_type {
   LAB
   PHARMACY
   REFERRAL
+}
+
+enum pharmacy_stock_movements_type {
+  IN
+  DISPENSE
+  ADJUSTMENT
+  TRANSFER_OUT
+  TRANSFER_IN
+  CUSTOMER_RETURN
+  SUPPLIER_RETURN
+  DAMAGED
+  EXPIRED_WRITEOFF
+}
+
+enum supplier_returns_reason {
+  EXPIRED
+  DAMAGED
+  WRONG_MEDICINE
+  WRONG_BATCH
+  OTHER
+}
+
+enum purchase_orders_status {
+  DRAFT
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum vital_parameters_value_type {
+  NUMBER
+  BP
+  TEXT
 }

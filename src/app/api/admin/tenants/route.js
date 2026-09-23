@@ -105,6 +105,19 @@ export const POST = apiRoute("tenant:manage", async (request) => {
         data: { tenant_id: tenant.id, module_name: m, name: MODULE_LABEL[m] || m, status: "ACTIVE", is_default: true },
       });
     }
+    // A HOSPITAL tenant starts with the same 3 starter wards every existing
+    // tenant already has (see migration 046 "Configurable wards") — the
+    // admin can rename/add/remove from there; a solo tenant has no wards at
+    // all (IPD isn't part of any solo pack).
+    if (modules.includes("IPD")) {
+      await tx.wards.createMany({
+        data: [
+          { tenant_id: tenant.id, code: "GENERAL", name: "General Ward", display_order: 1 },
+          { tenant_id: tenant.id, code: "PRIVATE", name: "Private Rooms", display_order: 2 },
+          { tenant_id: tenant.id, code: "ICU", name: "ICU", display_order: 3 },
+        ],
+      });
+    }
     const owner = await tx.users.create({
       data: {
         tenant_id: tenant.id,
