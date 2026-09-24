@@ -46,9 +46,9 @@ function WalkInBill({ onCreated, onError }) {
     }
   }
 
-  const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
+  const input = "rounded-lg border border-slate-300 px-2 py-1.5 text-sm";
   return (
-    <form onSubmit={submit} className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
+    <form onSubmit={submit} className="space-y-2 rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
       <p className="text-sm font-semibold">New bill (walk-in customer)</p>
       <div className="flex flex-wrap gap-2">
         <input required placeholder="Customer name" value={f.customerName} onChange={(e) => setF({ ...f, customerName: e.target.value })} className={input} />
@@ -78,9 +78,9 @@ function WalkInBill({ onCreated, onError }) {
         </div>
       ))}
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={() => setItems((xs) => [...xs, { description: "", quantity: 1, unitPrice: "" }])} className="rounded-md border border-slate-300 px-2 py-1 text-xs">+ item</button>
+        <button type="button" onClick={() => setItems((xs) => [...xs, { description: "", quantity: 1, unitPrice: "" }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ item</button>
         <span className="text-sm font-medium">Total ₹{total.toFixed(2)}</span>
-        <button disabled={busy || total <= 0 && !items.some((i) => i.description.trim())} className="ml-auto rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Create bill</button>
+        <button disabled={busy || total <= 0 && !items.some((i) => i.description.trim())} className="ml-auto rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Create bill</button>
       </div>
     </form>
   );
@@ -160,7 +160,7 @@ export default function BillingClient({ permissions }) {
       )}
 
       {permissions.canCreate && !permissions.soloWalkIn && (
-        <form onSubmit={createOpdBill} className="flex items-end gap-2 rounded-lg border border-slate-200 bg-white p-4">
+        <form onSubmit={createOpdBill} className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
           <div>
             <p className="text-sm font-semibold">Create OPD bill</p>
             <p className="text-xs text-slate-500">Aggregates consultation fee + dispensed pharmacy + lab tests for a visit.</p>
@@ -170,9 +170,9 @@ export default function BillingClient({ permissions }) {
             required
             value={newVisitId}
             onChange={(e) => setNewVisitId(e.target.value)}
-            className="ml-auto w-28 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            className="ml-auto w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
           />
-          <button className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)]">Create</button>
+          <button className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)]">Create</button>
         </form>
       )}
 
@@ -288,7 +288,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">
           {bill.patient_name} <span className="text-xs font-normal text-slate-400">#{bill.id}</span>

@@ -1,11 +1,21 @@
 import { apiRoute, json, HttpError } from "@/lib/apiRoute";
+import { z } from "zod";
+
+const photoSchema = z.object({ photoDataUrl: z.string().trim().min(50).max(400_000).regex(/^data:image\/(jpeg|png|webp);base64,/).optional() });
+async function readPhoto(request) {
+  const body = await request.json().catch(() => ({}));
+  const parsed = photoSchema.safeParse(body || {});
+  return parsed.success ? parsed.data.photoDataUrl : undefined;
+}
+
 import { tenantDb } from "@/lib/prismaClient";
 import { emitToTenant } from "@/lib/realtime";
 import { serverToday, findOpenBreak } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
 
-export const POST = apiRoute("attendance:self", async (_request, { session }) => {
+export const POST = apiRoute("attendance:self", async (request, { session }) => {
+  const photo = await readPhoto(request);
   const workDate = await serverToday();
   const userId = BigInt(session.userId);
 
@@ -19,7 +29,7 @@ export const POST = apiRoute("attendance:self", async (_request, { session }) =>
 
   const log = await tenantDb.attendance_logs.update({
     where: { id: existing.id },
-    data: { check_out_at: new Date() },
+    data: { check_out_at: new Date(), ...(photo ? { check_out_photo_url: photo } : {}) },
   });
 
   emitToTenant(session.tenantId, "attendance:updated", { log });

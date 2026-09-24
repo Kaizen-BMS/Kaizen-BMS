@@ -1,4 +1,5 @@
 "use client";
+import { fmtDDMMYY } from "@/lib/dateFormat";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -12,7 +13,7 @@ const COLS = [
   ["lastVisit", "Last visit"],
   ["registered", "Registered"],
 ];
-const fmt = (d) => (d ? new Date(d).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }) : "—");
+const fmt = (d) => fmtDDMMYY(d);
 
 // Every patient who has come to this facility — with how many times and when
 // they last came. Click a column heading to sort, click a name for the profile.

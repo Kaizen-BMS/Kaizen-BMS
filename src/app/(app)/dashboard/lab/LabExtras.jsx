@@ -1,10 +1,12 @@
 "use client";
 
+import { LabPanels } from "./LabPanels";
+import { fmtDDMMYYTime } from "@/lib/dateFormat";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 
-const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
+const input = "rounded-lg border border-slate-300 px-2 py-1.5 text-sm";
 const newKey = (id) => `${id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const rupee = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
@@ -37,7 +39,7 @@ export function PayBox({ orderId, bill, onPaid }) {
         <option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option>
       </select>
       <input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`₹ ${bill.due}`} className="w-20 rounded border border-slate-300 px-1.5 py-1" />
-      <button onClick={pay} disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-2.5 py-1 font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Take payment</button>
+      <button onClick={pay} disabled={busy} className="rounded-lg bg-[var(--hms-btn-bg)] px-2.5 py-1 font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Take payment</button>
       <a href={`/print/receipt/${bill.id}`} target="_blank" rel="noreferrer" className="underline text-slate-500">bill</a>
       {err && <span className="text-red-600">{err}</span>}
     </div>
@@ -93,7 +95,7 @@ export function WalkInTab({ onDone }) {
         <PayBox orderId={done.orderId} bill={payBill || { id: done.billId, total: done.total, due: done.total }} onPaid={setPayBill} />
         <div className="flex flex-wrap gap-2">
           <a href={`/print/receipt/${done.billId}`} target="_blank" rel="noreferrer" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs">Print bill</a>
-          <button onClick={onDone} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs text-[var(--hms-btn-fg)]">Go to lab queue</button>
+          <button onClick={onDone} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs text-[var(--hms-btn-fg)]">Go to lab queue</button>
         </div>
       </div>
     );
@@ -103,7 +105,7 @@ export function WalkInTab({ onDone }) {
 
   return (
     <form onSubmit={submit} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
-      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
         <p className="text-sm font-semibold">Who is it for?</p>
         <div className="grid gap-2 sm:grid-cols-2">
           <input required placeholder="Patient / customer name" value={f.customerName} onChange={(e) => setF({ ...f, customerName: e.target.value })} className={input} />
@@ -128,12 +130,12 @@ export function WalkInTab({ onDone }) {
           ))}
         </div>
       </div>
-      <aside className="h-fit space-y-2 rounded-lg border border-slate-200 bg-white p-4 text-sm">
+      <aside className="h-fit space-y-2 rounded-2xl border border-slate-200 bg-white shadow-sm p-4 text-sm">
         <p className="font-semibold">Bill</p>
         {picked.length === 0 && <p className="text-xs text-slate-400">No tests picked.</p>}
         {chosen.map((t) => <p key={t.id} className="flex justify-between text-xs"><span>{t.name}</span><span>{rupee(t.price)}</span></p>)}
         <p className="flex justify-between border-t border-slate-200 pt-2 font-semibold"><span>Total (with GST)</span><span>{rupee(Math.round(total * 100) / 100)}</span></p>
-        <button disabled={busy || !picked.length} className="w-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Create order &amp; bill</button>
+        <button disabled={busy || !picked.length} className="w-full rounded-lg bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Create order &amp; bill</button>
         {msg && <p className="text-xs text-red-600">{msg}</p>}
       </aside>
     </form>
@@ -197,7 +199,7 @@ export function TestsTab({ canManage }) {
   return (
     <div className="space-y-4">
       {canManage && (
-        <form onSubmit={add} className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
+        <form onSubmit={add} className="space-y-2 rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
           <p className="text-sm font-semibold">Add a test you offer</p>
           <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
             <input required placeholder="Test name (e.g. CBC)" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className={`${input} sm:col-span-2`} />
@@ -208,14 +210,14 @@ export function TestsTab({ canManage }) {
             <input placeholder="Normal range" value={f.referenceRange} onChange={(e) => setF({ ...f, referenceRange: e.target.value })} className={input} />
             <input type="number" min="0" placeholder="Report in (hours)" value={f.turnaroundHours} onChange={(e) => setF({ ...f, turnaroundHours: e.target.value })} className={input} />
           </div>
-          <button className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)]">Add test</button>
+          <button className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)]">Add test</button>
           <p className="text-xs text-slate-500">Units and normal range fill in automatically when you enter results.</p>
         </form>
       )}
       {msg && <p className="text-sm text-red-600">{msg}</p>}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">
-          <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+          <thead className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr><th className="px-3 py-2">Test</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Sample</th><th className="px-3 py-2">Range</th><th className="px-3 py-2">Report in</th><th className="px-3 py-2" /></tr>
           </thead>
           <tbody>
@@ -249,6 +251,7 @@ export function TestsTab({ canManage }) {
           </tbody>
         </table>
       </div>
+      <LabPanels canManage={canManage} />
     </div>
   );
 }
@@ -276,15 +279,15 @@ export function ReportsTab() {
   const toDoctor = rows.filter((r) => r.doctor).length;
   return (
     <div className="space-y-3">
-      <input placeholder="Find an old bill / report — patient name, phone, or order #" value={q} onChange={(e) => setQ(e.target.value)} className="w-full max-w-md rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+      <input placeholder="Find an old bill / report — patient name, phone, or order #" value={q} onChange={(e) => setQ(e.target.value)} className="w-full max-w-md rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
       <div className="grid gap-3 sm:grid-cols-3">
         {[["Reports ready", rows.length], ["Sent to doctors", toDoctor], ["To print & hand over", rows.length - toDoctor]].map(([l, v]) => (
-          <div key={l} className="rounded-lg border border-slate-200 bg-white p-3"><p className="text-xs text-slate-500">{l}</p><p className="text-2xl font-semibold tabular-nums">{v}</p></div>
+          <div key={l} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3"><p className="text-xs text-slate-500">{l}</p><p className="text-2xl font-semibold tabular-nums">{v}</p></div>
         ))}
       </div>
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">
-          <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+          <thead className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr><th className="px-3 py-2">Patient</th><th className="px-3 py-2">Tests</th><th className="px-3 py-2">Ready</th><th className="px-3 py-2">Goes to</th><th className="px-3 py-2">Bill</th><th className="px-3 py-2" /></tr>
           </thead>
           <tbody>
@@ -293,10 +296,10 @@ export function ReportsTab() {
               <tr key={r.id} className="border-b border-slate-100 last:border-0">
                 <td className="px-3 py-2 font-medium">{r.patient}<p className="text-xs font-normal text-slate-400">{r.phone}</p></td>
                 <td className="px-3 py-2 text-xs">{r.tests.join(", ")}</td>
-                <td className="px-3 py-2 text-xs">{new Date(r.resultedAt).toLocaleString()}</td>
+                <td className="px-3 py-2 text-xs">{fmtDDMMYYTime(r.resultedAt)}</td>
                 <td className="px-3 py-2 text-xs">{r.delivery}{r.referredBy ? ` (sent by ${r.referredBy})` : ""}</td>
                 <td className="px-3 py-2 text-xs">{r.bill ? <PayBox orderId={r.id} bill={r.bill} onPaid={reload} /> : "at hospital billing"}</td>
-                <td className="px-3 py-2 text-right"><a href={`/print/lab-report/${r.id}`} target="_blank" rel="noreferrer" className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50">Print</a></td>
+                <td className="px-3 py-2 text-right"><a href={`/print/lab-report/${r.id}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50">Print</a></td>
               </tr>
             ))}
           </tbody>

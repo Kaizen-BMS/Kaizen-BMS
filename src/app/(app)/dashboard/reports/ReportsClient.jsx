@@ -1,5 +1,7 @@
 "use client";
 
+import { fmtDDMMYY } from "@/lib/dateFormat";
+
 import { useEffect, useState } from "react";
 import { apiGet } from "@/components/hms/api";
 
@@ -212,7 +214,7 @@ function OutstandingTab() {
           { key: "id", label: "Bill #" },
           { key: "billType", label: "Type" },
           { key: "patientName", label: "Patient" },
-          { key: "createdAt", label: "Date", render: (r) => new Date(r.createdAt).toLocaleDateString() },
+          { key: "createdAt", label: "Date", render: (r) => fmtDDMMYY(r.createdAt) },
           { key: "total", label: "Total", render: (r) => money(r.total) },
           { key: "paid", label: "Paid", render: (r) => money(r.paid) },
           { key: "refunded", label: "Refunded", render: (r) => money(r.refunded) },
@@ -238,7 +240,7 @@ function OutstandingTab() {
 }
 
 const OPD_COLUMNS = [
-  { key: "date", label: "Date", render: (r) => new Date(r.date).toLocaleDateString() },
+  { key: "date", label: "Date", render: (r) => fmtDDMMYY(r.date) },
   { key: "service", label: "Service" },
   { key: "doctorName", label: "Doctor", render: (r) => r.doctorName || "—" },
   { key: "quantity", label: "Qty" },

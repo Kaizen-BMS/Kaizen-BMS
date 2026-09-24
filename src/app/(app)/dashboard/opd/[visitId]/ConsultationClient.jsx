@@ -10,8 +10,10 @@ import DoctorSlotPicker from "@/components/hms/DoctorSlotPicker";
 import { parseMaybeJson } from "@/components/hms/json";
 import ExternalSend from "@/components/hms/ExternalSend";
 import StockHint from "@/components/hms/StockHint";
-import PatientHistory from "@/components/hms/PatientHistory";
-import { LAB_TEST_GROUPS } from "@/lib/labTestCatalog";
+import PatientHistorySidebar from "@/components/hms/PatientHistorySidebar";
+import MedicineInput from "@/components/hms/MedicineInput";
+import LabOrderPicker from "@/components/hms/LabOrderPicker";
+import { FREQUENCIES, calcQuantity } from "@/lib/rxQuantity";
 import { matchAllergy } from "@/lib/allergyCheck";
 
 function upsertById(list, item) {
@@ -29,29 +31,24 @@ function upsertById(list, item) {
 // single `dosage` string before sending, so the API and the pharmacy-stock
 // matching (which keys on medicine_name being byte-for-byte the same drug
 // name a pharmacist stocked in) are completely unchanged.
-const MEDICINE_FORMS = ["Tablet", "Capsule", "Syrup", "Injection", "Cream/Ointment", "Drops", "Inhaler", "Powder", "Other"];
-const FREQUENCIES = [
-  { code: "OD", label: "OD — Once a day" },
-  { code: "BD", label: "BD — Twice a day" },
-  { code: "TID", label: "TID — Three times a day" },
-  { code: "QID", label: "QID — Four times a day" },
-  { code: "HS", label: "HS — At bedtime" },
-  { code: "SOS", label: "SOS — As needed" },
-  { code: "STAT", label: "STAT — Immediately, once" },
-  { code: "CUSTOM", label: "Custom…" },
-];
-
 function emptyRxRow() {
-  return { form: "Tablet", medicineName: "", dose: "", frequency: "OD", customFrequency: "", notes: "", quantity: 1, ack: false };
+  return { medicineName: "", dose: "1", frequency: "OD", customFrequency: "", days: "5", notes: "", quantity: "", overrideQty: false, overrideReason: "", ack: false };
 }
 
-/** The one place a row's Type/Dose/Frequency/Notes become the single `dosage` string the API expects — matches this project's existing convention exactly (e.g. "20mg BD (Twice a day)"), just with the form and notes layered on. */
+/** The one place a row becomes the single `dosage` string the API stores (e.g. "1 BD (Twice daily) × 5 days · after food"). */
 function composeDosage(r) {
-  const freq = r.frequency === "CUSTOM" ? r.customFrequency.trim() : FREQUENCIES.find((f) => f.code === r.frequency);
-  const freqText = r.frequency === "CUSTOM" ? freq : freq ? `${freq.code} (${freq.label.split("— ")[1]})` : "";
-  return [r.form, [r.dose.trim(), freqText].filter(Boolean).join(" "), r.notes.trim()]
-    .filter(Boolean)
-    .join(" · ");
+  const f = FREQUENCIES.find((x) => x.code === r.frequency);
+  const freqText = r.frequency === "CUSTOM" ? r.customFrequency.trim() : f ? `${f.code} (${f.short})` : "";
+  const dur = r.frequency === "STAT" || r.frequency === "SOS" || !String(r.days).trim() ? "" : `× ${r.days} day${Number(r.days) === 1 ? "" : "s"}`;
+  const reason = r.overrideQty && r.overrideReason.trim() ? `qty changed: ${r.overrideReason.trim()}` : "";
+  return [[r.dose.trim(), freqText, dur].filter(Boolean).join(" "), r.notes.trim(), reason].filter(Boolean).join(" · ");
+}
+
+/** Final quantity for a row: the calculated one, unless the doctor deliberately overrode it. */
+function rowQuantity(r) {
+  const calc = calcQuantity({ dose: r.dose, frequency: r.frequency, days: r.days });
+  if (r.overrideQty || calc.qty == null) return { qty: Number(r.quantity) || 0, calc };
+  return { qty: calc.qty, calc };
 }
 
 export default function ConsultationClient({ visitId, doctorUserId }) {
@@ -59,9 +56,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
   const [form, setForm] = useState(null);
   const [values, setValues] = useState({});
   const [rx, setRx] = useState([emptyRxRow()]);
-  const [tests, setTests] = useState([""]);
   const [studyName, setStudyName] = useState("");
-  const [labCatalog, setLabCatalog] = useState([]); // this facility's own priced tests
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
@@ -120,10 +115,6 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
     load,
   );
 
-  useEffect(() => {
-    apiGet("/api/lab/catalog").then((d) => setLabCatalog(d.tests || [])).catch(() => {});
-  }, []);
-
   if (!data) {
     return <p className="text-sm text-slate-400">{msg || "Loading…"}</p>;
   }
@@ -158,15 +149,16 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
     match: matchAllergy(r.medicineName, patientAllergies),
   }));
   const blockedByAllergy = rxRows.some((r) => r.match && !r.ack);
+  const blockedByQty = rxRows.some((r) => r.medicineName.trim() && (rowQuantity(r).qty < 1 || (r.overrideQty && !r.overrideReason.trim())));
 
   async function savePrescription() {
-    if (blockedByAllergy) return;
+    if (blockedByAllergy || blockedByQty) return;
     const items = rx
       .filter((r) => r.medicineName.trim())
       .map((r) => ({
         medicineName: r.medicineName.trim(),
         dosage: composeDosage(r),
-        quantity: Number(r.quantity) || 1,
+        quantity: rowQuantity(r).qty || 1,
         allergyAck: r.ack,
       }));
     if (items.length === 0) return;
@@ -183,26 +175,6 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
         ...d,
         prescriptions: upsertById(d.prescriptions, prescription),
       }));
-    } catch (err) {
-      setMsg(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveLabOrder() {
-    const list = tests.map((t) => t.trim()).filter(Boolean);
-    if (list.length === 0) return;
-    setBusy(true);
-    setMsg("");
-    try {
-      const { labOrder } = await apiSend(
-        `/api/opd/consultations/${consultation.id}/lab-orders`,
-        "POST",
-        { tests: list.map((name) => { const hit = labCatalog.find((c) => c.name.toLowerCase() === name.toLowerCase()); return hit ? { name, serviceId: hit.serviceId } : name; }) },
-      );
-      setTests([""]);
-      setData((d) => ({ ...d, labOrders: upsertById(d.labOrders, labOrder) }));
     } catch (err) {
       setMsg(err.message);
     } finally {
@@ -231,7 +203,8 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]">
+    <div className="min-w-0 space-y-6">
       <div>
         <Link href="/dashboard/opd" className="text-sm text-slate-500 hover:underline">
           ← Queue
@@ -253,22 +226,20 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
         </div>
       </div>
 
-      <PatientHistory patientId={visit.patient_id} currentVisitId={visit.id}>
-        {doctorUserId && (
-          <div className="mt-2">
-            <button
-              onClick={() => {
-                setFollowUpMsg("");
-                setShowFollowUp(true);
-              }}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
-            >
-              Schedule a future appointment
-            </button>
-            {followUpMsg && <span className="ml-2 text-xs text-green-700">{followUpMsg}</span>}
-          </div>
-        )}
-      </PatientHistory>
+      {doctorUserId && (
+        <div>
+          <button
+            onClick={() => {
+              setFollowUpMsg("");
+              setShowFollowUp(true);
+            }}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
+          >
+            Schedule a future appointment
+          </button>
+          {followUpMsg && <span className="ml-2 text-xs text-green-700">{followUpMsg}</span>}
+        </div>
+      )}
 
       {showFollowUp && doctorUserId && (
         <DoctorSlotPicker
@@ -368,77 +339,65 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                 function update(patch) {
                   setRx((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
                 }
+                const { qty, calc } = rowQuantity(r);
+                const noCalc = calc.qty == null;
+                const needsReason = r.overrideQty && !r.overrideReason.trim();
                 return (
-                  <div key={i} className="space-y-2 rounded-md border border-slate-200 p-2.5">
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                  <div key={i} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-500">Medicine</label>
+                      <MedicineInput
+                        endpoint="/api/opd/medicine-suggest"
+                        value={r.medicineName}
+                        onChange={(t) => update({ medicineName: t })}
+                        placeholder="Start typing — e.g. Cap Cefixime 200 mg"
+                        className={`w-full rounded-lg border px-2.5 py-1.5 text-sm ${r.match ? "border-red-300 bg-red-50" : "border-slate-300 bg-white"}`}
+                      />
+                      <StockHint query={r.medicineName} onPick={(name) => update({ medicineName: name })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                       <div>
-                        <label className="block text-[11px] text-slate-500">Type</label>
-                        <select
-                          value={r.form}
-                          onChange={(e) => update({ form: e.target.value })}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                        >
-                          {MEDICINE_FORMS.map((f) => <option key={f} value={f}>{f}</option>)}
-                        </select>
-                      </div>
-                      <div className="col-span-2 sm:col-span-1">
-                        <label className="block text-[11px] text-slate-500">Medicine name</label>
-                        <input
-                          placeholder="e.g. Omeprazole"
-                          value={r.medicineName}
-                          onChange={(e) => update({ medicineName: e.target.value })}
-                          className={`w-full rounded-md border px-2 py-1 text-sm ${
-                            r.match ? "border-red-300 bg-red-50" : "border-slate-300"
-                          }`}
-                        />
-                        <StockHint query={r.medicineName} onPick={(name) => update({ medicineName: name })} />
+                        <label className="block text-[11px] font-medium text-slate-500">Dose</label>
+                        <input placeholder="1 capsule" value={r.dose} onChange={(e) => update({ dose: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
+                        <span className="text-[10px] text-slate-400">Units per intake</span>
                       </div>
                       <div>
-                        <label className="block text-[11px] text-slate-500">Dose</label>
-                        <input
-                          placeholder="e.g. 20mg"
-                          value={r.dose}
-                          onChange={(e) => update({ dose: e.target.value })}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-slate-500">Frequency</label>
-                        <select
-                          value={r.frequency}
-                          onChange={(e) => update({ frequency: e.target.value })}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                        >
+                        <label className="block text-[11px] font-medium text-slate-500">Frequency</label>
+                        <select value={r.frequency} onChange={(e) => update({ frequency: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm">
                           {FREQUENCIES.map((f) => <option key={f.code} value={f.code}>{f.label}</option>)}
                         </select>
                         {r.frequency === "CUSTOM" && (
-                          <input
-                            placeholder="e.g. 1-0-1 × 5 days"
-                            value={r.customFrequency}
-                            onChange={(e) => update({ customFrequency: e.target.value })}
-                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                          />
+                          <input placeholder="e.g. alternate days" value={r.customFrequency} onChange={(e) => update({ customFrequency: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
                         )}
                       </div>
                       <div>
-                        <label className="block text-[11px] text-slate-500">Qty</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={r.quantity}
-                          onChange={(e) => update({ quantity: e.target.value })}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                        />
+                        <label className="block text-[11px] font-medium text-slate-500">Duration (days)</label>
+                        <input type="number" min="1" placeholder="5" disabled={r.frequency === "STAT"} value={r.days} onChange={(e) => update({ days: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm disabled:bg-slate-100" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500">Calculated Quantity</label>
+                        {noCalc || r.overrideQty ? (
+                          <input type="number" min="1" placeholder="Enter quantity" value={r.quantity} onChange={(e) => update({ quantity: e.target.value })} aria-label="Quantity" className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
+                        ) : (
+                          <p className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-sm font-semibold text-emerald-800" aria-label="Calculated quantity">{qty}</p>
+                        )}
+                        <span className="text-[10px] text-slate-400">{r.overrideQty ? "Changed by doctor" : noCalc ? "Cannot be calculated — enter it" : calc.formula}</span>
                       </div>
                     </div>
+                    {!noCalc && (
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <label className="flex items-center gap-1.5 text-slate-600">
+                          <input type="checkbox" checked={r.overrideQty} onChange={(e) => update({ overrideQty: e.target.checked, quantity: e.target.checked ? String(calc.qty) : "" })} />
+                          Change quantity
+                        </label>
+                        {r.overrideQty && (
+                          <input placeholder="Reason for changing (required)" value={r.overrideReason} onChange={(e) => update({ overrideReason: e.target.value })} className={`min-w-[14rem] flex-1 rounded-lg border px-2.5 py-1 ${needsReason ? "border-red-300" : "border-slate-300"}`} />
+                        )}
+                      </div>
+                    )}
                     <div>
-                      <label className="block text-[11px] text-slate-500">Notes (optional)</label>
-                      <input
-                        placeholder="e.g. after food"
-                        value={r.notes}
-                        onChange={(e) => update({ notes: e.target.value })}
-                        className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                      />
+                      <label className="block text-[11px] font-medium text-slate-500">Instructions (optional)</label>
+                      <input placeholder="e.g. after food" value={r.notes} onChange={(e) => update({ notes: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
                     </div>
                     {r.match && (
                       <label className="flex items-center gap-1.5 pl-1 text-xs text-red-700">
@@ -446,7 +405,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                         ⚠ Matches declared allergy &quot;{r.match}&quot; — I acknowledge and want to prescribe anyway
                       </label>
                     )}
-                    <p className="text-[11px] text-slate-400">Will be recorded as: {composeDosage(r) || "—"}</p>
+                    <p className="text-[11px] text-slate-400">Will be recorded as: {r.medicineName || "—"} · {composeDosage(r) || "—"} · Qty {qty || "—"}</p>
                   </div>
                 );
               })}
@@ -459,8 +418,8 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                 </button>
                 <button
                   onClick={savePrescription}
-                  disabled={busy || blockedByAllergy}
-                  title={blockedByAllergy ? "Acknowledge the allergy warning first" : undefined}
+                  disabled={busy || blockedByAllergy || blockedByQty}
+                  title={blockedByAllergy ? "Acknowledge the allergy warning first" : blockedByQty ? "Check quantity / reason for each medicine" : undefined}
                   className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50"
                 >
                   Send to pharmacy
@@ -492,56 +451,11 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                 {lo.status === "ORDERED" && <ExternalSend type="LAB" url={`/api/lab/orders/${lo.id}/send-external`} />}
               </div>
             ))}
-            <div className="mt-3 space-y-2">
-              <select
-                aria-label="Add a common test"
-                value=""
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (!v) return;
-                  setTests((xs) => (xs.includes(v) ? xs : xs.some((x) => !x.trim()) ? xs.map((x, k) => (k === xs.findIndex((y) => !y.trim()) ? v : x)) : [...xs, v]));
-                }}
-                className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-              >
-                <option value="">Add a common test…</option>
-                {labCatalog.length > 0 && (
-                  <optgroup label="Our lab (priced)">
-                    {labCatalog.map((t) => <option key={t.id} value={t.name}>{t.name}{t.price != null ? ` — ₹${t.price}` : ""}</option>)}
-                  </optgroup>
-                )}
-                {Object.entries(LAB_TEST_GROUPS).map(([g, list]) => (
-                  <optgroup key={g} label={g}>
-                    {list.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-              {tests.map((t, i) => (
-                <input
-                  key={i}
-                  placeholder="test name"
-                  value={t}
-                  onChange={(e) =>
-                    setTests((xs) => xs.map((x, j) => (j === i ? e.target.value : x)))
-                  }
-                  className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                />
-              ))}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setTests((xs) => [...xs, ""])}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                >
-                  + test
-                </button>
-                <button
-                  onClick={saveLabOrder}
-                  disabled={busy}
-                  className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50"
-                >
-                  Send to lab
-                </button>
-              </div>
-            </div>
+            <LabOrderPicker
+              consultationId={consultation.id}
+              onError={setMsg}
+              onOrdered={(labOrder) => setData((d) => ({ ...d, labOrders: upsertById(d.labOrders, labOrder) }))}
+            />
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -577,6 +491,8 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
           </div>
         </div>
       )}
+    </div>
+    <PatientHistorySidebar patientId={visit.patient_id} currentVisitId={visit.id} />
     </div>
   );
 }

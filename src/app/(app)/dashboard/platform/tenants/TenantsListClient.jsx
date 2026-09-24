@@ -1,4 +1,5 @@
 "use client";
+import { fmtDDMMYY } from "@/lib/dateFormat";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -65,7 +66,7 @@ export default function TenantsListClient() {
                 <td className="px-3 py-2 text-slate-600">{t.type}</td>
                 <td className="px-3 py-2 text-slate-600">{t.activeModules.join(", ") || "—"}</td>
                 <td className="px-3 py-2 text-slate-600">{t.staffCount}</td>
-                <td className="px-3 py-2 text-slate-500">{new Date(t.created_at).toLocaleDateString()}</td>
+                <td className="px-3 py-2 text-slate-500">{fmtDDMMYY(t.created_at)}</td>
                 <td className="px-3 py-2">
                   <span className={`rounded-full px-2 py-0.5 text-xs ${t.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                     {t.active ? "active" : "suspended"}

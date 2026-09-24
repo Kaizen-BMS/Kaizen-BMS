@@ -29,13 +29,15 @@ export function serializeTest(t, service, tariff) {
 }
 
 /** The whole catalogue with current prices, in three queries (no N+1). */
-export async function loadCatalog(db, { onlyActive = false } = {}) {
-  const tests = await db.lab_tests.findMany({ orderBy: { id: "asc" } });
+export async function loadCatalog(db, { onlyActive = false, tenantId } = {}) {
+  // tenantId is only passed with the raw (unscoped) client — e.g. reading a connected partner lab's own list.
+  const scope = tenantId != null ? { tenant_id: BigInt(tenantId) } : {};
+  const tests = await db.lab_tests.findMany({ where: scope, orderBy: { id: "asc" } });
   if (!tests.length) return [];
   const ids = tests.map((t) => t.service_id);
   const [services, tariffs] = await Promise.all([
-    db.services.findMany({ where: { id: { in: ids } } }),
-    db.tariffs.findMany({ where: { service_id: { in: ids }, patient_category: "SELF_PAY", active: true, effective_to: null } }),
+    db.services.findMany({ where: { id: { in: ids }, ...scope } }),
+    db.tariffs.findMany({ where: { service_id: { in: ids }, ...scope, patient_category: "SELF_PAY", active: true, effective_to: null } }),
   ]);
   const sm = new Map(services.map((s) => [String(s.id), s]));
   const tm = new Map(tariffs.map((t) => [String(t.service_id), t]));
@@ -43,4 +45,19 @@ export async function loadCatalog(db, { onlyActive = false } = {}) {
     .map((t) => serializeTest(t, sm.get(String(t.service_id)), tm.get(String(t.service_id))))
     .filter((t) => !onlyActive || t.active)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Test sets / panels with their component tests ("CBC Panel" = Hemoglobin + RBC + ...). */
+export async function loadPanels(db, { onlyActive = false, tenantId } = {}) {
+  const scope = tenantId != null ? { tenant_id: BigInt(tenantId) } : {};
+  const panels = await db.lab_panels.findMany({ where: { ...scope, ...(onlyActive ? { active: true } : {}) }, orderBy: { name: "asc" } });
+  if (!panels.length) return [];
+  const items = await db.lab_panel_items.findMany({ where: { panel_id: { in: panels.map((p) => p.id) } }, orderBy: [{ sort_order: "asc" }, { id: "asc" }] });
+  return panels.map((p) => ({
+    id: Number(p.id),
+    name: p.name,
+    sampleType: p.sample_type,
+    active: !!p.active,
+    tests: items.filter((i) => i.panel_id === p.id).map((i) => ({ name: i.test_name, serviceId: i.service_id != null ? Number(i.service_id) : null })),
+  }));
 }

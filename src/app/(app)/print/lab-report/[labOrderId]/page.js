@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prismaClient";
 import { resolveBranding } from "@/lib/branding";
+import { fmtDDMMYYTime } from "@/lib/dateFormat";
 import PrintButton from "@/components/hms/PrintButton";
 
 export const dynamic = "force-dynamic";
@@ -99,9 +100,9 @@ export default async function LabReportPrintPage({ params }) {
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2 border-y border-slate-200 py-2 text-xs text-slate-600">
-        <p>Collected: {order.collected_at ? new Date(order.collected_at).toLocaleString() : "—"}</p>
-        <p>Received: {order.received_at ? new Date(order.received_at).toLocaleString() : "—"}</p>
-        <p>Reported: {order.resulted_at ? new Date(order.resulted_at).toLocaleString() : "—"}</p>
+        <p>Collected: {order.collected_at ? fmtDDMMYYTime(order.collected_at) : "—"}</p>
+        <p>Received: {order.received_at ? fmtDDMMYYTime(order.received_at) : "—"}</p>
+        <p>Reported: {order.resulted_at ? fmtDDMMYYTime(order.resulted_at) : "—"}</p>
       </div>
 
       <table className="mt-6 w-full border-collapse text-sm">

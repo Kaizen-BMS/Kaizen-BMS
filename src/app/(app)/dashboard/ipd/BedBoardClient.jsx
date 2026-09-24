@@ -1,4 +1,5 @@
 "use client";
+import { fmtDDMMYYTime, fmtDDMMYY } from "@/lib/dateFormat";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -237,7 +238,7 @@ export default function BedBoardClient({ permissions }) {
                   {b.status === "MAINTENANCE" && b.maintenance_reason && (
                     <p className="mt-1 truncate text-xs" title={b.maintenance_reason}>
                       {b.maintenance_reason}
-                      {b.maintenance_until && ` · till ${new Date(b.maintenance_until).toLocaleDateString()}`}
+                      {b.maintenance_until && ` · till ${fmtDDMMYY(b.maintenance_until)}`}
                     </p>
                   )}
                   {Number(b.daily_rate) > 0 && b.status !== "OCCUPIED" && (
@@ -618,7 +619,7 @@ function SummaryPopover({ bed, beds, wardName, canDischarge, onClose, onError })
       <div className="space-y-3 text-sm">
         <p className="font-medium">{bed.patient_name} · {bed.patient_age}y</p>
         <p className="text-slate-500">
-          Admitted {bed.admitted_at ? new Date(bed.admitted_at).toLocaleString() : ""}
+          Admitted {bed.admitted_at ? fmtDDMMYYTime(bed.admitted_at) : ""}
         </p>
         <Link
           href={`/dashboard/ipd/admissions/${bed.admission_id}`}

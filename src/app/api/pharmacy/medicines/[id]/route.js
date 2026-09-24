@@ -16,8 +16,25 @@ export const PATCH = apiRoute("medicine:manage", async (request, { session, para
     if (dupe) throw new HttpError(409, "barcode_already_used");
   }
   const uid = BigInt(session.userId);
-  const data = toRow({ ...serializeMedicine(existing), ...body }, uid);
+  // The display name is only re-composed when the user actually changed the
+  // name / type / strength — a plain "switch off" never renames a medicine.
+  const identityChanged = body.baseName !== undefined || body.medicineType !== undefined || body.strength !== undefined;
+  const merged = { ...serializeMedicine(existing), ...body };
+  if (!identityChanged) merged.baseName = undefined;
+  const data = toRow({ ...merged, name: identityChanged ? merged.name : existing.name }, uid);
+  if (!identityChanged) {
+    data.name = existing.name;
+    data.base_name = existing.base_name || existing.name;
+  }
   if (body.active !== undefined) data.active = body.active;
-  const updated = await tenantDb.medicines.update({ where: { id: existing.id }, data });
+
+  const updated = await tenantDb.$transaction(async (tx) => {
+    const row = await tx.medicines.update({ where: { id: existing.id }, data });
+    // Stock rows carry the display name as text (FEFO/prescriptions match on it) — keep them in step.
+    if (row.name !== existing.name) {
+      await tx.pharmacy_stock.updateMany({ where: { medicine_id: existing.id }, data: { medicine_name: row.name } });
+    }
+    return row;
+  });
   return json({ medicine: serializeMedicine(updated) });
 });

@@ -5,138 +5,15 @@ import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import { fmtDDMMYY } from "@/lib/dateFormat";
 import { PharmacyPayBox } from "./PharmacyExtras";
+import DateInput from "@/components/hms/DateInput";
+export { PurchaseOrdersTab } from "./PurchaseOrdersTab";
 
-const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
+const input = "rounded-lg border border-slate-300 px-2 py-1.5 text-sm";
 const rupee = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const STATUS_STYLE = {
   DRAFT: "bg-slate-100 text-slate-600", SENT: "bg-blue-100 text-blue-700", PARTIALLY_RECEIVED: "bg-amber-100 text-amber-700",
   RECEIVED: "bg-emerald-100 text-emerald-700", CANCELLED: "bg-red-100 text-red-700",
 };
-
-// ── Purchase Orders — the step BEFORE stock physically arrives ─────
-export function PurchaseOrdersTab({ canManage, onError, onReceive }) {
-  const emptyLine = { medicineId: "", quantity: "", freeQuantity: "0", purchaseRate: "", gstRate: "0" };
-  const [pos, setPos] = useState(null);
-  const [meds, setMeds] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [head, setHead] = useState({ supplierId: "", poDate: new Date().toISOString().slice(0, 10), expectedDeliveryDate: "", notes: "" });
-  const [lines, setLines] = useState([{ ...emptyLine }]);
-  const [showForm, setShowForm] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const load = () => apiGet("/api/pharmacy/purchase-orders").then((d) => setPos(d.purchaseOrders));
-  useEffect(() => {
-    apiGet("/api/pharmacy/medicines?active=true").then((d) => setMeds(d.medicines)).catch(() => {});
-    apiGet("/api/pharmacy/suppliers").then((d) => setSuppliers(d.suppliers)).catch(() => {});
-    load().catch((e) => setMsg(e.message));
-  }, []);
-  useRealtime({ "po:updated": load }, load);
-
-  const setLine = (i, patch) => setLines((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-
-  async function submit(e) {
-    e.preventDefault();
-    setBusy(true);
-    setMsg("");
-    try {
-      const items = lines.filter((l) => l.medicineId && l.quantity).map((l) => ({
-        medicineId: Number(l.medicineId), quantity: Number(l.quantity), freeQuantity: Number(l.freeQuantity || 0),
-        purchaseRate: Number(l.purchaseRate || 0), gstRate: Number(l.gstRate || 0),
-      }));
-      if (!items.length) throw new Error("no_items");
-      await apiSend("/api/pharmacy/purchase-orders", "POST", { ...head, ...(head.supplierId ? { supplierId: Number(head.supplierId) } : {}), items });
-      setLines([{ ...emptyLine }]);
-      setShowForm(false);
-      await load();
-    } catch (err) {
-      onError(err.message === "no_items" ? "Add at least one line (medicine + quantity)." : `Could not create (${err.message}).`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function cancel(po) {
-    if (!confirm(`Cancel ${po.poNumber}?`)) return;
-    try {
-      await apiSend(`/api/pharmacy/purchase-orders/${po.id}`, "PATCH", { status: "CANCELLED" });
-      await load();
-    } catch (err) {
-      onError(err.message);
-    }
-  }
-
-  if (!pos) return <p className="text-sm text-slate-400">{msg || "Loading…"}</p>;
-  return (
-    <div className="space-y-4">
-      {canManage && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <button onClick={() => setShowForm((v) => !v)} className="text-sm font-semibold">{showForm ? "▾" : "▸"} Create a purchase order</button>
-          {showForm && (
-            <form onSubmit={submit} className="mt-3 space-y-3">
-              <div className="grid gap-2 sm:grid-cols-4">
-                <select value={head.supplierId} onChange={(e) => setHead({ ...head, supplierId: e.target.value })} className={input}>
-                  <option value="">— supplier —</option>
-                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-                <label className="text-xs"><span className="block text-slate-500">PO date</span><input required type="date" value={head.poDate} onChange={(e) => setHead({ ...head, poDate: e.target.value })} className={`${input} w-full`} /></label>
-                <label className="text-xs"><span className="block text-slate-500">Expected delivery</span><input type="date" value={head.expectedDeliveryDate} onChange={(e) => setHead({ ...head, expectedDeliveryDate: e.target.value })} className={`${input} w-full`} /></label>
-                <input placeholder="Notes" value={head.notes} onChange={(e) => setHead({ ...head, notes: e.target.value })} className={input} />
-              </div>
-              <div className="space-y-2">
-                {lines.map((l, i) => (
-                  <div key={i} className="grid grid-cols-2 gap-1.5 rounded-md border border-slate-100 bg-slate-50 p-2 sm:grid-cols-5">
-                    <select value={l.medicineId} onChange={(e) => setLine(i, { medicineId: e.target.value })} className="col-span-2 rounded border border-slate-300 px-1.5 py-1 text-xs sm:col-span-1">
-                      <option value="">medicine</option>
-                      {meds.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </select>
-                    <input type="number" min="0" placeholder="qty" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} className="rounded border border-slate-300 px-1.5 py-1 text-xs" />
-                    <input type="number" min="0" placeholder="free" value={l.freeQuantity} onChange={(e) => setLine(i, { freeQuantity: e.target.value })} className="rounded border border-slate-300 px-1.5 py-1 text-xs" />
-                    <input type="number" min="0" step="0.01" placeholder="rate" value={l.purchaseRate} onChange={(e) => setLine(i, { purchaseRate: e.target.value })} className="rounded border border-slate-300 px-1.5 py-1 text-xs" />
-                    <select value={l.gstRate} onChange={(e) => setLine(i, { gstRate: e.target.value })} className="rounded border border-slate-300 px-1.5 py-1 text-xs">{[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}</select>
-                  </div>
-                ))}
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setLines((xs) => [...xs, { ...emptyLine }])} className="rounded-md border border-slate-300 px-2 py-1 text-xs">+ line</button>
-                  {lines.length > 1 && <button type="button" onClick={() => setLines((xs) => xs.slice(0, -1))} className="rounded-md border border-slate-300 px-2 py-1 text-xs">− remove last</button>}
-                </div>
-              </div>
-              <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Send purchase order</button>
-            </form>
-          )}
-        </div>
-      )}
-      {msg && <p className="text-sm text-red-600">{msg}</p>}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-            <tr><th className="px-3 py-2">PO #</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Supplier</th><th className="px-3 py-2">Lines</th><th className="px-3 py-2">Status</th><th className="px-3 py-2" /></tr>
-          </thead>
-          <tbody>
-            {pos.length === 0 && <tr><td colSpan={6} className="px-3 py-4 text-slate-400">No purchase orders yet.</td></tr>}
-            {pos.map((po) => (
-              <tr key={po.id} className="border-b border-slate-100 last:border-0">
-                <td className="px-3 py-2 font-medium">{po.poNumber}</td>
-                <td className="px-3 py-2">{fmtDDMMYY(po.poDate)}</td>
-                <td className="px-3 py-2">{po.supplierName || "—"}</td>
-                <td className="px-3 py-2 text-xs">{po.items.map((i) => `${i.medicineName} (${i.receivedQuantity}/${i.quantity})`).join(", ")}</td>
-                <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[po.status]}`}>{po.status.replace(/_/g, " ")}</span></td>
-                <td className="px-3 py-2 text-right">
-                  {["SENT", "PARTIALLY_RECEIVED"].includes(po.status) && (
-                    <>
-                      <button onClick={() => onReceive(po)} className="mr-2 text-xs underline">Receive (GRN)</button>
-                      {canManage && <button onClick={() => cancel(po)} className="text-xs text-red-600">Cancel</button>}
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 // ── Pharmacy Reports — Inventory Summary / Expiry / Purchases / GRN /
 // Supplier Purchase / Dispensing / Stock Movement / Adjustments / Returns
@@ -169,8 +46,9 @@ function todayStr(offsetDays = 0) {
   return d.toISOString().slice(0, 10);
 }
 
-export function PharmacyReportsTab() {
-  const [sub, setSub] = useState("inventory-summary");
+export function PharmacyReportsTab({ only }) {
+  const tabs = only ? REPORT_TABS.filter((t) => only.includes(t[0])) : REPORT_TABS;
+  const [sub, setSub] = useState(only ? only[0] : "inventory-summary");
   const [from, setFrom] = useState(todayStr(-30));
   const [to, setTo] = useState(todayStr());
   const [partnerDate, setPartnerDate] = useState(todayStr());
@@ -217,21 +95,21 @@ export function PharmacyReportsTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-1.5">
-        {REPORT_TABS.map(([k, l]) => (
+        {tabs.length > 1 && tabs.map(([k, l]) => (
           <button key={k} onClick={() => setSub(k)} className={`rounded-md px-2.5 py-1 text-xs ${sub === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"}`}>{l}</button>
         ))}
       </div>
       {dated && (
         <div className="flex flex-wrap items-end gap-2">
-          <label className="text-xs"><span className="block text-slate-500">From</span><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={`${input}`} /></label>
-          <label className="text-xs"><span className="block text-slate-500">To</span><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`${input}`} /></label>
-          <button onClick={load} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm text-[var(--hms-btn-fg)]">Apply</button>
+          <label className="text-xs"><span className="block text-slate-500">From</span><DateInput value={from} onChange={setFrom} className={input} /></label>
+          <label className="text-xs"><span className="block text-slate-500">To</span><DateInput value={to} onChange={setTo} className={input} /></label>
+          <button onClick={load} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm text-[var(--hms-btn-fg)]">Apply</button>
         </div>
       )}
       {sub === "partner-sales" && (
         <div className="flex flex-wrap items-end gap-2">
-          <label className="text-xs"><span className="block text-slate-500">Date</span><input type="date" value={partnerDate} onChange={(e) => setPartnerDate(e.target.value)} className={`${input}`} /></label>
-          <button onClick={load} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm text-[var(--hms-btn-fg)]">Apply</button>
+          <label className="text-xs"><span className="block text-slate-500">Date</span><DateInput value={partnerDate} onChange={setPartnerDate} className={input} /></label>
+          <button onClick={load} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm text-[var(--hms-btn-fg)]">Apply</button>
         </div>
       )}
       {err && <p className="text-sm text-red-600">{err}</p>}
@@ -244,11 +122,11 @@ function ReportBody({ sub, data, onChanged }) {
   if (data === null) return <p className="text-sm text-slate-400">Loading…</p>;
 
   if (sub === "sales") {
-    if (data.length === 0) return <p className="rounded-lg border border-slate-200 bg-white px-3 py-6 text-center text-sm text-slate-400">No walk-in sales yet.</p>;
+    if (data.length === 0) return <p className="rounded-2xl border border-slate-200 bg-white shadow-sm px-3 py-6 text-center text-sm text-slate-400">No walk-in sales yet.</p>;
     return (
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">
-          <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+          <thead className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr><th className="px-3 py-2">Customer</th><th className="px-3 py-2">When</th><th className="px-3 py-2">Total</th><th className="px-3 py-2">Status</th><th className="px-3 py-2" /></tr>
           </thead>
           <tbody>
@@ -333,19 +211,19 @@ function PartnerSalesReport({ data }) {
   }
 
   if (data.connections.length === 0) {
-    return <p className="rounded-lg border border-slate-200 bg-white px-3 py-6 text-center text-sm text-slate-400">No partner-connection sales on {data.date}.</p>;
+    return <p className="rounded-2xl border border-slate-200 bg-white shadow-sm px-3 py-6 text-center text-sm text-slate-400">No partner-connection sales on {data.date}.</p>;
   }
   return (
     <div className="space-y-4">
       {err && <p className="text-sm text-red-600">{err}</p>}
       {data.connections.map((g) => (
-        <div key={g.connectionId} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div key={g.connectionId} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
             <p className="text-sm font-semibold">{g.partnerName} <span className="font-normal text-slate-400">· {g.totalQuantity} units{g.totalAmount ? ` · ${rupee(g.totalAmount)}` : ""}</span></p>
             <button
               onClick={() => share(g.connectionId)}
               disabled={sharing === g.connectionId}
-              className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-white disabled:opacity-50"
+              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:bg-white disabled:opacity-50"
             >
               {sharing === g.connectionId ? "Sending…" : sharedIds.has(g.connectionId) ? "Sent ✓ — send again" : "Share with partner"}
             </button>
@@ -359,7 +237,7 @@ function PartnerSalesReport({ data }) {
 
 function Card({ label, value }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3">
       <p className="text-xs text-slate-500">{label}</p>
       <p className="text-xl font-semibold tabular-nums">{value}</p>
     </div>
@@ -367,11 +245,11 @@ function Card({ label, value }) {
 }
 
 function SimpleTable({ rows, cols }) {
-  if (!rows || rows.length === 0) return <p className="rounded-lg border border-slate-200 bg-white px-3 py-6 text-center text-sm text-slate-400">No data for this range.</p>;
+  if (!rows || rows.length === 0) return <p className="rounded-2xl border border-slate-200 bg-white shadow-sm px-3 py-6 text-center text-sm text-slate-400">No data for this range.</p>;
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-sm">
-        <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+        <thead className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>{cols.map(([k, l]) => <th key={k} className="px-3 py-2">{l}</th>)}</tr>
         </thead>
         <tbody>

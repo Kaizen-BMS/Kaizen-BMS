@@ -1,4 +1,5 @@
 "use client";
+import { fmtDDMMYYTime } from "@/lib/dateFormat";
 
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
@@ -132,10 +133,10 @@ export default function RadiologyClient({ permissions }) {
             </div>
             <p className="mt-1 text-sm text-slate-600">{o.studyName}</p>
             <p className="mt-1 text-xs text-slate-400">
-              Ordered {new Date(o.createdAt).toLocaleString()}
-              {o.scheduledAt && ` · Scheduled ${new Date(o.scheduledAt).toLocaleString()}`}
-              {o.startedAt && ` · Started ${new Date(o.startedAt).toLocaleString()}`}
-              {o.completedAt && ` · Completed ${new Date(o.completedAt).toLocaleString()}`}
+              Ordered {fmtDDMMYYTime(o.createdAt)}
+              {o.scheduledAt && ` · Scheduled ${fmtDDMMYYTime(o.scheduledAt)}`}
+              {o.startedAt && ` · Started ${fmtDDMMYYTime(o.startedAt)}`}
+              {o.completedAt && ` · Completed ${fmtDDMMYYTime(o.completedAt)}`}
             </p>
             {o.status === "CANCELLED" && o.cancelReason && (
               <p className="mt-1 text-xs text-red-500">Cancelled: {o.cancelReason}</p>

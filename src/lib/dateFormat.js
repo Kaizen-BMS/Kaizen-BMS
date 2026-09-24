@@ -20,3 +20,11 @@ export function fmtDDMMYYYY(value) {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${dd}/${mm}/${d.getFullYear()}`;
 }
+
+/** DD/MM/YY HH:MM (24h) — same real Date underneath, just a plain, consistent display. */
+export function fmtDDMMYYTime(value) {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${fmtDDMMYY(d)} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}

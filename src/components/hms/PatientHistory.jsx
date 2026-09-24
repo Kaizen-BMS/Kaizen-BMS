@@ -1,11 +1,12 @@
 "use client";
+import { fmtDDMMYYTime } from "@/lib/dateFormat";
 
 import { useEffect, useState } from "react";
 import { apiGet } from "./api";
 import { wall } from "@/lib/wallClock";
 
-const fmt = (d) => new Date(d).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-const fmtWall = (d) => wall(d).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+const fmt = (d) => fmtDDMMYYTime(d);
+const fmtWall = (d) => fmtDDMMYYTime(wall(d));
 
 // "How many times has this patient come, and what happened each time."
 export default function PatientHistory({ patientId, currentVisitId, defaultOpen = false, children }) {

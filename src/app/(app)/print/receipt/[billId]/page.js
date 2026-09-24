@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { fmtDDMMYY } from "@/lib/dateFormat";
 import { getSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prismaClient";
@@ -62,7 +63,7 @@ export default async function ReceiptPrintPage({ params }) {
     bill_to: row.patients.name,
     bill_to_phone: row.patients.phone || "",
     invoice_no: invoiceNo,
-    issue_date: new Date(row.created_at).toLocaleDateString([], { dateStyle: "medium" }),
+    issue_date: fmtDDMMYY(row.created_at),
     status: balance <= 0 ? "Paid" : paidTotal > 0 ? "Part paid" : "Due",
     subtotal: fmt(itemsTotal),
     discount: fmt(discountTotal),

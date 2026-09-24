@@ -20,8 +20,10 @@ export default function DashboardShell({ user, groups, children }) {
   useEffect(() => {
     // restore the persisted collapse preference on mount
     try {
+      // Phones start with the icon-only sidebar (unless the user chose otherwise) so the page gets the width.
+      const saved = localStorage.getItem(COLLAPSE_KEY);
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+      setCollapsed(saved != null ? saved === "1" : window.innerWidth < 768);
     } catch {
       /* ignore */
     }

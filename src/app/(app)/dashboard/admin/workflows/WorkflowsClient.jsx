@@ -1,4 +1,5 @@
 "use client";
+import { fmtDDMMYYTime } from "@/lib/dateFormat";
 
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
@@ -40,7 +41,7 @@ function StatusBadge({ status }) {
 function fmt(dt) {
   if (!dt) return "—";
   try {
-    return new Date(dt).toLocaleString();
+    return fmtDDMMYYTime(dt);
   } catch {
     return "—";
   }

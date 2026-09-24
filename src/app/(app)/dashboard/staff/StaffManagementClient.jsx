@@ -10,13 +10,18 @@ import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import AttendanceClient from "../attendance/AttendanceClient";
+import { StaffOverviewTab, WeeklySchedules, AttendanceHistoryTab, StaffHistoryTab, hoursText, dutyHours } from "./StaffExtras";
+import { fmtDDMMYY } from "@/lib/dateFormat";
 
 const TABS = [
+  { key: "overview", label: "Today", adminOnly: true },
   { key: "directory", label: "Directory", adminOnly: true },
   { key: "roster", label: "Duty Roster" },
   { key: "leave", label: "Leave Requests" },
-  { key: "attendance", label: "Attendance" },
+  { key: "attendance", label: "My Attendance" },
+  { key: "history", label: "Attendance History", adminOnly: true },
   { key: "reports", label: "Reports", adminOnly: true },
+  { key: "timeline", label: "Staff History", adminOnly: true },
 ];
 
 export default function StaffManagementClient({ canManage, canProxyAttendance, ownUserId }) {
@@ -26,25 +31,26 @@ export default function StaffManagementClient({ canManage, canProxyAttendance, o
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">Staff Management</h1>
-        <p className="text-sm text-slate-500">Directory, duty roster, leave, attendance, and staff reports — one place.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Staff Management</h1>
+        <p className="text-sm text-slate-500">People, duty hours, attendance and leave — worked out for you.</p>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
+      <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
         {availableTabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
-              tab === t.key ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-medium transition ${tab === t.key ? "bg-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
           >
             {t.label}
           </button>
         ))}
       </div>
 
+      {tab === "overview" && canManage && <StaffOverviewTab />}
       {tab === "directory" && canManage && <DirectoryTab ownUserId={ownUserId} />}
+      {tab === "history" && canManage && <AttendanceHistoryTab />}
+      {tab === "timeline" && canManage && <StaffHistoryTab />}
       {tab === "roster" && <DutyRosterTab canManage={canManage} />}
       {tab === "leave" && <LeaveRequestsTab canManage={canManage} ownUserId={ownUserId} />}
       {tab === "attendance" && <AttendanceClient canProxy={canProxyAttendance} canManageStaff={canManage} />}
@@ -86,6 +92,7 @@ function DirectoryTab({ ownUserId }) {
     setForm({
       phone: s.phone || "", designation: s.designation || "", joinDate: s.joinDate ? s.joinDate.slice(0, 10) : "", address: s.address || "",
       nativePlace: s.nativePlace || "", emergencyContact: s.emergencyContact || "", aadhaarNo: s.aadhaarNo || "", photoDataUrl: "", photo: s.photo || "",
+      employeeId: s.employeeId || "", department: s.department || "", dutyType: s.dutyType || "FIXED", dutyStart: s.dutyStart || "", dutyEnd: s.dutyEnd || "",
     });
   }
 
@@ -122,8 +129,9 @@ function DirectoryTab({ ownUserId }) {
             <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
               <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2">Role</th>
+              <th className="px-3 py-2">Department</th>
               <th className="px-3 py-2">Phone</th>
-              <th className="px-3 py-2">From</th>
+              <th className="px-3 py-2">Duty</th>
               <th className="px-3 py-2">Joined</th>
               <th className="px-3 py-2" />
             </tr>
@@ -135,15 +143,16 @@ function DirectoryTab({ ownUserId }) {
                   <div className="flex items-center gap-2.5">
                     <Avatar name={s.name} src={s.photo} size={36} onClick={s.photo ? () => setZoom(s) : undefined} title={s.photo ? "View photo" : undefined} />
                     <div>
-                      <p>{s.name}{!s.active && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">switched off</span>}</p>
+                      <p>{s.name}{s.employeeId && <span className="ml-1.5 text-xs text-slate-400">#{s.employeeId}</span>}{!s.active && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">switched off</span>}</p>
                       <p className="text-xs text-slate-400">{s.email}{s.designation ? ` · ${s.designation}` : ""}</p>
                     </div>
                   </div>
                 </td>
                 <td className="px-3 py-2 text-slate-500">{s.role}</td>
+                <td className="px-3 py-2 text-slate-600">{s.department || "—"}</td>
                 <td className="px-3 py-2">{s.phone || "—"}</td>
-                <td className="px-3 py-2 text-xs text-slate-500">{s.nativePlace || s.address || "—"}{!s.photo && <p className="text-amber-600">no photo yet</p>}</td>
-                <td className="px-3 py-2">{s.joinDate ? new Date(s.joinDate).toLocaleDateString() : "—"}</td>
+                <td className="px-3 py-2 text-xs text-slate-600">{s.dutyStart && s.dutyEnd ? `${s.dutyStart}–${s.dutyEnd} · ${hoursText(dutyHours(s.dutyStart, s.dutyEnd))}` : "—"}{!s.photo && <p className="text-amber-600">no photo yet</p>}</td>
+                <td className="px-3 py-2 tabular-nums">{fmtDDMMYY(s.joinDate)}</td>
                 <td className="px-3 py-2">
                   <button onClick={() => startEdit(s)} className={`mr-3 text-xs underline ${s.photo ? "text-slate-600" : "font-semibold text-amber-700"} hover:text-slate-900`}>{s.photo ? "Details & photo" : "Add photo & details"}</button>
                   <ResetPasswordButton userId={s.userId} name={s.name} />
@@ -164,7 +173,7 @@ function DirectoryTab({ ownUserId }) {
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setEditing(null)}>
           <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <p className="mb-3 text-sm font-semibold">{editing.name} — details</p>
-            <PersonDetailsFields name={editing.name} value={form} onChange={setForm} />
+            <PersonDetailsFields name={editing.name} value={form} onChange={setForm} showWork />
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setEditing(null)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
               <button onClick={save} disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Save</button>
@@ -285,6 +294,8 @@ function DutyRosterTab({ canManage }) {
 
   return (
     <div className="space-y-3">
+      <WeeklySchedules canManage={canManage} />
+      <p className="pt-2 text-sm font-semibold">One-off changes for a specific date</p>
       {msg && <p className="text-sm text-red-600">{msg}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => setAnchor((d) => addDays(d, view === "week" ? -7 : -30))} className="rounded-md border border-slate-300 px-2.5 py-1 text-sm hover:bg-slate-50">‹</button>
@@ -438,7 +449,7 @@ function LeaveRequestsTab({ canManage, ownUserId }) {
             <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
               <div>
                 <p className="font-medium">
-                  {r.user_name} · {new Date(r.from_date).toLocaleDateString()}–{new Date(r.to_date).toLocaleDateString()}
+                  {r.user_name} · {fmtDDMMYY(r.from_date)} – {fmtDDMMYY(r.to_date)}
                 </p>
                 <p className="text-xs text-slate-500">
                   {r.reason != null ? r.reason : isOwn || canManage ? "" : "(reason private to this staff member)"}
@@ -523,7 +534,7 @@ function ReportsTab() {
               <div className="mt-2 space-y-1 text-sm">
                 {data.understaffedShifts.map((s, i) => (
                   <p key={i} className="text-amber-700">
-                    {new Date(s.shift_date).toLocaleDateString()} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)} · {s.total_count} staff, 0 doctors
+                    {fmtDDMMYY(s.shift_date)} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)} · {s.total_count} staff, 0 doctors
                   </p>
                 ))}
               </div>

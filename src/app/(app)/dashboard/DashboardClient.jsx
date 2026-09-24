@@ -1,4 +1,5 @@
 "use client";
+import { fmtDDMMYY } from "@/lib/dateFormat";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -26,7 +27,7 @@ function timeAgo(iso) {
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
-  return new Date(iso).toLocaleDateString();
+  return fmtDDMMYY(iso);
 }
 
 function KpiCard({ label, value, href }) {

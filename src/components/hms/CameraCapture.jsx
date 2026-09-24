@@ -42,7 +42,9 @@ export default function CameraCapture({ title = "Take a photo", onCapture, onClo
     c.width = Math.round(v.videoWidth * scale);
     c.height = Math.round(v.videoHeight * scale);
     c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
-    onCapture(c.toDataURL("image/jpeg", 0.75));
+    // Smaller files: WebP where the browser can encode it, JPEG otherwise.
+    const webp = c.toDataURL("image/webp", 0.7);
+    onCapture(webp.startsWith("data:image/webp") ? webp : c.toDataURL("image/jpeg", 0.7));
   }
 
   async function pickFile(e) {

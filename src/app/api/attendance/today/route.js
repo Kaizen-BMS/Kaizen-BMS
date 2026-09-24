@@ -1,6 +1,8 @@
 import { apiRoute, json } from "@/lib/apiRoute";
 import { tenantDb } from "@/lib/prismaClient";
 import { serverToday, summarize } from "@/lib/attendance";
+import { requireTenantId } from "@/lib/requestContext";
+import { loadScheduleResolver, dayMetrics, dateKey } from "@/lib/staffSchedule";
 
 export const dynamic = "force-dynamic";
 
@@ -13,5 +15,9 @@ export const GET = apiRoute("attendance:self", async (_request, { session }) => 
     include: { attendance_breaks: { orderBy: { id: "asc" } } },
   });
   const breaks = log?.attendance_breaks || [];
-  return json(summarize(log, breaks));
+  const day = dateKey(workDate);
+  const shift = (await loadScheduleResolver(requireTenantId(), day, day))(String(session.userId), day);
+  const sum = summarize(log, breaks);
+  const metrics = dayMetrics(shift, { checkIn: log?.check_in_at, checkOut: log?.check_out_at, workedMinutes: sum.workedMinutes });
+  return json({ ...sum, schedule: shift && !shift.off ? { start: shift.start, end: shift.end, minutes: shift.scheduledMinutes } : shift?.off ? { off: true } : null, metrics });
 });

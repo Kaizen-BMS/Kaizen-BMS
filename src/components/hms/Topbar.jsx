@@ -50,6 +50,7 @@ export default function Topbar({ user, navItems, onSidebarToggle }) {
       {user.role !== "SUPER_ADMIN" && <FacilitySwitcher fallbackName={user.tenantName} />}
 
       <GlobalSearch onNavigate={(href) => router.push(href)} />
+      <div className="flex-1 sm:hidden" />
 
       <button
         onClick={() => setPaletteOpen(true)}
@@ -126,7 +127,7 @@ function GlobalSearch({ onNavigate }) {
   }, []);
 
   return (
-    <div ref={boxRef} className="relative max-w-md flex-1">
+    <div ref={boxRef} className="relative hidden min-w-0 max-w-md flex-1 sm:block">
       <div className="flex items-center gap-2 rounded-md border bg-slate-50 px-2.5 py-1.5"
         style={{ borderColor: "var(--hms-border)" }}>
         <Icon name="search" size={15} className="text-[var(--hms-ink-faint)]" />

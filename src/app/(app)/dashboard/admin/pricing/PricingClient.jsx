@@ -1,4 +1,5 @@
 "use client";
+import { fmtDDMMYY } from "@/lib/dateFormat";
 
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
@@ -336,8 +337,8 @@ function TariffsTab({ setMsg }) {
                           ? `${(Number(t.cgstRate) + Number(t.sgstRate) + Number(t.igstRate)).toFixed(2)}%${t.taxInclusive ? " (incl.)" : ""}`
                           : "—"}
                       </td>
-                      <td className="px-3 py-2 text-slate-500">{new Date(t.effectiveFrom).toLocaleDateString()}</td>
-                      <td className="px-3 py-2 text-slate-500">{t.effectiveTo ? new Date(t.effectiveTo).toLocaleDateString() : "—"}</td>
+                      <td className="px-3 py-2 text-slate-500">{fmtDDMMYY(t.effectiveFrom)}</td>
+                      <td className="px-3 py-2 text-slate-500">{t.effectiveTo ? fmtDDMMYY(t.effectiveTo) : "—"}</td>
                       <td className="px-3 py-2">
                         <span className={`rounded-full px-2 py-0.5 text-xs ${t.current ? "border border-green-300 bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"}`}>
                           {t.current ? "Current" : t.active ? "Past" : "Deactivated"}

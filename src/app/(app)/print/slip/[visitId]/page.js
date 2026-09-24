@@ -1,3 +1,4 @@
+import { fmtDDMMYY } from "@/lib/dateFormat";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
@@ -46,7 +47,7 @@ export default async function SlipPage({ params, searchParams }) {
     phone_patient: p.phone || "",
     token: visit.token_number ?? "",
     reason: visit.reason || "",
-    date: when.toLocaleDateString([], { dateStyle: "medium" }),
+    date: fmtDDMMYY(when),
     time: when.toLocaleTimeString([], { timeStyle: "short" }),
     fee: paid > 0 ? paid : "",
   };

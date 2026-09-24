@@ -3,6 +3,7 @@ import { apiRoute, json } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
 import { prisma, tenantDb } from "@/lib/prismaClient";
 import { detailsShape, toProfileData } from "@/lib/staffDetails";
+import { applyDutyFromProfile } from "@/lib/staffSchedule";
 
 export const dynamic = "force-dynamic";
 
@@ -27,5 +28,6 @@ export const PATCH = apiRoute("staff:manage", async (request, ctx) => {
   if (existing) await tenantDb.staff_profiles.update({ where: { id: existing.id }, data: patch });
   else await tenantDb.staff_profiles.create({ data: { user_id: uid, ...patch } });
 
+  await applyDutyFromProfile(ctx.session.tenantId, uid, body, ctx.session.userId);
   return json({ ok: true });
 });

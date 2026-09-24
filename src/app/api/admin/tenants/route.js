@@ -118,6 +118,25 @@ export const POST = apiRoute("tenant:manage", async (request) => {
         ],
       });
     }
+    if (body.type === "HOSPITAL") {
+      // Same starter set every existing hospital was given by migrations 045/048.
+      await tx.shift_templates.createMany({
+        data: [
+          { tenant_id: tenant.id, name: "General Shift", start_time: new Date("1970-01-01T09:00:00.000Z"), end_time: new Date("1970-01-01T17:00:00.000Z") },
+          { tenant_id: tenant.id, name: "Night Shift", start_time: new Date("1970-01-01T17:00:00.000Z"), end_time: new Date("1970-01-01T01:00:00.000Z") },
+        ],
+      });
+      if (modules.includes("IPD")) {
+        await tx.vital_parameters.createMany({
+          data: [
+            { tenant_id: tenant.id, field_key: "bp", label: "Blood Pressure", unit: "mmHg", value_type: "BP", range_config: JSON.stringify({ systolic: { min: 90, max: 120 }, diastolic: { min: 60, max: 80 } }), display_order: 1 },
+            { tenant_id: tenant.id, field_key: "pulse", label: "Pulse", unit: "bpm", value_type: "NUMBER", range_config: JSON.stringify({ min: 60, max: 100 }), display_order: 2 },
+            { tenant_id: tenant.id, field_key: "temp", label: "Temperature", unit: "°F", value_type: "NUMBER", range_config: JSON.stringify({ min: 97, max: 99 }), display_order: 3 },
+            { tenant_id: tenant.id, field_key: "spo2", label: "SpO2", unit: "%", value_type: "NUMBER", range_config: JSON.stringify({ min: 95, max: 100 }), display_order: 4 },
+          ],
+        });
+      }
+    }
     const owner = await tx.users.create({
       data: {
         tenant_id: tenant.id,

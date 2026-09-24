@@ -25,6 +25,23 @@ const STATUS_STYLE = {
 function fmtTime(iso) {
   return iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 }
+function DutySummary({ mine, status }) {
+  if (!mine?.schedule) return null;
+  const sch = mine.schedule;
+  const m = mine.metrics || {};
+  if (sch.off) return <p className="mt-3 text-xs text-slate-500">Today is your day off.</p>;
+  const done = status === "CHECKED_OUT";
+  return (
+    <div className="mt-3 space-y-1 rounded-xl bg-slate-50 px-3 py-2 text-xs">
+      <p className="text-slate-500">Duty {sch.start}–{sch.end} · {fmtMinutes(sch.minutes)}</p>
+      {mine.log?.check_in_at && m.lateMinutes > 0 && <p className="font-medium text-orange-700">🟠 Late by {fmtMinutes(m.lateMinutes)}</p>}
+      {mine.log?.check_in_at && m.lateMinutes === 0 && <p className="text-emerald-700">On time</p>}
+      {done && m.overtimeMinutes > 0 && <p className="font-medium text-emerald-700">Overtime {fmtMinutes(m.overtimeMinutes)} (worked {fmtMinutes(m.workedMinutes)})</p>}
+      {done && m.shortfallMinutes > 0 && <p className="font-medium text-red-700">Shortfall {fmtMinutes(m.shortfallMinutes)} (worked {fmtMinutes(m.workedMinutes)})</p>}
+    </div>
+  );
+}
+
 function fmtMinutes(mins) {
   const h = Math.floor((mins || 0) / 60);
   const m = Math.round(mins || 0) % 60;
@@ -38,6 +55,7 @@ export default function AttendanceClient({ canProxy, canManageStaff }) {
   const [category, setCategory] = useState("PERSONAL");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cam, setCam] = useState(null); // "check-in" | "check-out" while the camera is open
 
   async function loadMine() {
     const data = await apiGet("/api/attendance/today");
@@ -91,6 +109,8 @@ export default function AttendanceClient({ canProxy, canManageStaff }) {
           )}
         </div>
 
+        <DutySummary mine={mine} status={status} />
+
         {status === "OUT" && openBreak && (
           <p className="mt-3 text-sm text-amber-700">
             Stepped out ({openBreak.category === "PERSONAL" ? "personal" : "hospital work"}) — {openBreak.reason}
@@ -101,7 +121,7 @@ export default function AttendanceClient({ canProxy, canManageStaff }) {
           {status === "NOT_CHECKED_IN" && (
             <button
               disabled={busy}
-              onClick={() => act(() => apiSend("/api/attendance/check-in", "POST"))}
+              onClick={() => setCam("check-in")}
               className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
             >
               Check in
@@ -118,7 +138,7 @@ export default function AttendanceClient({ canProxy, canManageStaff }) {
               </button>
               <button
                 disabled={busy}
-                onClick={() => act(() => apiSend("/api/attendance/check-out", "POST"))}
+                onClick={() => setCam("check-out")}
                 className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
               >
                 Check out
@@ -128,7 +148,7 @@ export default function AttendanceClient({ canProxy, canManageStaff }) {
           {status === "CHECKED_OUT" && (
             <button
               disabled={busy}
-              onClick={() => act(() => apiSend("/api/attendance/check-in", "POST"))}
+              onClick={() => setCam("check-in")}
               className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
             >
               I&rsquo;m back at work
@@ -189,6 +209,18 @@ export default function AttendanceClient({ canProxy, canManageStaff }) {
           </div>
         )}
       </div>
+
+      {cam && (
+        <CameraCapture
+          title={cam === "check-in" ? "Check in — take your photo" : "Check out — take your photo"}
+          onClose={() => setCam(null)}
+          onCapture={(photoDataUrl) => {
+            const action = cam;
+            setCam(null);
+            act(() => apiSend(`/api/attendance/${action}`, "POST", { photoDataUrl }));
+          }}
+        />
+      )}
 
       {canProxy && <ProxyRoster canManageStaff={canManageStaff} />}
     </div>

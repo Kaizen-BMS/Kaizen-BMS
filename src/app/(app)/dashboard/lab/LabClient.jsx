@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fmtDDMMYYTime } from "@/lib/dateFormat";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
@@ -171,7 +172,7 @@ function LabQueueView({ permissions }) {
           return (
             <div
               key={o.id}
-              className={`rounded-lg border border-slate-200 bg-white p-4 ${
+              className={`rounded-2xl border border-slate-200 bg-white shadow-sm p-4 ${
                 flashIds.has(o.id) ? "hms-flash" : ""
               }`}
             >
@@ -188,9 +189,9 @@ function LabQueueView({ permissions }) {
                 {o.source === "WALK_IN" ? "Walk-in" : "Doctor order"}{o.referring_doctor ? ` · Ref. ${o.source === "WALK_IN" ? "" : "Dr. "}${o.referring_doctor}` : ""} · {tests.join(", ")}
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                Ordered {new Date(o.created_at).toLocaleString()}
-                {o.collected_at && ` · Collected ${new Date(o.collected_at).toLocaleString()}`}
-                {o.received_at && ` · Received ${new Date(o.received_at).toLocaleString()}`}
+                Ordered {fmtDDMMYYTime(o.created_at)}
+                {o.collected_at && ` · Collected ${fmtDDMMYYTime(o.collected_at)}`}
+                {o.received_at && ` · Received ${fmtDDMMYYTime(o.received_at)}`}
               </p>
 
               {o.bill && <div className="mt-2"><PayBox orderId={o.id} bill={o.bill} onPaid={load} /></div>}
@@ -199,7 +200,7 @@ function LabQueueView({ permissions }) {
                   <button
                     onClick={() => collect(o.id)}
                     disabled={busyId === o.id}
-                    className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+                    className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                   >
                     {busyId === o.id ? "Marking…" : "Mark collected"}
                   </button>
@@ -208,7 +209,7 @@ function LabQueueView({ permissions }) {
                   <button
                     onClick={() => receive(o.id)}
                     disabled={busyId === o.id}
-                    className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+                    className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                   >
                     {busyId === o.id ? "Marking…" : "Mark received"}
                   </button>
@@ -217,7 +218,7 @@ function LabQueueView({ permissions }) {
                   <button
                     onClick={() => startResult(o)}
                     disabled={busyId === o.id}
-                    className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+                    className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                   >
                     Enter results
                   </button>
@@ -226,6 +227,9 @@ function LabQueueView({ permissions }) {
 
               {resultingId === o.id && (
                 <div className="mt-4 space-y-2 border-t border-slate-200 pt-3">
+                  <div className="grid grid-cols-5 gap-1.5 px-0.5 text-[11px] font-medium text-slate-500">
+                    <span>Test</span><span>Result</span><span>Units</span><span>Normal range</span><span>Flag (auto)</span>
+                  </div>
                   {rows.map((r, i) => {
                     const abnormal = r.flag && r.flag !== "NORMAL";
                     return (
@@ -280,14 +284,14 @@ function LabQueueView({ permissions }) {
                   <div className="flex gap-2">
                     <button
                       onClick={() => setRows((xs) => [...xs, { testName: "", result: "", units: "", referenceRange: "", flag: "NORMAL" }])}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                      className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
                     >
                       + row
                     </button>
                     <button
                       onClick={submitResults}
                       disabled={busyId === resultingId}
-                      className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+                      className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                     >
                       {busyId === resultingId ? "Finalizing…" : "Finalize report"}
                     </button>
@@ -343,9 +347,9 @@ function LabPartnerTab({ canResult }) {
       {orders.length === 0 ? (
         <p className="text-sm text-slate-400">No tests from partners yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm">
-            <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+            <thead className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr><th className="px-3 py-2">From</th><th className="px-3 py-2">Patient</th><th className="px-3 py-2">Test</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Result</th></tr>
             </thead>
             <tbody>
@@ -358,9 +362,9 @@ function LabPartnerTab({ canResult }) {
                   <td className="px-3 py-2">
                     {o.status === "RECEIVED" && canResult && o.connectionStatus === "ACTIVE" ? (
                       <div className="flex gap-1">
-                        <input value={text[o.id] || ""} onChange={(e) => setText({ ...text, [o.id]: e.target.value })} placeholder="Findings" className="w-48 rounded-md border border-slate-300 px-2 py-1 text-xs" />
-                        <input type="number" min="0" value={amounts[o.id] || ""} onChange={(e) => setAmounts({ ...amounts, [o.id]: e.target.value })} placeholder="₹ amount" className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs" />
-                        <button onClick={() => send(o)} disabled={!(text[o.id] || "").trim()} className="rounded-md bg-[var(--hms-btn-bg)] px-2 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50">Send result</button>
+                        <input value={text[o.id] || ""} onChange={(e) => setText({ ...text, [o.id]: e.target.value })} placeholder="Findings" className="w-48 rounded-lg border border-slate-300 px-2 py-1 text-xs" />
+                        <input type="number" min="0" value={amounts[o.id] || ""} onChange={(e) => setAmounts({ ...amounts, [o.id]: e.target.value })} placeholder="₹ amount" className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-xs" />
+                        <button onClick={() => send(o)} disabled={!(text[o.id] || "").trim()} className="rounded-lg bg-[var(--hms-btn-bg)] px-2 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50">Send result</button>
                       </div>
                     ) : (
                       <span className="text-xs">{o.result?.findings || ""}{o.result?.amount != null ? ` · ₹${o.result.amount}` : ""}</span>

@@ -3,6 +3,7 @@ import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { emitToTenant } from "@/lib/realtime";
+import { logHistory, ddmmyy } from "@/lib/staffSchedule";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export const PATCH = apiRoute("staff:manage", async (request, ctx) => {
     data: { status: body.status, approved_by: BigInt(ctx.session.userId), decided_at: new Date() },
   });
 
+  await logHistory(ctx.session.tenantId, existing.user_id, `LEAVE_${body.status}`, `Leave ${ddmmyy(existing.from_date)} → ${ddmmyy(existing.to_date)} ${body.status.toLowerCase()}`, ctx.session.userId);
   emitToTenant(ctx.session.tenantId, "leaverequest:updated", { leaveRequest });
   return json({ leaveRequest });
 });

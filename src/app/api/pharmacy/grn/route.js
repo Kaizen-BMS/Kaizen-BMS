@@ -20,6 +20,8 @@ const itemSchema = z.object({
   rejectedQuantity: z.coerce.number().int().min(0).max(1_000_000).optional().default(0),
   purchaseRate: z.coerce.number().min(0).max(10_000_000),
   mrp: z.coerce.number().min(0).max(10_000_000),
+  // What the pharmacy sells this batch for (worked out from margin in the UI); never above MRP.
+  sellingRate: z.coerce.number().min(0).max(10_000_000).optional(),
   discountPercent: z.coerce.number().min(0).max(100).optional().default(0),
   gstRate: z.coerce.number().min(0).max(28).optional().default(0),
 });
@@ -77,6 +79,7 @@ export const POST = apiRoute("grn:create", async (request, { session }) => {
       if (!medicine) throw new HttpError(400, `medicine_not_found:${it.medicineId}`);
       const accepted = it.receivedQuantity + it.freeQuantity - it.damagedQuantity - it.rejectedQuantity;
       if (accepted < 0) throw new HttpError(400, "accepted_quantity_cannot_be_negative");
+      if (it.mrp > 0 && it.sellingRate != null && it.sellingRate > it.mrp) throw new HttpError(400, "selling_price_above_mrp");
 
       let stockId = null;
       if (accepted > 0) {
@@ -87,6 +90,7 @@ export const POST = apiRoute("grn:create", async (request, { session }) => {
         const rateFields = {
           purchase_rate: it.purchaseRate,
           mrp: it.mrp,
+          ...(it.sellingRate != null ? { selling_rate: it.sellingRate } : {}),
           ...(it.expiryDate ? { expiry_date: new Date(it.expiryDate) } : {}),
           ...(it.manufacturingDate ? { manufacturing_date: new Date(it.manufacturingDate) } : {}),
           ...(body.supplierId ? { supplier_id: BigInt(body.supplierId) } : {}),

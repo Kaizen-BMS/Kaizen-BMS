@@ -1,4 +1,5 @@
 "use client";
+import { fmtDDMMYYTime } from "@/lib/dateFormat";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -7,7 +8,7 @@ import AllergyBadge from "@/components/hms/AllergyBadge";
 import PatientHistory from "@/components/hms/PatientHistory";
 import { usePrintSettings, openSlip } from "@/components/hms/usePrintSettings";
 
-const fmt = (d) => (d ? new Date(d).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "—");
+const fmt = (d) => fmtDDMMYYTime(d);
 
 // One patient's page: who they are, how often they came, what happened each
 // time (history), and quick actions — new visit, print slip, book appointment.

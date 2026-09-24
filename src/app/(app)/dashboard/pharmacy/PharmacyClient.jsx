@@ -7,8 +7,9 @@ import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
 import PartnerSend from "@/components/hms/PartnerSend";
 import { fmtDDMMYY } from "@/lib/dateFormat";
-import { MEDICINE_TYPES } from "@/lib/medicineTypes";
+import InventoryTab from "./InventoryTab";
 import { MedicinesTab, SuppliersTab, GrnTab, TransferTab, ReturnsTab, SellTab } from "./PharmacyExtras";
+import { PurchaseHistoryTab } from "./PurchaseHistoryTab";
 import { PurchaseOrdersTab, PharmacyReportsTab } from "./PharmacyExtras2";
 
 // Reads ?tab=&filter= once (from the Dashboard's alert cards / notification
@@ -28,19 +29,42 @@ function TabParamsReader({ onReady }) {
   return null;
 }
 
-const TABS = [
-  ["queue", "Prescription queue"],
-  ["sell", "Sell (walk-in)"],
-  ["inventory", "Inventory"],
-  ["medicines", "Medicines"],
-  ["po", "Purchase Orders"],
-  ["grn", "Receive stock (GRN)"],
-  ["transfer", "Transfer"],
-  ["returns", "Returns"],
-  ["suppliers", "Suppliers"],
-  ["reports", "Reports"],
-  ["partner", "Partner orders"],
+// Three plain business areas — what a pharmacist actually thinks in.
+// (No module / instance / connection jargon anywhere in this screen.)
+const CATEGORIES = [
+  {
+    key: "customer", label: "Customers & Sales", hint: "Prescriptions, dispensing, billing, returns",
+    tabs: [
+      ["queue", "Prescriptions & Dispensing"],
+      ["sell", "Sales / Billing"],
+      ["returns", "Returns"],
+      ["history", "Purchase History"],
+      ["partner", "Partner Orders"],
+    ],
+  },
+  {
+    key: "inventory", label: "Inventory", hint: "Medicines, stock, batches, expiry",
+    tabs: [
+      ["medicines", "Medicine List"],
+      ["inventory", "Stock & Batches"],
+      ["movement", "Stock Movement"],
+      ["transfer", "Stock Transfer"],
+      ["adjustments", "Stock Adjustment"],
+    ],
+  },
+  {
+    key: "purchase", label: "Suppliers & Purchase", hint: "Suppliers, orders, goods received",
+    tabs: [
+      ["suppliers", "Suppliers"],
+      ["po", "Purchase Orders"],
+      ["grn", "Goods Received"],
+      ["purchase-history", "Purchase History"],
+      ["supplier-returns", "Supplier Returns"],
+    ],
+  },
+  { key: "reports", label: "Reports", hint: "All pharmacy reports", tabs: [["reports", "All Reports"]] },
 ];
+const categoryOf = (tab) => CATEGORIES.find((c) => c.tabs.some(([k]) => k === tab)) || CATEGORIES[0];
 
 export default function PharmacyClient({ permissions }) {
   const [tab, setTab] = useState("queue");
@@ -48,49 +72,75 @@ export default function PharmacyClient({ permissions }) {
   const [receiveFor, setReceiveFor] = useState(null);
   const [msg, setMsg] = useState("");
 
-  const visibleTabs = TABS.filter(([key]) => {
+  const allowed = (key) => {
     if (key === "sell") return permissions.canSell;
-    if (key === "medicines") return permissions.canManageMedicines || true; // read access always allowed via stock:read
-    if (key === "po") return permissions.canGrn;
-    if (key === "grn") return permissions.canGrn;
+    if (key === "history") return permissions.canSell;
+    if (key === "po" || key === "grn") return permissions.canGrn;
     if (key === "transfer") return permissions.canTransfer;
-    if (key === "returns") return permissions.canReturn;
-    if (key === "suppliers") return permissions.canManageSuppliers || true;
+    if (key === "returns" || key === "supplier-returns") return permissions.canReturn;
     return true;
-  });
+  };
+  const category = categoryOf(tab);
+  const visibleCategories = CATEGORIES.filter((c) => c.tabs.some(([k]) => allowed(k)));
+  const subTabs = category.tabs.filter(([k]) => allowed(k));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <Suspense fallback={null}>
         <TabParamsReader onReady={(t, f) => { if (t) setTab(t); if (f) setInitialFilter(f); }} />
       </Suspense>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Pharmacy</h1>
-        <div className="flex flex-wrap gap-1 text-sm">
-          {visibleTabs.map(([key, label]) => (
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Pharmacy</h1>
+        <p className="text-sm text-slate-500">{category.hint}</p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-4">
+        {visibleCategories.map((c) => (
+          <button
+            key={c.key}
+            onClick={() => setTab(c.tabs.find(([k]) => allowed(k))[0])}
+            className={`rounded-2xl border px-4 py-3 text-left shadow-sm transition ${
+              category.key === c.key ? "border-transparent bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)] shadow-md" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow"
+            }`}
+          >
+            <p className="text-sm font-semibold">{c.label}</p>
+            <p className={`text-xs ${category.key === c.key ? "opacity-80" : "text-slate-400"}`}>{c.hint}</p>
+          </button>
+        ))}
+      </div>
+      {subTabs.length > 1 && (
+        <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100 p-1 text-sm">
+          {subTabs.map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
-              className={`rounded-md px-3 py-1.5 ${
-                tab === key ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"
-              }`}
+              className={`rounded-lg px-3 py-1.5 transition ${tab === key ? "bg-white font-medium shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
             >
               {label}
             </button>
           ))}
         </div>
-      </div>
-      {msg && <p className="text-sm text-red-600">{msg}</p>}
+      )}
+      {msg && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{msg}</p>}
       {tab === "queue" && <QueueTab canDispense={permissions.canDispense} onError={setMsg} />}
       {tab === "sell" && <SellTab onError={setMsg} />}
+      {tab === "history" && <PurchaseHistoryTab />}
       {tab === "inventory" && (
         <InventoryTab canStockIn={permissions.canStockIn} canAdjust={permissions.canAdjust} initialFilter={initialFilter} onError={setMsg} />
       )}
       {tab === "medicines" && <MedicinesTab canManage={permissions.canManageMedicines} onError={setMsg} />}
+      {tab === "movement" && <PharmacyReportsTab key="movement" only={["stock-movement"]} />}
+      {tab === "adjustments" && (
+        <div className="space-y-3">
+          <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">Every correction to a stock count is listed here with who did it and why. To adjust a count, open <button onClick={() => setTab("inventory")} className="font-medium underline">Stock &amp; Batches</button> → Details on the batch.</p>
+          <PharmacyReportsTab key="adjustments" only={["stock-adjustments"]} />
+        </div>
+      )}
       {tab === "po" && <PurchaseOrdersTab canManage={permissions.canGrn} onError={setMsg} onReceive={(po) => { setReceiveFor(po); setTab("grn"); }} />}
       {tab === "grn" && <GrnTab onError={setMsg} receiveFor={receiveFor} onConsumedReceiveFor={() => setReceiveFor(null)} />}
+      {tab === "purchase-history" && <PharmacyReportsTab key="purchase-history" only={["purchases", "grns", "supplier-purchases"]} />}
       {tab === "transfer" && <TransferTab onError={setMsg} />}
-      {tab === "returns" && <ReturnsTab onError={setMsg} />}
+      {tab === "returns" && <ReturnsTab mode="customer" onError={setMsg} />}
+      {tab === "supplier-returns" && <ReturnsTab mode="supplier" onError={setMsg} />}
       {tab === "suppliers" && <SuppliersTab canManage={permissions.canManageSuppliers} onError={setMsg} />}
       {tab === "reports" && <PharmacyReportsTab />}
       {tab === "partner" && <PartnerOrdersTab canDispense={permissions.canDispense} onError={setMsg} />}
@@ -169,7 +219,7 @@ function QueueTab({ canDispense, onError }) {
       {prescriptions.map((pr) => (
         <div
           key={pr.id}
-          className={`rounded-lg border border-slate-200 bg-white p-4 ${
+          className={`rounded-2xl border border-slate-200 bg-white shadow-sm p-4 ${
             flashIds.has(pr.id) ? "hms-flash" : ""
           }`}
         >
@@ -205,7 +255,7 @@ function QueueTab({ canDispense, onError }) {
                       <button
                         onClick={() => dispense(it.id)}
                         disabled={busyItemId === it.id}
-                        className="shrink-0 rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+                        className="shrink-0 rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                       >
                         {busyItemId === it.id ? "Dispensing…" : `Dispense ${outstanding}`}
                       </button>
@@ -361,250 +411,6 @@ function AvailabilityPanel({ prescriptionId, onError }) {
   );
 }
 
-// ── Inventory: stock-in, batches, thresholds, adjustments, alerts ───
-
-const STATUS_BADGE = {
-  EXPIRED: "bg-red-100 text-red-700",
-  EXPIRY_SOON: "bg-orange-100 text-orange-700",
-  LOW_STOCK: "bg-amber-100 text-amber-700",
-  OUT_OF_STOCK: "bg-slate-200 text-slate-600",
-  IN_STOCK: "bg-emerald-100 text-emerald-700",
-};
-const STATUS_TEXT = {
-  EXPIRED: "🔴 Expired",
-  EXPIRY_SOON: "🟠 Expiry Soon",
-  LOW_STOCK: "🟡 Low Stock",
-  OUT_OF_STOCK: "Out of Stock",
-  IN_STOCK: "In Stock",
-};
-const QUICK_FILTERS = [
-  ["", "All"],
-  ["low", "Low Stock"],
-  ["expiring", "Expiry Soon"],
-  ["expired", "Expired"],
-  ["in", "In Stock"],
-  ["out", "Out of Stock"],
-];
-
-// One line per batch — every field a pharmacist needs (type, strength,
-// batch, expiry, stock, MRP, purchase rate, rack, status) without opening
-// another screen. Dates are DD/MM/YY throughout (storage stays real dates).
-function InventoryTab({ canStockIn, canAdjust, initialFilter, onError }) {
-  const [rows, setRows] = useState([]);
-  const [medicineOptions, setMedicineOptions] = useState([]);
-  const [q, setQ] = useState("");
-  const [type, setType] = useState("");
-  const [filter, setFilter] = useState(initialFilter || "");
-  const [stockForm, setStockForm] = useState({ medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "", quantity: "", purchaseRate: "", mrp: "", sellingRate: "", rack: "", shelf: "", bin: "" });
-  const [busy, setBusy] = useState(false);
-  const [adjusting, setAdjusting] = useState(null);
-  const [adjustForm, setAdjustForm] = useState({ delta: "", reason: "", category: "OTHER" });
-
-  // A quick keystroke can make an earlier, slower search request resolve
-  // AFTER a later one and overwrite it — guard by request identity, same
-  // fix as the Reports tab's report-switching race.
-  const searchGenRef = useRef(0);
-  async function load() {
-    const gen = ++searchGenRef.current;
-    const params = new URLSearchParams();
-    if (q) params.set("q", q);
-    if (type) params.set("type", type);
-    if (filter) params.set("filter", filter);
-    const d = await apiGet(`/api/pharmacy/inventory?${params.toString()}`);
-    if (searchGenRef.current === gen) setRows(d.rows);
-  }
-  async function loadMedicines() {
-    const d = await apiGet("/api/pharmacy/medicines?active=true");
-    setMedicineOptions(d.medicines);
-  }
-
-  useEffect(() => {
-    load().catch((e) => onError(e.message));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadMedicines().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(() => {
-    load().catch((e) => onError(e.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, type, filter]);
-
-  useRealtime({ "stock:updated": load, "dispense:created": load, "threshold:updated": load }, load);
-
-  async function submitStockIn(e) {
-    e.preventDefault();
-    setBusy(true);
-    onError("");
-    try {
-      const medicine = medicineOptions.find((m) => String(m.id) === String(stockForm.medicineId));
-      if (!medicine) throw new Error("pick_a_medicine");
-      await apiSend("/api/pharmacy/stock", "POST", {
-        medicineName: medicine.name,
-        medicineId: medicine.id,
-        batchNumber: stockForm.batchNumber,
-        manufacturingDate: stockForm.manufacturingDate,
-        expiryDate: stockForm.expiryDate,
-        quantity: stockForm.quantity,
-        ...(stockForm.purchaseRate ? { purchaseRate: Number(stockForm.purchaseRate) } : {}),
-        ...(stockForm.mrp ? { mrp: Number(stockForm.mrp) } : {}),
-        ...(stockForm.sellingRate ? { sellingRate: Number(stockForm.sellingRate) } : {}),
-        ...(stockForm.rack ? { rack: stockForm.rack } : {}),
-        ...(stockForm.shelf ? { shelf: stockForm.shelf } : {}),
-        ...(stockForm.bin ? { bin: stockForm.bin } : {}),
-      });
-      setStockForm({ medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "", quantity: "", purchaseRate: "", mrp: "", sellingRate: "", rack: "", shelf: "", bin: "" });
-      await load();
-    } catch (err) {
-      onError(err.message === "pick_a_medicine" ? "Pick a medicine from the Medicines list first." : err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveThreshold(medicineName, value) {
-    try {
-      await apiSend("/api/pharmacy/thresholds", "PUT", { medicineName, lowStockThreshold: value });
-      await load();
-    } catch (err) {
-      onError(err.message);
-    }
-  }
-
-  async function submitAdjustment(stockId) {
-    setBusy(true);
-    try {
-      await apiSend(`/api/pharmacy/stock/${stockId}`, "PATCH", {
-        delta: Number(adjustForm.delta),
-        reason: adjustForm.reason,
-        category: adjustForm.category,
-      });
-      setAdjusting(null);
-      setAdjustForm({ delta: "", reason: "", category: "OTHER" });
-      await load();
-    } catch (err) {
-      onError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
-
-  return (
-    <div className="space-y-4">
-      {canStockIn && (
-        <form onSubmit={submitStockIn} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-5">
-          <p className="col-span-2 text-sm font-semibold sm:col-span-5">Add stock (batch)</p>
-          {medicineOptions.length === 0 ? (
-            <p className="col-span-2 text-xs text-amber-700 sm:col-span-5">Add a medicine to the Medicines list first, then stock it in here.</p>
-          ) : (
-            <select required value={stockForm.medicineId} onChange={(e) => setStockForm((s) => ({ ...s, medicineId: e.target.value }))} className={`${input} col-span-2 sm:col-span-2`}>
-              <option value="">— pick medicine —</option>
-              {medicineOptions.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.medicineType})</option>)}
-            </select>
-          )}
-          <input placeholder="Batch #" required value={stockForm.batchNumber} onChange={(e) => setStockForm((s) => ({ ...s, batchNumber: e.target.value }))} className={input} />
-          <label className="text-xs"><span className="block text-slate-500">Mfg date</span><input type="date" value={stockForm.manufacturingDate} onChange={(e) => setStockForm((s) => ({ ...s, manufacturingDate: e.target.value }))} className={`${input} w-full`} /></label>
-          <label className="text-xs"><span className="block text-slate-500">Expiry date</span><input type="date" value={stockForm.expiryDate} onChange={(e) => setStockForm((s) => ({ ...s, expiryDate: e.target.value }))} className={`${input} w-full`} /></label>
-          <label className="text-xs"><span className="block text-slate-500">Quantity</span><input type="number" min="1" required value={stockForm.quantity} onChange={(e) => setStockForm((s) => ({ ...s, quantity: e.target.value }))} className={`${input} w-full`} /></label>
-          <label className="text-xs"><span className="block text-slate-500">Purchase rate ₹</span><input type="number" min="0" step="0.01" value={stockForm.purchaseRate} onChange={(e) => setStockForm((s) => ({ ...s, purchaseRate: e.target.value }))} className={`${input} w-full`} /></label>
-          <label className="text-xs"><span className="block text-slate-500">MRP ₹</span><input type="number" min="0" step="0.01" value={stockForm.mrp} onChange={(e) => setStockForm((s) => ({ ...s, mrp: e.target.value }))} className={`${input} w-full`} /></label>
-          <label className="text-xs"><span className="block text-slate-500">Selling rate ₹</span><input type="number" min="0" step="0.01" value={stockForm.sellingRate} onChange={(e) => setStockForm((s) => ({ ...s, sellingRate: e.target.value }))} className={`${input} w-full`} /></label>
-          <label className="text-xs"><span className="block text-slate-500">Rack</span><input value={stockForm.rack} onChange={(e) => setStockForm((s) => ({ ...s, rack: e.target.value }))} className={`${input} w-full`} /></label>
-          <label className="text-xs"><span className="block text-slate-500">Shelf</span><input value={stockForm.shelf} onChange={(e) => setStockForm((s) => ({ ...s, shelf: e.target.value }))} className={`${input} w-full`} /></label>
-          <label className="text-xs"><span className="block text-slate-500">Bin</span><input value={stockForm.bin} onChange={(e) => setStockForm((s) => ({ ...s, bin: e.target.value }))} className={`${input} w-full`} /></label>
-          <button disabled={busy || medicineOptions.length === 0} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Add to stock</button>
-        </form>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
-        <input placeholder="Search medicine, generic, brand, batch, barcode, rack…" value={q} onChange={(e) => setQ(e.target.value)} className={`${input} min-w-[16rem] flex-1`} />
-        <select value={type} onChange={(e) => setType(e.target.value)} className={input}>
-          <option value="">All types</option>
-          {MEDICINE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <div className="flex flex-wrap gap-1">
-          {QUICK_FILTERS.map(([k, l]) => (
-            <button key={k} onClick={() => setFilter(k)} className={`rounded-full px-2.5 py-1 text-xs ${filter === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"}`}>{l}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full min-w-[900px] text-sm">
-          <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-3 py-2">Medicine</th>
-              <th className="px-3 py-2">Type</th>
-              <th className="px-3 py-2">Strength</th>
-              <th className="px-3 py-2">Batch</th>
-              <th className="px-3 py-2">Expiry</th>
-              <th className="px-3 py-2">Stock</th>
-              <th className="px-3 py-2">MRP</th>
-              <th className="px-3 py-2">Purchase Rate</th>
-              <th className="px-3 py-2">Rack</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && <tr><td colSpan={11} className="px-3 py-6 text-center text-slate-400">No batches match.</td></tr>}
-            {rows.map((r) => (
-              <tr key={r.stockId} className="border-b border-slate-100 last:border-0">
-                <td className="px-3 py-2 font-medium">{r.medicineName}</td>
-                <td className="px-3 py-2">{r.type}</td>
-                <td className="px-3 py-2">{r.strength || "—"}</td>
-                <td className="px-3 py-2">{r.batchNumber || "—"}</td>
-                <td className="px-3 py-2">{fmtDDMMYY(r.expiryDate)}</td>
-                <td className="px-3 py-2 tabular-nums">
-                  {r.quantity}
-                  {canAdjust && (
-                    <button onClick={() => setAdjusting(adjusting === r.stockId ? null : r.stockId)} className="ml-1.5 text-xs text-slate-400 underline hover:text-slate-700">adjust</button>
-                  )}
-                </td>
-                <td className="px-3 py-2">{r.mrp != null ? `₹${r.mrp}` : "—"}</td>
-                <td className="px-3 py-2">{r.purchaseRate != null ? `₹${r.purchaseRate}` : "—"}</td>
-                <td className="px-3 py-2">{[r.rack, r.shelf, r.bin].filter(Boolean).join("-") || "—"}</td>
-                <td className="px-3 py-2"><span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[r.status]}`}>{STATUS_TEXT[r.status]}</span></td>
-                <td className="px-3 py-2">
-                  {canAdjust && (
-                    <label className="flex items-center gap-1 text-xs text-slate-500">
-                      reorder at
-                      <input type="number" min="0" defaultValue={r.reorderLevel} onBlur={(e) => saveThreshold(r.medicineName, Number(e.target.value))} className="w-14 rounded border border-slate-300 px-1 py-0.5" />
-                    </label>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {adjusting != null && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-          <p className="font-semibold">Stock adjustment</p>
-          <div className="mt-2 flex flex-wrap items-end gap-2">
-            <label className="text-xs"><span className="block text-slate-500">± Quantity</span><input type="number" value={adjustForm.delta} onChange={(e) => setAdjustForm((s) => ({ ...s, delta: e.target.value }))} className={`${input} w-24`} /></label>
-            <label className="text-xs"><span className="block text-slate-500">Category</span>
-              <select value={adjustForm.category} onChange={(e) => setAdjustForm((s) => ({ ...s, category: e.target.value }))} className={input}>
-                <option value="DAMAGED">Damaged</option>
-                <option value="EXPIRED_WRITEOFF">Expired write-off</option>
-                <option value="COUNT_CORRECTION">Count correction</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </label>
-            <label className="text-xs flex-1"><span className="block text-slate-500">Reason</span><input value={adjustForm.reason} onChange={(e) => setAdjustForm((s) => ({ ...s, reason: e.target.value }))} className={`${input} w-full`} /></label>
-            <button onClick={() => submitAdjustment(adjusting)} disabled={busy || !adjustForm.delta || !adjustForm.reason} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Save</button>
-            <button onClick={() => setAdjusting(null)} className="text-xs text-slate-400">Cancel</button>
-          </div>
-          <p className="mt-1.5 text-xs text-slate-500">Before: {rows.find((r) => r.stockId === adjusting)?.quantity ?? "—"} → After: {rows.find((r) => r.stockId === adjusting) ? rows.find((r) => r.stockId === adjusting).quantity + (Number(adjustForm.delta) || 0) : "—"}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
 // ── Prescriptions sent by connected hospitals ───
 // They arrive here (not in the hospital's own queue), are dispensed from THIS
 // pharmacy's own stock, and the fulfilled quantity goes back to the sender.
@@ -642,9 +448,9 @@ function PartnerOrdersTab({ canDispense, onError }) {
     <div className="space-y-4">
     <PartnerSend service="PHARMACY" />
     {orders.length === 0 ? <p className="text-sm text-slate-400">No requests from partners yet.</p> : (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full text-sm">
-        <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+        <thead className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-3 py-2">From</th>
             <th className="px-3 py-2">Patient</th>
@@ -667,8 +473,8 @@ function PartnerOrdersTab({ canDispense, onError }) {
               <td className="px-3 py-2 text-right">
                 {o.status === "RECEIVED" && canDispense && o.connectionStatus === "ACTIVE" && (
                   <span className="inline-flex items-center gap-1">
-                    <input type="number" min="0" placeholder="₹ amount" value={amounts[o.id] || ""} onChange={(e) => setAmounts({ ...amounts, [o.id]: e.target.value })} className="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs" />
-                    <button onClick={() => dispense(o)} disabled={busyId === o.id || o.inStock <= 0} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
+                    <input type="number" min="0" placeholder="₹ amount" value={amounts[o.id] || ""} onChange={(e) => setAmounts({ ...amounts, [o.id]: e.target.value })} className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-xs" />
+                    <button onClick={() => dispense(o)} disabled={busyId === o.id || o.inStock <= 0} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
                       Dispense
                     </button>
                   </span>

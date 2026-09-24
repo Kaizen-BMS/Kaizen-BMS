@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prismaClient";
 import { resolveBranding } from "@/lib/branding";
+import { fmtDDMMYY } from "@/lib/dateFormat";
 import PrintButton from "@/components/hms/PrintButton";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +71,7 @@ export default async function PrescriptionPrintPage({ params }) {
             )}
           </div>
           <p className="shrink-0 text-xs text-slate-500">
-            {new Date(prescription.consultation_at).toLocaleDateString()}
+            {fmtDDMMYY(prescription.consultation_at)}
           </p>
         </div>
       </div>

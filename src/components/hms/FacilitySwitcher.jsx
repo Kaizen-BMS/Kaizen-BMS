@@ -34,10 +34,10 @@ export default function FacilitySwitcher({ fallbackName }) {
   }
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0 shrink">
       <button
         onClick={() => multi && setOpen((o) => !o)}
-        className={`flex max-w-[16rem] items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs ${multi ? "hover:bg-slate-50" : "cursor-default"}`}
+        className={`flex max-w-[8.5rem] items-center sm:max-w-[16rem] gap-1.5 rounded-md border px-2.5 py-1.5 text-xs ${multi ? "hover:bg-slate-50" : "cursor-default"}`}
         style={{ borderColor: "var(--hms-border)" }}
         title={multi ? "Switch facility" : "Current facility"}
       >

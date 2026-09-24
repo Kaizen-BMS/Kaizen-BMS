@@ -2,11 +2,14 @@
 
 const { z } = require("zod");
 const { MEDICINE_TYPES, SCHEDULES } = require("./medicineTypes");
+const { composeMedicineName } = require("./medicineName");
 
 const opt = (n) => z.string().trim().max(n).optional().or(z.literal(""));
 
 const medicineInputSchema = z.object({
-  name: z.string().trim().min(1).max(191),
+  // Either the bare name (composed into "Cap Betadine 500 mg" server-side) or, for older callers, the full name.
+  name: z.string().trim().min(1).max(191).optional(),
+  baseName: z.string().trim().min(1).max(191).optional(),
   genericName: opt(191),
   brandName: opt(191),
   medicineType: z.enum(MEDICINE_TYPES).optional().default("Other"),
@@ -38,6 +41,7 @@ function serializeMedicine(m) {
   return {
     id: Number(m.id),
     name: m.name,
+    baseName: m.base_name || m.name,
     genericName: m.generic_name,
     brandName: m.brand_name,
     medicineType: m.medicine_type,
@@ -64,8 +68,10 @@ function serializeMedicine(m) {
 }
 
 function toRow(v, userId) {
+  const base = v.baseName || v.name;
   return {
-    name: v.name,
+    name: v.baseName ? composeMedicineName(v.medicineType, v.baseName, v.strength) : v.name,
+    base_name: base,
     generic_name: v.genericName || null,
     brand_name: v.brandName || null,
     medicine_type: v.medicineType || "Other",
@@ -91,6 +97,7 @@ function toRow(v, userId) {
 }
 
 module.exports = {
+  composeMedicineName,
   medicineInputSchema,
   medicineUpdateSchema,
   serializeMedicine,

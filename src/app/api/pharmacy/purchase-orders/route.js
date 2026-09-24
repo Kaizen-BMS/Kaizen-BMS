@@ -11,7 +11,7 @@ const itemSchema = z.object({
   medicineId: z.coerce.number().int().positive(),
   quantity: z.coerce.number().int().min(1).max(1_000_000),
   freeQuantity: z.coerce.number().int().min(0).max(1_000_000).optional().default(0),
-  purchaseRate: z.coerce.number().min(0).max(10_000_000),
+  purchaseRate: z.coerce.number().min(0).max(10_000_000).optional().default(0),
   discountPercent: z.coerce.number().min(0).max(100).optional().default(0),
   gstRate: z.coerce.number().min(0).max(28).optional().default(0),
   notes: z.string().trim().max(255).optional().or(z.literal("")),

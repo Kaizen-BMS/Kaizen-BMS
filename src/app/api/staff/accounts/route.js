@@ -7,6 +7,7 @@ import { tempPassword } from "@/lib/passwordReset";
 import { allowedRoles } from "@/lib/staffRoles";
 import { getTenant } from "@/lib/tenants";
 import { detailsShape, toProfileData } from "@/lib/staffDetails";
+import { applyDutyFromProfile, logHistory } from "@/lib/staffSchedule";
 
 export const dynamic = "force-dynamic";
 
@@ -51,5 +52,7 @@ export const POST = apiRoute("staff:manage", async (request, { session }) => {
   });
   const details = toProfileData(body);
   if (Object.keys(details).length) await prisma.staff_profiles.create({ data: { tenant_id: BigInt(session.tenantId), user_id: user.id, ...details } });
+  await logHistory(session.tenantId, user.id, "STAFF_ADDED", `${body.name} added as ${body.role}`, session.userId);
+  await applyDutyFromProfile(session.tenantId, user.id, body, session.userId);
   return json({ account: { id: Number(user.id), name: user.name, email: user.email, role: user.role }, ...(body.password ? {} : { tempPassword: pw }) }, 201);
 });
