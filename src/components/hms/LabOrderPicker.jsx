@@ -88,9 +88,17 @@ export default function LabOrderPicker({ consultationId, onOrdered, onError }) {
 
   return (
     <div className="mt-3 space-y-3">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs">
+        <span className="font-medium text-slate-500">Sending to:</span>
+        {provider ? (
+          <span className="rounded-full bg-white px-2.5 py-0.5 font-semibold shadow-sm">{provider.name}{provider.own ? " (our lab)" : " (partner lab)"}</span>
+        ) : (
+          <span className="text-amber-700">No laboratory is connected — the order is recorded for the lab desk.</span>
+        )}
+      </div>
       {providers.length > 0 ? (
         <div className="grid gap-2 sm:grid-cols-[14rem_1fr]">
-          <label className="text-xs font-medium text-slate-600">Laboratory
+          <label className="text-xs font-medium text-slate-600">Send to laboratory
             <select value={providerId} onChange={(e) => switchProvider(e.target.value)} className={`${inp} mt-1`} aria-label="Laboratory">
               {providers.map((p) => <option key={p.id} value={p.id}>{p.name}{p.own ? "" : " (partner)"}</option>)}
             </select>
@@ -122,22 +130,24 @@ export default function LabOrderPicker({ consultationId, onOrdered, onError }) {
         </div>
       )}
 
-      {(!provider || provider.own) && (
-        <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {(!provider || provider.own) ? (
           <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Other test not in the list (type name)" className={inp} />
-          <select
-            aria-label="Add a common test"
-            value=""
-            onChange={(e) => { const v = e.target.value; if (v) setPicked((xs) => (xs.some((x) => x.name === v) ? xs : [...xs, { kind: "test", name: v }])); }}
-            className={inp}
-          >
-            <option value="">Add a common test…</option>
-            {Object.entries(LAB_TEST_GROUPS).map(([g, list]) => (
-              <optgroup key={g} label={g}>{list.map((t) => <option key={t} value={t}>{t}</option>)}</optgroup>
-            ))}
-          </select>
-        </div>
-      )}
+        ) : (
+          <p className="self-center text-[11px] text-slate-400">Partner labs take tests from their own list above, or from the common tests here.</p>
+        )}
+        <select
+          aria-label="Add a common test"
+          value=""
+          onChange={(e) => { const v = e.target.value; if (v) setPicked((xs) => (xs.some((x) => x.name === v) ? xs : [...xs, { kind: "test", name: v }])); }}
+          className={inp}
+        >
+          <option value="">Common tests (basics)…</option>
+          {Object.entries(LAB_TEST_GROUPS).map(([g, list]) => (
+            <optgroup key={g} label={g}>{list.map((t) => <option key={t} value={t}>{t}</option>)}</optgroup>
+          ))}
+        </select>
+      </div>
 
       {picked.length > 0 && (
         <div className="flex flex-wrap gap-1.5">

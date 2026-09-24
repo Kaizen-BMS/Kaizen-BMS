@@ -8,6 +8,7 @@ import { merge, PAPERS } from "@/lib/printSettings";
 import LayoutRender from "@/components/hms/LayoutRender";
 import PrintButton from "@/components/hms/PrintButton";
 import AutoPrint from "@/components/hms/AutoPrint";
+import { estimateForVisit } from "@/lib/opdDoctors";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Registration slip", robots: { index: false, follow: false } };
@@ -32,6 +33,7 @@ export default async function SlipPage({ params, searchParams }) {
   const bill = await prisma.bills.findFirst({ where: { visit_id: visit.id, tenant_id: tid, bill_type: "OPD" }, include: { payments: true } });
   const paid = bill ? bill.payments.reduce((s, p) => s + Number(p.amount), 0) : 0;
 
+  const est = await estimateForVisit(session.tenantId, visit);
   const p = visit.patients;
   const layout = settings.slip.layout;
   const when = new Date(visit.created_at);
@@ -47,6 +49,8 @@ export default async function SlipPage({ params, searchParams }) {
     phone_patient: p.phone || "",
     token: visit.token_number ?? "",
     reason: visit.reason || "",
+    doctor: est.doctor,
+    expected: est.expected,
     date: fmtDDMMYY(when),
     time: when.toLocaleTimeString([], { timeStyle: "short" }),
     fee: paid > 0 ? paid : "",

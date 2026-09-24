@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { apiGet, apiSend } from "@/components/hms/api";
 import DynamicForm, { splitValues } from "@/components/hms/DynamicForm";
 import { useRealtime } from "@/components/hms/useRealtime";
@@ -13,6 +14,8 @@ import StockHint from "@/components/hms/StockHint";
 import PatientHistorySidebar from "@/components/hms/PatientHistorySidebar";
 import MedicineInput from "@/components/hms/MedicineInput";
 import LabOrderPicker from "@/components/hms/LabOrderPicker";
+import RadiologyOrderPicker from "@/components/hms/RadiologyOrderPicker";
+import { CONTRAST_LABEL } from "@/lib/radiologyCommon";
 import { FREQUENCIES, calcQuantity } from "@/lib/rxQuantity";
 import { matchAllergy } from "@/lib/allergyCheck";
 
@@ -56,11 +59,16 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
   const [form, setForm] = useState(null);
   const [values, setValues] = useState({});
   const [rx, setRx] = useState([emptyRxRow()]);
-  const [studyName, setStudyName] = useState("");
+  const [pharmacies, setPharmacies] = useState([]); // where this prescription can go
+  const [pharmacyId, setPharmacyId] = useState("");
+  const router = useRouter();
+  const [finishing, setFinishing] = useState(false);
+  const [sentNote, setSentNote] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpMsg, setFollowUpMsg] = useState("");
+  const [editing, setEditing] = useState(false);
 
   const fields = useMemo(
     () => (form ? [...form.core, ...form.extra] : []),
@@ -115,11 +123,25 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
     load,
   );
 
+  useEffect(() => {
+    apiGet("/api/opd/destinations")
+      .then((d) => {
+        setPharmacies(d.pharmacies || []);
+        if ((d.pharmacies || []).length) setPharmacyId(d.pharmacies[0].id);
+      })
+      .catch(() => {});
+  }, []);
+
   if (!data) {
     return <p className="text-sm text-slate-400">{msg || "Loading…"}</p>;
   }
 
+  const chosenPharmacy = pharmacies.find((ph) => ph.id === pharmacyId) || null;
+
   const { visit, consultation, prescriptions, labOrders, radiologyOrders } = data;
+  const closed = visit.status === "DISCHARGED";
+  const pendingLab = labOrders.filter((l) => l.status !== "RESULTED" && l.status !== "CANCELLED").length;
+  const pendingRad = radiologyOrders.filter((r) => !["COMPLETED", "CANCELLED"].includes(r.status)).length;
   const patientAllergies = parseMaybeJson(visit.patient_allergies) || [];
 
   async function saveConsultation(e) {
@@ -170,6 +192,14 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
         "POST",
         { items },
       );
+      if (chosenPharmacy && !chosenPharmacy.own) {
+        // A partner pharmacy receives each medicine by name.
+        const full = (await apiGet(`/api/opd/visits/${visitId}`)).prescriptions.find((x) => x.id === prescription.id)?.items || [];
+        for (const it of full) {
+          await apiSend(`/api/pharmacy/prescriptions/${prescription.id}/items/${it.id}/send-external`, "POST", { providerId: Number(chosenPharmacy.id) });
+        }
+      }
+      setSentNote(chosenPharmacy ? `Sent to ${chosenPharmacy.name}.` : "Saved. Print it for the patient.");
       setRx([emptyRxRow()]);
       setData((d) => ({
         ...d,
@@ -182,23 +212,53 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
     }
   }
 
-  async function saveRadiologyOrder() {
-    const study = studyName.trim();
-    if (!study) return;
+  function startEdit() {
+    const custom = parseMaybeJson(consultation.custom_fields) || {};
+    setValues({ ...custom, notes: consultation.notes || "", diagnosis: consultation.diagnosis || "" });
+    setEditing(true);
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
     setBusy(true);
     setMsg("");
     try {
-      const { radiologyOrder } = await apiSend(
-        `/api/opd/consultations/${consultation.id}/radiology-orders`,
-        "POST",
-        { studyName: study },
-      );
-      setStudyName("");
-      setData((d) => ({ ...d, radiologyOrders: upsertById(d.radiologyOrders, radiologyOrder) }));
+      const { core, custom } = splitValues(form, values);
+      const { consultation: updated } = await apiSend(`/api/opd/consultations/${consultation.id}`, "PATCH", {
+        notes: core.notes || "",
+        diagnosis: core.diagnosis || "",
+        customFields: custom,
+      });
+      setData((d) => ({ ...d, consultation: updated }));
+      setValues({});
+      setEditing(false);
     } catch (err) {
       setMsg(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function reopenVisit() {
+    setMsg("");
+    try {
+      await apiSend(`/api/registration/visits/${visitId}`, "PATCH", { status: "WITH_DOCTOR" });
+      await load();
+    } catch (err) {
+      setMsg(err.message);
+    }
+  }
+
+  async function finishVisit() {
+    if (!confirm("Finish this visit? The patient will be removed from the doctor's queue.")) return;
+    setFinishing(true);
+    setMsg("");
+    try {
+      await apiSend(`/api/registration/visits/${visitId}`, "PATCH", { status: "DISCHARGED" });
+      router.push("/dashboard/opd");
+    } catch (err) {
+      setMsg(err.message);
+      setFinishing(false);
     }
   }
 
@@ -226,6 +286,23 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        {closed ? (
+          <>
+            <button onClick={reopenVisit} className="rounded-lg bg-amber-500 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-amber-600">Reopen visit</button>
+            <span className="text-[11px] text-slate-400">This visit is finished. Reopen it if the patient is back with reports or needs more.</span>
+          </>
+        ) : (
+          <>
+            <button onClick={finishVisit} disabled={finishing || !consultation} title={consultation ? "Completes the visit and removes it from the queue" : "Save the consultation first"} className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-40">{finishing ? "Finishing…" : "Finish visit"}</button>
+            <span className="text-[11px] text-slate-400">
+              {pendingLab + pendingRad > 0
+                ? `${pendingLab ? `${pendingLab} lab` : ""}${pendingLab && pendingRad ? " and " : ""}${pendingRad ? `${pendingRad} imaging` : ""} report(s) still pending — you can finish now and reopen the visit when the patient returns with them.`
+                : "No tests pending. Click when the patient is done — the queue then shows the next patient."}
+            </span>
+          </>
+        )}
+      </div>
       {doctorUserId && (
         <div>
           <button
@@ -279,6 +356,17 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
         </form>
       ) : (
         <div className="space-y-6">
+          {editing && (
+            <form onSubmit={saveEdit} className="space-y-4 rounded-lg border border-amber-300 bg-white p-4">
+              <p className="text-sm font-semibold">Edit consultation</p>
+              <p className="text-xs text-slate-500">Add the report findings or correct the notes. The fee stays as it was.</p>
+              {form && <DynamicForm fields={fields.filter((f) => f.fieldName !== "fee")} values={values} onChange={(n, v) => setValues((s) => ({ ...s, [n]: v }))} />}
+              <div className="flex gap-2">
+                <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Save changes</button>
+                <button type="button" onClick={() => { setEditing(false); setValues({}); }} className="rounded-md border border-slate-300 px-4 py-2 text-sm">Cancel</button>
+              </div>
+            </form>
+          )}
           <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -291,17 +379,20 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                 )}
                 {Number(consultation.fee) > 0 && <p className="mt-1 text-slate-500">Fee: {consultation.fee}</p>}
               </div>
-              {doctorUserId && (
-                <button
-                  onClick={() => {
-                    setFollowUpMsg("");
-                    setShowFollowUp(true);
-                  }}
-                  className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
-                >
-                  Schedule follow-up
-                </button>
-              )}
+              <div className="flex shrink-0 gap-2">
+                <button onClick={startEdit} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-50">Edit</button>
+                {doctorUserId && (
+                  <button
+                    onClick={() => {
+                      setFollowUpMsg("");
+                      setShowFollowUp(true);
+                    }}
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
+                  >
+                    Schedule follow-up
+                  </button>
+                )}
+              </div>
             </div>
             {followUpMsg && <p className="mt-2 text-xs text-green-700">{followUpMsg}</p>}
           </div>
@@ -409,21 +500,31 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                   </div>
                 );
               })}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setRx((xs) => [...xs, emptyRxRow()])}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                >
-                  + row
-                </button>
-                <button
-                  onClick={savePrescription}
-                  disabled={busy || blockedByAllergy || blockedByQty}
-                  title={blockedByAllergy ? "Acknowledge the allergy warning first" : blockedByQty ? "Check quantity / reason for each medicine" : undefined}
-                  className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50"
-                >
-                  Send to pharmacy
-                </button>
+              <div className="space-y-2 rounded-xl bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-medium text-slate-500">Send prescription to:</span>
+                  {pharmacies.length === 0 ? (
+                    <span className="text-amber-700">No pharmacy is connected here — save it and print it for the patient.</span>
+                  ) : pharmacies.length === 1 ? (
+                    <span className="rounded-full bg-white px-2.5 py-0.5 font-semibold shadow-sm">{pharmacies[0].name}</span>
+                  ) : (
+                    <select aria-label="Pharmacy" value={pharmacyId} onChange={(e) => setPharmacyId(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm">
+                      {pharmacies.map((ph) => <option key={ph.id} value={ph.id}>{ph.name}{ph.own ? "" : " (partner)"}</option>)}
+                    </select>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button onClick={() => setRx((xs) => [...xs, emptyRxRow()])} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs hover:bg-white">+ Add medicine</button>
+                  <button
+                    onClick={savePrescription}
+                    disabled={busy || blockedByAllergy || blockedByQty}
+                    title={blockedByAllergy ? "Acknowledge the allergy warning first" : blockedByQty ? "Check quantity / reason for each medicine" : undefined}
+                    className="rounded-lg bg-[var(--hms-btn-bg)] px-4 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+                  >
+                    {chosenPharmacy ? `Send to ${chosenPharmacy.name}` : "Save prescription"}
+                  </button>
+                  {sentNote && <span className="text-xs text-emerald-700">{sentNote}</span>}
+                </div>
               </div>
             </div>
           </div>
@@ -448,6 +549,13 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                   )}
                 </div>
                 <p>{(parseJson(lo.tests) || []).join(", ")}</p>
+                {lo.status === "RESULTED" && (parseJson(lo.results) || []).length > 0 && (
+                  <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+                    {(parseJson(lo.results) || []).map((r, i) => (
+                      <li key={i}>{r.testName}: <span className={r.flag && r.flag !== "NORMAL" ? "font-semibold text-red-600" : "font-medium"}>{r.result}{r.units ? ` ${r.units}` : ""}</span>{r.flag && r.flag !== "NORMAL" ? ` (${r.flag.toLowerCase()})` : ""}</li>
+                    ))}
+                  </ul>
+                )}
                 {lo.status === "ORDERED" && <ExternalSend type="LAB" url={`/api/lab/orders/${lo.id}/send-external`} />}
               </div>
             ))}
@@ -459,35 +567,29 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <p className="text-sm font-semibold">Radiology order → Radiology</p>
+            <p className="text-sm font-semibold">Imaging order → Radiology</p>
             {radiologyOrders.map((ro) => (
               <div key={ro.id} className="mt-2 rounded-md bg-slate-50 p-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">
-                    #{ro.id} · {ro.status}
+                  <span className="text-xs text-slate-400">#{ro.id} · {ro.status}{ro.priority && ro.priority !== "ROUTINE" ? ` · ${ro.priority}` : ""}</span>
+                  <span className="flex gap-3 text-xs">
+                    <a href={`/print/radiology-order/${ro.id}`} target="_blank" rel="noopener noreferrer" className="text-slate-600 underline">Print requisition</a>
+                    {ro.status === "COMPLETED" && <a href={`/print/radiology-report/${ro.id}`} target="_blank" rel="noopener noreferrer" className="text-slate-600 underline">Print report</a>}
                   </span>
                 </div>
-                <p>{ro.studyName}</p>
+                <p>{ro.modality ? <b className="font-semibold">{ro.modality} </b> : null}{ro.studyName}{ro.laterality && ro.laterality !== "NA" ? ` (${ro.laterality.toLowerCase()})` : ""}{ro.contrast ? ` · ${CONTRAST_LABEL[ro.contrast] || ro.contrast}` : ""}</p>
+                {ro.clinicalIndication && <p className="text-xs text-slate-500">Why: {ro.clinicalIndication}</p>}
                 {ro.status === "COMPLETED" && ro.impression && (
                   <p className="mt-1 text-xs text-slate-500">Impression: {ro.impression}</p>
                 )}
               </div>
             ))}
-            <div className="mt-3 flex gap-2">
-              <input
-                placeholder="study name, e.g. Chest X-Ray"
-                value={studyName}
-                onChange={(e) => setStudyName(e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-              />
-              <button
-                onClick={saveRadiologyOrder}
-                disabled={busy}
-                className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1 text-xs text-[var(--hms-btn-fg)] disabled:opacity-50"
-              >
-                Order radiology
-              </button>
-            </div>
+            <RadiologyOrderPicker
+              consultationId={consultation.id}
+              patient={{ age: visit.patient_age, gender: visit.patient_gender }}
+              onError={setMsg}
+              onOrdered={(radiologyOrder) => setData((d) => ({ ...d, radiologyOrders: upsertById(d.radiologyOrders, radiologyOrder) }))}
+            />
           </div>
         </div>
       )}

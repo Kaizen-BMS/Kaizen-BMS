@@ -23,21 +23,25 @@ const { can } = require("./rbac");
  * behind-it shape mirrors Appointment double-booking (migration 016) and
  * Feedback's once-per-visit rule exactly.
  */
-async function resolveTokenNumber(tenantDb, tenantId, role, { manualToken, overrideReason }) {
+async function resolveTokenNumber(tenantDb, tenantId, role, { manualToken, overrideReason, doctorId }) {
+  // Tokens run per doctor per day; visits with no doctor share one series (key 0).
+  const doctorKey = doctorId ? BigInt(doctorId) : 0n;
   if (manualToken == null) {
-    const countRows = await tenantDb.$queryRawUnsafe(
-      "SELECT COUNT(*) AS n FROM visits WHERE tenant_id = ? AND DATE(created_at) = CURDATE()",
+    const rows = await tenantDb.$queryRawUnsafe(
+      "SELECT COALESCE(MAX(token_number), 0) AS n FROM visits WHERE tenant_id = ? AND DATE(created_at) = CURDATE() AND doctor_key = ?",
       BigInt(tenantId),
+      doctorKey,
     );
-    return { tokenNumber: Number(countRows[0].n) + 1, overridden: false };
+    return { tokenNumber: Number(rows[0].n) + 1, overridden: false };
   }
 
   if (!can(role, "visit:override_token")) throw new HttpError(403, "forbidden");
   if (!overrideReason) throw new HttpError(400, "reason required for a manual token override");
 
   const existing = await tenantDb.$queryRawUnsafe(
-    "SELECT id FROM visits WHERE tenant_id = ? AND DATE(created_at) = CURDATE() AND token_number = ? LIMIT 1",
+    "SELECT id FROM visits WHERE tenant_id = ? AND DATE(created_at) = CURDATE() AND doctor_key = ? AND token_number = ? LIMIT 1",
     BigInt(tenantId),
+    doctorKey,
     manualToken,
   );
   if (existing.length > 0) throw new HttpError(409, "token_already_taken");

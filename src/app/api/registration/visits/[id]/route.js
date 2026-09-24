@@ -44,6 +44,8 @@ export const PATCH = apiRoute("visit:update", async (request, ctx) => {
   const patch = {};
   if (body.status) patch.status = body.status;
   if (body.status === "DISCHARGED") patch.discharged_at = new Date();
+  // Reopening a closed visit (patient came back with reports) clears the discharge time.
+  else if (body.status && existing.status === "DISCHARGED") patch.discharged_at = null;
   if (body.followUpDate !== undefined) {
     patch.follow_up_date = body.followUpDate ? new Date(body.followUpDate) : null;
   }

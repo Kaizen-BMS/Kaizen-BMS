@@ -5,6 +5,7 @@ import { tenantDb } from "@/lib/prismaClient";
 import { requireTenantId } from "@/lib/requestContext";
 import { validateCustomFields } from "@/lib/forms";
 import { emitToTenant } from "@/lib/realtime";
+import { requireDoctor, doctorName, expectedTimeNow } from "@/lib/opdDoctors";
 import { resolveTokenNumber, createVisitWithToken, logTokenOverride } from "@/lib/tokenOverride";
 import { insuranceInputSchema, upsertPatientInsurance, serializeInsurance } from "@/lib/patientInsurance";
 
@@ -18,6 +19,7 @@ const createSchema = z.object({
   // Optional — see forms.js's PATIENT_REGISTRATION core fields comment.
   email: z.string().trim().toLowerCase().email().max(191).optional().or(z.literal("")),
   reason: z.string().trim().max(500).optional().default(""),
+  doctorId: z.coerce.number().int().positive().optional(),
   allergies: z.array(z.string().trim().min(1).max(120)).max(30).optional(),
   abhaId: z.string().trim().max(64).optional().or(z.literal("")),
   referralSourceId: z.coerce.number().int().positive().optional(),
@@ -108,6 +110,8 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
     referral_source_id: referralSourceId,
   };
 
+  const doctorId = await requireDoctor(session.tenantId, body.doctorId);
+  const expected = await expectedTimeNow(session.tenantId, doctorId);
   let patient;
   let visit = null;
   let insuranceRow;
@@ -125,6 +129,7 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
       const { tokenNumber, overridden } = await resolveTokenNumber(tx, tid, session.role, {
         manualToken: body.manualToken,
         overrideReason: body.overrideReason,
+        doctorId,
       });
       const created = await createVisitWithToken(
         tx,
@@ -134,6 +139,8 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
           entry_type: "OPD",
           token_number: tokenNumber,
           reason: body.reason || null,
+          doctor_id: doctorId,
+          expected_time: expected,
           registered_by: BigInt(session.userId),
         },
         { patients: true },
@@ -149,7 +156,7 @@ export const POST = apiRoute("patient:create", async (request, { session }) => {
       return { patient: p, visitRow: created, insuranceRow: ins };
     });
     patient = result.patient;
-    visit = flattenVisit(result.visitRow);
+    visit = { ...flattenVisit(result.visitRow), doctor_name: await doctorName(session.tenantId, doctorId) };
     insuranceRow = result.insuranceRow;
     emitToTenant(session.tenantId, "visit:created", { visit });
   } else {

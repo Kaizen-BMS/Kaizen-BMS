@@ -4,6 +4,8 @@ import { fmtDDMMYYTime } from "@/lib/dateFormat";
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
+import RadiologyCatalog from "./RadiologyCatalog";
+import { CONTRAST_LABEL } from "@/lib/radiologyCommon";
 
 const TABS = [
   { key: "", label: "All" },
@@ -21,6 +23,7 @@ const PRIORITY_STYLE = {
 
 export default function RadiologyClient({ permissions }) {
   const [tab, setTab] = useState("");
+  const [view, setView] = useState("orders"); // orders | catalog
   const [orders, setOrders] = useState([]);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -101,6 +104,15 @@ export default function RadiologyClient({ permissions }) {
       <h1 className="text-xl font-semibold">Radiology</h1>
       {msg && <p className="text-sm text-red-600">{msg}</p>}
 
+      <div className="flex gap-2">
+        {[["orders", "Orders"], ["catalog", "Studies & sets"]].map(([k, l]) => (
+          <button key={k} onClick={() => setView(k)} className={`rounded-full px-3 py-1 text-sm ${view === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "border border-slate-300 text-slate-600"}`}>{l}</button>
+        ))}
+      </div>
+
+      {view === "catalog" && <RadiologyCatalog canManage={permissions.canManage} />}
+
+      {view === "orders" && <>
       <div className="flex gap-1 border-b border-slate-200">
         {TABS.map((t) => (
           <button
@@ -131,7 +143,20 @@ export default function RadiologyClient({ permissions }) {
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{o.status.replace(/_/g, " ")}</span>
               </div>
             </div>
-            <p className="mt-1 text-sm text-slate-600">{o.studyName}</p>
+            <p className="mt-1 text-sm text-slate-600">{o.modality ? `${o.modality} — ` : ""}{o.studyName}{o.laterality && o.laterality !== "NA" ? ` (${o.laterality.toLowerCase()})` : ""}</p>
+            {o.clinicalIndication && <p className="mt-1 text-xs text-slate-600"><span className="font-medium">Clinical question:</span> {o.clinicalIndication}</p>}
+            {(o.contrast || (o.safetyFlags && o.safetyFlags.length) || ["YES", "POSSIBLE"].includes(o.pregnancyStatus)) && (
+              <p className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
+                {o.contrast && <span className="rounded-full bg-slate-100 px-2 py-0.5">{CONTRAST_LABEL[o.contrast]}</span>}
+                {["YES", "POSSIBLE"].includes(o.pregnancyStatus) && <span className="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-700">Pregnancy: {o.pregnancyStatus.toLowerCase()}</span>}
+                {(o.safetyFlags || []).map((f) => <span key={f} className="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-700">{f.replace(/_/g, " ").toLowerCase()}</span>)}
+              </p>
+            )}
+            {o.instructions && <p className="mt-1 text-xs text-slate-500">Note: {o.instructions}</p>}
+            <p className="mt-1 flex gap-3 text-xs">
+              <a href={`/print/radiology-order/${o.id}`} target="_blank" rel="noreferrer" className="text-slate-500 underline">Print requisition</a>
+              {o.status === "COMPLETED" && <a href={`/print/radiology-report/${o.id}`} target="_blank" rel="noreferrer" className="text-slate-500 underline">Print report</a>}
+            </p>
             <p className="mt-1 text-xs text-slate-400">
               Ordered {fmtDDMMYYTime(o.createdAt)}
               {o.scheduledAt && ` · Scheduled ${fmtDDMMYYTime(o.scheduledAt)}`}
@@ -213,6 +238,7 @@ export default function RadiologyClient({ permissions }) {
           </div>
         ))}
       </div>
+      </>}
     </div>
   );
 }

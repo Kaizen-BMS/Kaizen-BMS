@@ -13,7 +13,7 @@ export const GET = apiRoute("consultation:read", async (_request, ctx) => {
     where: { id: visitId },
     include: {
       patients: {
-        select: { name: true, age: true, phone: true, custom_fields: true, allergies: true, abha_id: true },
+        select: { name: true, age: true, gender: true, phone: true, custom_fields: true, allergies: true, abha_id: true },
       },
     },
   });
@@ -23,6 +23,7 @@ export const GET = apiRoute("consultation:read", async (_request, ctx) => {
     ...visitRest,
     patient_name: p.name,
     patient_age: p.age,
+    patient_gender: p.gender,
     patient_phone: p.phone,
     patient_custom_fields: p.custom_fields,
     patient_allergies: p.allergies,

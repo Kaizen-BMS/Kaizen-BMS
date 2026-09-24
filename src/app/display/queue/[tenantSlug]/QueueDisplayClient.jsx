@@ -6,6 +6,7 @@ export default function QueueDisplayClient({ tenantSlug }) {
   const [nowServing, setNowServing] = useState(null);
   const [room, setRoom] = useState("");
   const [waiting, setWaiting] = useState([]);
+  const [counters, setCounters] = useState([]);
   const [ok, setOk] = useState(true);
 
   async function load() {
@@ -17,6 +18,7 @@ export default function QueueDisplayClient({ tenantSlug }) {
     const d = await res.json();
     setNowServing(d.nowServing);
     setWaiting(d.waiting || []);
+    setCounters(d.counters || []);
   }
 
   useEffect(() => {
@@ -48,6 +50,24 @@ export default function QueueDisplayClient({ tenantSlug }) {
       <Screen>
         <p className="text-3xl text-slate-400">Display not available.</p>
       </Screen>
+    );
+  }
+
+  // Several doctors, each with their own token series: one counter per doctor.
+  if (counters.length > 1) {
+    return (
+      <div className="min-h-screen bg-white px-6 py-10">
+        <p className="text-center text-2xl uppercase tracking-[0.3em] text-slate-400">Now Serving</p>
+        <div className="mx-auto mt-8 grid max-w-6xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {counters.map((c) => (
+            <div key={c.doctor} className="rounded-2xl border border-slate-200 p-6 text-center">
+              <p className="text-2xl font-semibold text-slate-700">{c.doctor}</p>
+              <p className="mt-3 text-8xl font-black leading-none tabular-nums text-slate-900">{c.nowServing ?? "—"}</p>
+              {c.waiting.length > 0 && <p className="mt-4 text-2xl tabular-nums text-slate-500">Next: {c.waiting.slice(0, 4).join(" · ")}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 

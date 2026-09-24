@@ -65,6 +65,18 @@ export default function OpdQueueClient() {
     load,
   );
 
+  async function finish(e, id) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("Finish this visit? The patient will be removed from the queue.")) return;
+    try {
+      await apiSend(`/api/registration/visits/${id}`, "PATCH", { status: "DISCHARGED" });
+      setVisits((vs) => vs.filter((v) => v.id !== id));
+    } catch (err) {
+      setMsg(err.message);
+    }
+  }
+
   async function callNext() {
     setBusy(true);
     setMsg("");
@@ -82,7 +94,10 @@ export default function OpdQueueClient() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Doctor / OPD queue</h1>
+        <div>
+          <h1 className="text-xl font-semibold">Doctor / OPD queue</h1>
+          <p className="text-xs text-slate-400">Waiting → With doctor → In progress (consultation saved) → Finish visit removes the patient from this list.</p>
+        </div>
         <button
           onClick={callNext}
           disabled={busy || waiting === 0}
@@ -115,18 +130,27 @@ export default function OpdQueueClient() {
                 {v.patient_name}{" "}
                 <span className="text-slate-400">· {v.patient_age}y</span>
               </p>
+              {v.doctor_name && <p className="text-xs text-slate-500">For: Dr. {v.doctor_name.replace(/^dr\.?\s+/i, "")}</p>}
               {v.reason && <p className="text-xs text-slate-500">{v.reason}</p>}
               <AllergyBadge allergies={v.patient_allergies} className="mt-1" />
             </div>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${
-                v.consultation_id
-                  ? "bg-green-100 text-green-700"
-                  : "bg-slate-100 text-slate-600"
-              }`}
-            >
-              {v.consultation_id ? "in progress" : "waiting"}
-            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${
+                  v.consultation_id
+                    ? "bg-green-100 text-green-700"
+                    : v.status === "WITH_DOCTOR"
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-slate-100 text-slate-600"
+                }`}
+                title={v.consultation_id ? "Consultation saved — click Finish visit when the patient is done" : v.status === "WITH_DOCTOR" ? "Called in — consultation not saved yet" : "Waiting to be called"}
+              >
+                {v.consultation_id ? "in progress" : v.status === "WITH_DOCTOR" ? "with doctor" : "waiting"}
+              </span>
+              {v.status === "WITH_DOCTOR" && (
+                <button onClick={(e) => finish(e, v.id)} className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100">Finish visit</button>
+              )}
+            </div>
           </Link>
         ))}
       </div>

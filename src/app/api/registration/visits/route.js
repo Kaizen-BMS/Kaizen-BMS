@@ -4,6 +4,7 @@ import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { requireTenantId } from "@/lib/requestContext";
 import { emitToTenant } from "@/lib/realtime";
+import { requireDoctor, doctorName, expectedTimeNow } from "@/lib/opdDoctors";
 import { resolveTokenNumber, createVisitWithToken, logTokenOverride } from "@/lib/tokenOverride";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 const createSchema = z.object({
   patientId: z.coerce.number().int().positive(),
   reason: z.string().trim().max(500).optional().default(""),
+  doctorId: z.coerce.number().int().positive().optional(),
   // Receptionist manual token override — a priority/emergency walk-in, or
   // correcting a numbering mistake. Omit for the normal auto-assigned
   // sequential token (unchanged default behavior).
@@ -31,8 +33,10 @@ export const GET = apiRoute("visit:read", async (request) => {
   const placeholders = statuses.map(() => "?").join(", ");
   const visits = await tenantDb.$queryRawUnsafe(
     `SELECT v.id, v.status, v.reason, v.created_at, v.updated_at,
-            v.patient_id, p.name AS patient_name, p.age AS patient_age, p.phone AS patient_phone
+            v.patient_id, v.token_number, v.doctor_id, u.name AS doctor_name,
+            p.name AS patient_name, p.age AS patient_age, p.phone AS patient_phone
        FROM visits v JOIN patients p ON p.id = v.patient_id
+       LEFT JOIN users u ON u.id = v.doctor_id
       WHERE v.tenant_id = ?
         AND v.status IN (${placeholders})
         AND v.created_at >= CURDATE()
@@ -54,9 +58,12 @@ export const POST = apiRoute("visit:create", async (request, { session }) => {
   if (!patient) return json({ error: "patient_not_found" }, 404);
 
   const tid = requireTenantId();
+  const doctorId = await requireDoctor(tid, body.doctorId);
+  const expected = await expectedTimeNow(tid, doctorId);
   const { tokenNumber, overridden } = await resolveTokenNumber(tenantDb, tid, session.role, {
     manualToken: body.manualToken,
     overrideReason: body.overrideReason,
+    doctorId,
   });
 
   const created = await createVisitWithToken(
@@ -67,6 +74,8 @@ export const POST = apiRoute("visit:create", async (request, { session }) => {
       entry_type: "OPD",
       token_number: tokenNumber,
       reason: body.reason || null,
+      doctor_id: doctorId,
+      expected_time: expected,
       registered_by: BigInt(session.userId),
     },
     { patients: { select: { name: true, age: true, phone: true, allergies: true } } },
@@ -88,6 +97,7 @@ export const POST = apiRoute("visit:create", async (request, { session }) => {
     patient_age: p.age,
     patient_phone: p.phone,
     patient_allergies: p.allergies,
+    doctor_name: await doctorName(tid, doctorId),
   };
 
   emitToTenant(session.tenantId, "visit:created", { visit });

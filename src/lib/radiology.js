@@ -29,6 +29,16 @@ const createOrderSchema = z.object({
   // Optional, explicit Service Master link — never inferred from
   // studyName text at billing time (CLAUDE.md Phase 7 discipline).
   serviceId: z.coerce.number().int().positive().optional(),
+  // The requisition — what a radiologist needs to protocol the study safely.
+  modality: z.string().trim().max(20).optional().or(z.literal("")),
+  bodyPart: z.string().trim().max(80).optional().or(z.literal("")),
+  laterality: z.enum(["NA", "LEFT", "RIGHT", "BOTH"]).optional().default("NA"),
+  contrast: z.enum(["NONE", "WITH", "LET_RADIOLOGIST_DECIDE"]).optional().or(z.literal("")),
+  clinicalIndication: z.string().trim().min(3).max(500),
+  pregnancyStatus: z.enum(["NOT_APPLICABLE", "NO", "POSSIBLE", "YES"]).optional().default("NOT_APPLICABLE"),
+  safetyFlags: z.array(z.enum(["PACEMAKER", "METAL_IMPLANT", "CONTRAST_ALLERGY", "KIDNEY_DISEASE", "CLAUSTROPHOBIA", "DIABETIC_METFORMIN"])).max(6).optional().default([]),
+  mobility: z.enum(["WALKING", "WHEELCHAIR", "STRETCHER"]).optional().default("WALKING"),
+  instructions: z.string().trim().max(500).optional().or(z.literal("")),
 });
 
 const scheduleSchema = z.object({
@@ -54,6 +64,15 @@ function serializeOrder(row) {
     serviceId: row.service_id != null ? Number(row.service_id) : null,
     studyName: row.study_name,
     priority: row.priority,
+    modality: row.modality ?? null,
+    bodyPart: row.body_part ?? null,
+    laterality: row.laterality ?? "NA",
+    contrast: row.contrast ?? null,
+    clinicalIndication: row.clinical_indication ?? null,
+    pregnancyStatus: row.pregnancy_status ?? "NOT_APPLICABLE",
+    safetyFlags: row.safety_flags ? String(row.safety_flags).split(",").filter(Boolean) : [],
+    mobility: row.mobility ?? "WALKING",
+    instructions: row.instructions ?? null,
     status: row.status,
     scheduledAt: row.scheduled_at,
     startedAt: row.started_at,

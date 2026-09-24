@@ -6,6 +6,7 @@ import { usePrintSettings, openSlip } from "@/components/hms/usePrintSettings";
 import ReferralsPanel from "@/components/hms/ReferralsPanel";
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
+import DoctorPicker from "@/components/hms/DoctorPicker";
 import DynamicForm, { splitValues } from "@/components/hms/DynamicForm";
 import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
@@ -19,6 +20,7 @@ const OPEN = new Set(["REGISTERED", "TRIAGE", "WITH_DOCTOR", "PHARMACY", "LAB", 
 export default function RegistrationClient({ canManageReferrals, canOverrideToken }) {
   const [form, setForm] = useState(null);
   const [values, setValues] = useState({});
+  const [doctorId, setDoctorId] = useState("");
   const [allergies, setAllergies] = useState([]);
   const [abhaId, setAbhaId] = useState("");
   const [insurance, setInsurance] = useState(DEFAULT_INSURANCE);
@@ -123,6 +125,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
         phone: core.phone,
         email: core.email || "",
         reason: core.reason || "",
+        ...(doctorId ? { doctorId: Number(doctorId) } : {}),
         allergies,
         abhaId,
         insurance,
@@ -170,6 +173,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
     try {
       const opened = await apiSend("/api/registration/visits", "POST", {
         patientId,
+        ...(doctorId ? { doctorId: Number(doctorId) } : {}),
         ...(override ? { manualToken: Number(override.manualToken), overrideReason: override.overrideReason } : {}),
       });
       setResults(null);
@@ -252,6 +256,8 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
             <ReferralsPanel />
           </div>
         </details>
+
+        <DoctorPicker value={doctorId} onChange={setDoctorId} />
 
         {msg && (
           <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
@@ -535,6 +541,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
                     · {v.patient_age}y · {v.patient_phone}
                   </span>
                 </p>
+                {v.doctor_name && <p className="text-xs text-slate-500">Doctor: {/^dr\.?\s/i.test(v.doctor_name) ? v.doctor_name : `Dr. ${v.doctor_name}`}</p>}
                 {v.reason && (
                   <p className="text-xs text-slate-500">{v.reason}</p>
                 )}

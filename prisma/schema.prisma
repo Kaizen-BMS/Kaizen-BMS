@@ -516,6 +516,9 @@ model tenants {
   purchase_order_items                                         purchase_order_items[]
   purchase_orders                                              purchase_orders[]
   radiology_orders                                             radiology_orders[]
+  radiology_panel_items                                        radiology_panel_items[]
+  radiology_panels                                             radiology_panels[]
+  radiology_tests                                              radiology_tests[]
   referral_sources                                             referral_sources[]
   services                                                     services[]
   shift_templates                                              shift_templates[]
@@ -597,6 +600,7 @@ model users {
   tariffs_tariffs_updated_byTousers                            tariffs[]                    @relation("tariffs_updated_byTousers")
   token_overrides                                              token_overrides[]
   tenants                                                      tenants?                     @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_users_tenant")
+  visits_visits_doctor_idTousers                               visits[]                     @relation("visits_doctor_idTousers")
   visits                                                       visits[]
   workflow_instances                                           workflow_instances[]
 
@@ -605,39 +609,45 @@ model users {
 }
 
 model visits {
-  id               BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
-  tenant_id        BigInt             @db.UnsignedBigInt
-  patient_id       BigInt             @db.UnsignedBigInt
-  entry_type       visits_entry_type  @default(OPD)
-  token_number     Int?               @db.UnsignedInt
-  status           visits_status      @default(REGISTERED)
-  reason           String?            @db.VarChar(500)
-  custom_fields    String?            @db.LongText
-  registered_by    BigInt?            @db.UnsignedBigInt
-  follow_up_date   DateTime?          @db.Date
-  created_at       DateTime           @default(now())
-  visit_date       DateTime?          @db.Date
-  updated_at       DateTime           @default(now())
-  discharged_at    DateTime?
-  admissions       admissions[]
-  bills            bills[]
-  consultations    consultations[]
-  feedback         feedback[]
-  follow_ups       follow_ups[]
-  lab_orders       lab_orders[]
-  prescriptions    prescriptions[]
-  radiology_orders radiology_orders[]
-  token_overrides  token_overrides[]
-  patients         patients           @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_patient")
-  users            users?             @relation(fields: [registered_by], references: [id], onUpdate: Restrict, map: "fk_visits_registered_by")
-  tenants          tenants            @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_tenant")
+  id                            BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id                     BigInt             @db.UnsignedBigInt
+  patient_id                    BigInt             @db.UnsignedBigInt
+  entry_type                    visits_entry_type  @default(OPD)
+  token_number                  Int?               @db.UnsignedInt
+  status                        visits_status      @default(REGISTERED)
+  reason                        String?            @db.VarChar(500)
+  custom_fields                 String?            @db.LongText
+  registered_by                 BigInt?            @db.UnsignedBigInt
+  doctor_id                     BigInt?            @db.UnsignedBigInt
+  doctor_key                    BigInt?            @db.UnsignedBigInt
+  expected_time                 String?            @db.Char(5)
+  follow_up_date                DateTime?          @db.Date
+  created_at                    DateTime           @default(now())
+  visit_date                    DateTime?          @db.Date
+  updated_at                    DateTime           @default(now())
+  discharged_at                 DateTime?
+  admissions                    admissions[]
+  bills                         bills[]
+  consultations                 consultations[]
+  feedback                      feedback[]
+  follow_ups                    follow_ups[]
+  lab_orders                    lab_orders[]
+  prescriptions                 prescriptions[]
+  radiology_orders              radiology_orders[]
+  token_overrides               token_overrides[]
+  users_visits_doctor_idTousers users?             @relation("visits_doctor_idTousers", fields: [doctor_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_visits_doctor")
+  patients                      patients           @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_patient")
+  users                         users?             @relation(fields: [registered_by], references: [id], onUpdate: Restrict, map: "fk_visits_registered_by")
+  tenants                       tenants            @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_visits_tenant")
 
-  @@unique([tenant_id, visit_date, token_number], map: "uq_visits_tenant_date_token")
+  @@unique([tenant_id, visit_date, doctor_key, token_number], map: "uq_visits_tenant_date_doctor_token")
   @@index([registered_by], map: "fk_visits_registered_by")
   @@index([tenant_id], map: "idx_visits_hospital")
   @@index([tenant_id, created_at], map: "idx_visits_hospital_created")
   @@index([tenant_id, status], map: "idx_visits_hospital_status")
   @@index([patient_id], map: "idx_visits_patient")
+  @@index([doctor_id], map: "fk_visits_doctor")
+  @@index([tenant_id, doctor_id, status], map: "idx_visits_doctor")
 }
 
 model kaizen_schema_migrations {
@@ -1076,6 +1086,7 @@ model services {
   lab_tests                        lab_tests?
   prescription_items               prescription_items[]
   radiology_orders                 radiology_orders[]
+  radiology_tests                  radiology_tests?
   users_services_created_byTousers users?                @relation("services_created_byTousers", fields: [created_by], references: [id], onUpdate: Restrict, map: "fk_services_created_by")
   tenants                          tenants               @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_services_tenant")
   users_services_updated_byTousers users?                @relation("services_updated_byTousers", fields: [updated_by], references: [id], onUpdate: Restrict, map: "fk_services_updated_by")
@@ -1238,6 +1249,15 @@ model radiology_orders {
   reported_at                                DateTime?
   created_at                                 DateTime                  @default(now())
   updated_at                                 DateTime                  @default(now())
+  modality                                   String?                   @db.VarChar(20)
+  body_part                                  String?                   @db.VarChar(80)
+  laterality                                 String                    @default("NA") @db.VarChar(8)
+  contrast                                   String?                   @db.VarChar(12)
+  clinical_indication                        String?                   @db.VarChar(500)
+  pregnancy_status                           String                    @default("NOT_APPLICABLE") @db.VarChar(16)
+  safety_flags                               String?                   @db.VarChar(255)
+  mobility                                   String                    @default("WALKING") @db.VarChar(12)
+  instructions                               String?                   @db.VarChar(500)
   consultations                              consultations             @relation(fields: [consultation_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_radiology_orders_consultation")
   users_radiology_orders_ordered_byTousers   users?                    @relation("radiology_orders_ordered_byTousers", fields: [ordered_by], references: [id], onUpdate: Restrict, map: "fk_radiology_orders_ordered_by")
   patients                                   patients                  @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_radiology_orders_patient")
@@ -1959,6 +1979,50 @@ model staff_schedules {
   @@unique([tenant_id, user_id, day_of_week], map: "uq_staff_schedules_day")
   @@index([user_id], map: "fk_staff_schedules_user")
   @@index([tenant_id], map: "idx_staff_schedules_tenant")
+}
+
+model radiology_panel_items {
+  id               BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id        BigInt           @db.UnsignedBigInt
+  panel_id         BigInt           @db.UnsignedBigInt
+  study_name       String
+  service_id       BigInt?          @db.UnsignedBigInt
+  sort_order       Int              @default(0) @db.UnsignedInt
+  radiology_panels radiology_panels @relation(fields: [panel_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_radiology_panel_items_panel")
+  tenants          tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_radiology_panel_items_tenant")
+
+  @@index([panel_id], map: "idx_radiology_panel_items_panel")
+  @@index([tenant_id], map: "idx_radiology_panel_items_tenant")
+}
+
+model radiology_panels {
+  id                    BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id             BigInt                  @db.UnsignedBigInt
+  name                  String                  @db.VarChar(150)
+  modality              String?                 @db.VarChar(20)
+  active                Boolean                 @default(true)
+  created_at            DateTime                @default(now()) @db.DateTime(0)
+  radiology_panel_items radiology_panel_items[]
+  tenants               tenants                 @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_radiology_panels_tenant")
+
+  @@unique([tenant_id, name], map: "uq_radiology_panels_name")
+  @@index([tenant_id], map: "idx_radiology_panels_tenant")
+}
+
+model radiology_tests {
+  id               BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tenant_id        BigInt   @db.UnsignedBigInt
+  service_id       BigInt   @unique(map: "uq_radiology_tests_service") @db.UnsignedBigInt
+  modality         String   @db.VarChar(20)
+  body_part        String?  @db.VarChar(80)
+  contrast_option  String   @default("NONE") @db.VarChar(12)
+  preparation      String?  @db.VarChar(500)
+  turnaround_hours Int?     @db.UnsignedInt
+  created_at       DateTime @default(now()) @db.DateTime(0)
+  services         services @relation(fields: [service_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_radiology_tests_service")
+  tenants          tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_radiology_tests_tenant")
+
+  @@index([tenant_id], map: "idx_radiology_tests_tenant")
 }
 
 enum form_templates_form_type {
