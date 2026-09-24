@@ -444,7 +444,10 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                 </ul>
               </div>
             ))}
-            <div className="mt-3 space-y-3">
+            <div className="mt-2 space-y-1.5">
+              <div className="hidden gap-1.5 px-1 text-[10px] font-medium uppercase tracking-wide text-slate-400 md:grid md:grid-cols-[minmax(0,1fr)_5.5rem_6rem_4rem_4.5rem_1.5rem]">
+                <span>Medicine</span><span>Dose</span><span>Frequency</span><span>Days</span><span>Qty</span><span />
+              </div>
               {rxRows.map((r, i) => {
                 function update(patch) {
                   setRx((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
@@ -452,103 +455,75 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                 const { qty, calc } = rowQuantity(r);
                 const noCalc = calc.qty == null;
                 const needsReason = r.overrideQty && !r.overrideReason.trim();
+                const cell = "w-full min-w-0 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-sm md:px-2";
                 return (
-                  <div key={i} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <label className="block text-[11px] font-medium text-slate-500">Medicine</label>
-                        {rx.length > 1 || r.medicineName ? (
-                          <button type="button" onClick={() => setRx((xs) => (xs.length > 1 ? xs.filter((_, j) => j !== i) : [emptyRxRow()]))} className="text-[11px] text-slate-400 hover:text-red-600">Remove</button>
-                        ) : null}
+                  <div key={i} className={`rounded-lg border px-2 py-1.5 ${r.match ? "border-red-300 bg-red-50/60" : "border-slate-200 bg-slate-50/60"}`}>
+                    <div className="relative grid grid-cols-[2.75rem_minmax(0,1fr)_2.75rem_2.75rem] items-center gap-1.5 md:grid-cols-[minmax(0,1fr)_5.5rem_6rem_4rem_4.5rem_1.5rem]">
+                      <div className="col-span-4 pr-5 md:col-span-1 md:pr-0">
+                        <MedicineInput
+                          endpoint="/api/opd/medicine-suggest"
+                          value={r.medicineName}
+                          onChange={(t) => update({ medicineName: t })}
+                          placeholder="Medicine — e.g. Cap Cefixime 200 mg"
+                          className={`${cell} ${r.match ? "border-red-300" : ""}`}
+                        />
                       </div>
-                      <MedicineInput
-                        endpoint="/api/opd/medicine-suggest"
-                        value={r.medicineName}
-                        onChange={(t) => update({ medicineName: t })}
-                        placeholder="Start typing — e.g. Cap Cefixime 200 mg"
-                        className={`w-full rounded-lg border px-2.5 py-1.5 text-sm ${r.match ? "border-red-300 bg-red-50" : "border-slate-300 bg-white"}`}
-                      />
-                      <StockHint query={r.medicineName} onPick={(name) => update({ medicineName: name })} />
+                      <input aria-label="Dose" title="Units per intake" placeholder="1" value={r.dose} onChange={(e) => update({ dose: e.target.value })} className={cell} />
+                      <select aria-label="Frequency" title={FREQUENCIES.find((f) => f.code === r.frequency)?.label} value={r.frequency} onChange={(e) => update({ frequency: e.target.value })} className={cell}>
+                        {FREQUENCIES.map((f) => <option key={f.code} value={f.code} title={f.label}>{f.code === "CUSTOM" ? "Custom…" : f.code}</option>)}
+                      </select>
+                      <input aria-label="Days" type="number" min="1" placeholder="Days" disabled={r.frequency === "STAT"} value={r.days} onChange={(e) => update({ days: e.target.value })} className={`${cell} disabled:bg-slate-100`} />
+                      {noCalc || r.overrideQty ? (
+                        <input aria-label="Quantity" type="number" min="1" placeholder="Qty" value={r.quantity} onChange={(e) => update({ quantity: e.target.value })} className={`${cell} ${r.overrideQty ? "border-amber-400" : ""}`} />
+                      ) : (
+                        <button type="button" onClick={() => update({ overrideQty: true, quantity: String(calc.qty) })} title={`${calc.formula} — click to change`} className="rounded-md bg-emerald-50 px-2 py-1 text-center text-sm font-semibold text-emerald-800 hover:bg-emerald-100" aria-label="Calculated quantity">{qty}</button>
+                      )}
+                      <button type="button" aria-label="Remove medicine" title="Remove" onClick={() => setRx((xs) => (xs.length > 1 ? xs.filter((_, j) => j !== i) : [emptyRxRow()]))} className="absolute right-0 top-0 text-base leading-none text-slate-400 hover:text-red-600 md:static md:justify-self-end">×</button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-500">Dose</label>
-                        <input placeholder="1 capsule" value={r.dose} onChange={(e) => update({ dose: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
-                        <span className="text-[10px] text-slate-400">Units per intake</span>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-500">Frequency</label>
-                        <select value={r.frequency} onChange={(e) => update({ frequency: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm">
-                          {FREQUENCIES.map((f) => <option key={f.code} value={f.code}>{f.label}</option>)}
-                        </select>
-                        {r.frequency === "CUSTOM" && (
-                          <input placeholder="e.g. alternate days" value={r.customFrequency} onChange={(e) => update({ customFrequency: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-500">Duration (days)</label>
-                        <input type="number" min="1" placeholder="5" disabled={r.frequency === "STAT"} value={r.days} onChange={(e) => update({ days: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm disabled:bg-slate-100" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-500">Calculated Quantity</label>
-                        {noCalc || r.overrideQty ? (
-                          <input type="number" min="1" placeholder="Enter quantity" value={r.quantity} onChange={(e) => update({ quantity: e.target.value })} aria-label="Quantity" className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
-                        ) : (
-                          <p className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-sm font-semibold text-emerald-800" aria-label="Calculated quantity">{qty}</p>
-                        )}
-                        <span className="text-[10px] text-slate-400">{r.overrideQty ? "Changed by doctor" : noCalc ? "Cannot be calculated — enter it" : calc.formula}</span>
-                      </div>
-                    </div>
-                    {!noCalc && (
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <label className="flex items-center gap-1.5 text-slate-600">
-                          <input type="checkbox" checked={r.overrideQty} onChange={(e) => update({ overrideQty: e.target.checked, quantity: e.target.checked ? String(calc.qty) : "" })} />
-                          Change quantity
-                        </label>
-                        {r.overrideQty && (
-                          <input placeholder="Reason for changing (required)" value={r.overrideReason} onChange={(e) => update({ overrideReason: e.target.value })} className={`min-w-[14rem] flex-1 rounded-lg border px-2.5 py-1 ${needsReason ? "border-red-300" : "border-slate-300"}`} />
-                        )}
-                      </div>
+                    {r.frequency === "CUSTOM" && (
+                      <input placeholder="Frequency — e.g. alternate days" value={r.customFrequency} onChange={(e) => update({ customFrequency: e.target.value })} className={`${cell} mt-1.5`} />
                     )}
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-500">Instructions (optional)</label>
-                      <input placeholder="e.g. after food" value={r.notes} onChange={(e) => update({ notes: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <input aria-label="Instructions" placeholder="Instructions (optional) — e.g. after food" value={r.notes} onChange={(e) => update({ notes: e.target.value })} className="min-w-[10rem] flex-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs" />
+                      {r.overrideQty ? (
+                        <>
+                          <input placeholder="Reason for changing qty (required)" value={r.overrideReason} onChange={(e) => update({ overrideReason: e.target.value })} className={`min-w-[10rem] flex-1 rounded-md border bg-white px-2 py-0.5 text-xs ${needsReason ? "border-red-300" : "border-slate-200"}`} />
+                          {!noCalc && <button type="button" onClick={() => update({ overrideQty: false, overrideReason: "", quantity: "" })} className="text-[11px] text-slate-500 underline">use calculated ({calc.qty})</button>}
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-slate-400">{noCalc ? "Enter the quantity" : calc.formula}</span>
+                      )}
                     </div>
                     {r.match && (
-                      <label className="flex items-center gap-1.5 pl-1 text-xs text-red-700">
+                      <label className="mt-1 flex items-center gap-1.5 text-[11px] text-red-700">
                         <input type="checkbox" checked={r.ack} onChange={(e) => update({ ack: e.target.checked })} />
-                        ⚠ Matches declared allergy &quot;{r.match}&quot; — I acknowledge and want to prescribe anyway
+                        ⚠ Matches declared allergy &quot;{r.match}&quot; — acknowledge and prescribe anyway
                       </label>
                     )}
-                    <p className="text-[11px] text-slate-400">Will be recorded as: {r.medicineName || "—"} · {composeDosage(r) || "—"} · Qty {qty || "—"}</p>
                   </div>
                 );
               })}
-              <div className="space-y-2 rounded-xl bg-slate-50 p-3">
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-medium text-slate-500">Send prescription to:</span>
-                  {pharmacies.length === 0 ? (
-                    <span className="text-amber-700">No pharmacy is connected here — save it and print it for the patient.</span>
-                  ) : pharmacies.length === 1 ? (
-                    <span className="rounded-full bg-white px-2.5 py-0.5 font-semibold shadow-sm">{pharmacies[0].name}</span>
-                  ) : (
-                    <select aria-label="Pharmacy" value={pharmacyId} onChange={(e) => setPharmacyId(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm">
-                      {pharmacies.map((ph) => <option key={ph.id} value={ph.id}>{ph.name}{ph.own ? "" : " (partner)"}</option>)}
-                    </select>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button onClick={() => setRx((xs) => [...xs, emptyRxRow()])} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs hover:bg-white">+ Add medicine</button>
-                  <button
-                    onClick={savePrescription}
-                    disabled={busy || blockedByAllergy || blockedByQty}
-                    title={blockedByAllergy ? "Acknowledge the allergy warning first" : blockedByQty ? "Check quantity / reason for each medicine" : undefined}
-                    className="rounded-lg bg-[var(--hms-btn-bg)] px-4 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
-                  >
-                    {chosenPharmacy ? `Send to ${chosenPharmacy.name}` : "Save prescription"}
-                  </button>
-                  {sentNote && <span className="text-xs text-emerald-700">{sentNote}</span>}
-                </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button onClick={() => setRx((xs) => [...xs, emptyRxRow()])} className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50">+ Medicine</button>
+                <span className="ml-auto text-[11px] text-slate-500">To</span>
+                {pharmacies.length === 0 ? (
+                  <span className="text-[11px] text-amber-700">No pharmacy connected — save &amp; print</span>
+                ) : pharmacies.length === 1 ? (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium">{pharmacies[0].name}</span>
+                ) : (
+                  <select aria-label="Pharmacy" value={pharmacyId} onChange={(e) => setPharmacyId(e.target.value)} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">
+                    {pharmacies.map((ph) => <option key={ph.id} value={ph.id}>{ph.name}{ph.own ? "" : " (partner)"}</option>)}
+                  </select>
+                )}
+                <button
+                  onClick={savePrescription}
+                  disabled={busy || blockedByAllergy || blockedByQty}
+                  title={blockedByAllergy ? "Acknowledge the allergy warning first" : blockedByQty ? "Check quantity / reason for each medicine" : undefined}
+                  className="rounded-md bg-[var(--hms-btn-bg)] px-3.5 py-1 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+                >
+                  {chosenPharmacy ? "Send" : "Save"}
+                </button>
+                {sentNote && <span className="w-full text-xs text-emerald-700">{sentNote}</span>}
               </div>
             </div>
           </div>
