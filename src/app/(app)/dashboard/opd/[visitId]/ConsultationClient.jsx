@@ -16,7 +16,7 @@ import MedicineInput from "@/components/hms/MedicineInput";
 import LabOrderPicker from "@/components/hms/LabOrderPicker";
 import RadiologyOrderPicker from "@/components/hms/RadiologyOrderPicker";
 import { CONTRAST_LABEL } from "@/lib/radiologyCommon";
-import { FREQUENCIES, calcQuantity } from "@/lib/rxQuantity";
+import { FREQUENCIES, calcQuantity, parseDosage } from "@/lib/rxQuantity";
 import { matchAllergy } from "@/lib/allergyCheck";
 
 function upsertById(list, item) {
@@ -249,6 +249,25 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
     }
   }
 
+  // Repeat medicines from an earlier prescription as editable rows — the doctor changes the two or
+  // three that differ and removes the rest, instead of typing all of them again.
+  function addFromPast(meds) {
+    const rows = meds.map((m) => {
+      const p = parseDosage(m.dosage);
+      const row = { ...emptyRxRow(), medicineName: m.name, ...p };
+      const calc = calcQuantity(row);
+      if (calc.qty == null) row.quantity = String(m.quantity);
+      else if (calc.qty !== Number(m.quantity)) return { ...row, overrideQty: true, quantity: String(m.quantity), overrideReason: "repeated from earlier prescription" };
+      return row;
+    });
+    setRx((xs) => {
+      const kept = xs.filter((r) => r.medicineName.trim());
+      const have = new Set(kept.map((r) => r.medicineName.trim().toLowerCase()));
+      return [...kept, ...rows.filter((r) => !have.has(r.medicineName.trim().toLowerCase()))];
+    });
+    setSentNote("");
+  }
+
   async function finishVisit() {
     if (!confirm("Finish this visit? The patient will be removed from the doctor's queue.")) return;
     setFinishing(true);
@@ -436,7 +455,12 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                 return (
                   <div key={i} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-500">Medicine</label>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[11px] font-medium text-slate-500">Medicine</label>
+                        {rx.length > 1 || r.medicineName ? (
+                          <button type="button" onClick={() => setRx((xs) => (xs.length > 1 ? xs.filter((_, j) => j !== i) : [emptyRxRow()]))} className="text-[11px] text-slate-400 hover:text-red-600">Remove</button>
+                        ) : null}
+                      </div>
                       <MedicineInput
                         endpoint="/api/opd/medicine-suggest"
                         value={r.medicineName}
@@ -594,7 +618,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
         </div>
       )}
     </div>
-    <PatientHistorySidebar patientId={visit.patient_id} currentVisitId={visit.id} />
+    <PatientHistorySidebar patientId={visit.patient_id} currentVisitId={visit.id} onUseMedicines={consultation ? addFromPast : undefined} />
     </div>
   );
 }

@@ -34,3 +34,19 @@ export function calcQuantity({ dose, frequency, days }) {
   const qty = Math.ceil(d * f.times * n);
   return { qty, formula: `${d} × ${f.times}/day × ${n} day${n === 1 ? "" : "s"} = ${qty}` };
 }
+
+
+/**
+ * Turn a stored dosage string back into form fields, so an earlier prescription can be repeated and edited.
+ * Reads the shape composeDosage() writes: "1 BD (Twice daily) × 5 days · after food · qty changed: reason".
+ * Anything it cannot read is kept as a custom frequency rather than dropped.
+ */
+export function parseDosage(dosage) {
+  const parts = String(dosage || "").split(" · ").map((x) => x.trim()).filter(Boolean);
+  const main = parts[0] || "";
+  const notes = parts.slice(1).filter((x) => !/^qty changed:/i.test(x)).join(" · ");
+  const m = main.match(/^(.*?)\s*\b(OD|BD|TID|QID|HS|SOS|STAT)\b(?:\s*\([^)]*\))?\s*(?:×\s*(\d+)\s*days?)?\s*$/);
+  if (!m) return { dose: "1", frequency: "CUSTOM", customFrequency: main, days: "", notes };
+  const f = m[2];
+  return { dose: m[1] || "1", frequency: f, customFrequency: "", days: f === "STAT" || f === "SOS" ? "" : m[3] || "5", notes };
+}

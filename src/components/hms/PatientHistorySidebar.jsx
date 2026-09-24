@@ -17,7 +17,7 @@ const asList = (v) => (Array.isArray(v) ? v : v ? [v] : []);
 // Right-hand panel of the consultation screen: everything this patient has had
 // before, without leaving the page. Uses the same history API (and its
 // clinical-data permission check) as the rest of the product.
-export default function PatientHistorySidebar({ patientId, currentVisitId }) {
+export default function PatientHistorySidebar({ patientId, currentVisitId, onUseMedicines }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [filter, setFilter] = useState("all");
@@ -63,8 +63,17 @@ export default function PatientHistorySidebar({ patientId, currentVisitId }) {
                   <p><span className="font-medium text-slate-500">Diagnosis:</span> {v.diagnosis || "—"}{v.notes ? <span className="block text-slate-500">{v.notes}</span> : null}</p>
                 )}
                 {show("rx") && v.medicines?.length > 0 && (
-                  <div><p className="font-medium text-slate-500">Prescription</p>
-                    <ul className="ml-3 list-disc">{v.medicines.map((m, i) => <li key={i}>{m.name} — {m.dosage || "—"} × {m.quantity}</li>)}</ul>
+                  <div>
+                    <p className="flex items-center justify-between font-medium text-slate-500">
+                      <span>Prescription</span>
+                      {onUseMedicines && <button type="button" onClick={() => onUseMedicines(v.medicines)} className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-emerald-700">Use all in today&apos;s prescription</button>}
+                    </p>
+                    <ul className="ml-3 list-disc">{v.medicines.map((m, i) => (
+                      <li key={i}>
+                        {m.name} — {m.dosage || "—"} × {m.quantity}
+                        {onUseMedicines && <button type="button" onClick={() => onUseMedicines([m])} className="ml-1.5 rounded border border-slate-300 px-1.5 text-[10px] text-slate-600 hover:bg-white">+ add</button>}
+                      </li>
+                    ))}</ul>
                   </div>
                 )}
                 {show("lab") && v.labTests?.length > 0 && (
