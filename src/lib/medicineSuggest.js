@@ -15,7 +15,7 @@ async function suggestMedicines(tenantId, rawQuery, limit = 8) {
   const like = `%${clean}%`;
   const starts = `${clean}%`;
   const rows = await tenantDb.$queryRawUnsafe(
-    `SELECT m.id, m.name, m.medicine_type AS type, m.strength, m.generic_name AS generic,
+    `SELECT m.id, m.name, m.medicine_type AS type, m.strength, m.generic_name AS generic, m.unit, m.purchase_unit, m.units_per_purchase,
             COALESCE((SELECT SUM(ps.quantity) FROM pharmacy_stock ps
                        WHERE ps.tenant_id = m.tenant_id AND ps.medicine_id = m.id
                          AND (ps.expiry_date IS NULL OR ps.expiry_date >= CURDATE())), 0) AS stock
@@ -34,6 +34,9 @@ async function suggestMedicines(tenantId, rawQuery, limit = 8) {
     strength: r.strength,
     generic: r.generic,
     stock: Number(r.stock),
+    unit: r.unit || null,
+    purchaseUnit: r.purchase_unit || null,
+    unitsPerPurchase: Number(r.units_per_purchase || 1),
   }));
 }
 

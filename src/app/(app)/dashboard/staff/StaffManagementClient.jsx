@@ -91,7 +91,7 @@ function DirectoryTab({ ownUserId }) {
     setEditing(s);
     setForm({
       phone: s.phone || "", designation: s.designation || "", joinDate: s.joinDate ? s.joinDate.slice(0, 10) : "", address: s.address || "",
-      nativePlace: s.nativePlace || "", emergencyContact: s.emergencyContact || "", bloodGroup: s.bloodGroup || "", aadhaarNo: s.aadhaarNo || "", photoDataUrl: "", photo: s.photo || "",
+      nativePlace: s.nativePlace || "", emergencyContact: s.emergencyContact || "", bloodGroup: s.bloodGroup || "", medicalNotes: s.medicalNotes || "", aadhaarNo: s.aadhaarNo || "", photoDataUrl: "", photo: s.photo || "",
       employeeId: s.employeeId || "", department: s.department || "", dutyType: s.dutyType || "FIXED", dutyStart: s.dutyStart || "", dutyEnd: s.dutyEnd || "",
     });
   }
@@ -174,7 +174,7 @@ function DirectoryTab({ ownUserId }) {
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setEditing(null)}>
           <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <p className="mb-3 text-sm font-semibold">{editing.name} — details</p>
-            <PersonDetailsFields name={editing.name} value={form} onChange={setForm} showWork />
+            <PersonDetailsFields name={editing.name} value={form} onChange={setForm} showWork showMedical />
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setEditing(null)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
               <button onClick={save} disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Save</button>
@@ -222,6 +222,7 @@ function DutyRosterTab({ canManage }) {
   const [anchor, setAnchor] = useState(() => new Date());
   const [shifts, setShifts] = useState([]);
   const [staffList, setStaffList] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [msg, setMsg] = useState("");
   const [showAssign, setShowAssign] = useState(null); // date string
   const [assignForm, setAssignForm] = useState({ userId: "", startTime: "09:00", endTime: "17:00" });
@@ -239,7 +240,10 @@ function DutyRosterTab({ canManage }) {
 
   useEffect(() => {
     load().catch((e) => setMsg(e.message));
-    if (canManage) apiGet("/api/staff/profiles").then((d) => setStaffList(d.staff)).catch(() => {});
+    if (canManage) {
+      apiGet("/api/staff/profiles").then((d) => setStaffList(d.staff)).catch(() => {});
+      apiGet("/api/staff/shift-templates").then((d) => setTemplates(d.templates.filter((t) => t.active))).catch(() => {});
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, anchor.getTime()]);
 
@@ -354,6 +358,17 @@ function DutyRosterTab({ canManage }) {
                           <option key={s.userId} value={s.userId}>{s.name}</option>
                         ))}
                       </select>
+                      {templates.length > 0 && (
+                        <select
+                          aria-label="Shift"
+                          value=""
+                          onChange={(e) => { const t = templates.find((x) => String(x.id) === e.target.value); if (t) setAssignForm((f) => ({ ...f, startTime: t.start, endTime: t.end })); }}
+                          className="w-full rounded border border-slate-300 px-1 py-1 text-xs"
+                        >
+                          <option value="">shift…</option>
+                          {templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.start}–{t.end})</option>)}
+                        </select>
+                      )}
                       <div className="flex gap-1">
                         <input type="time" value={assignForm.startTime} onChange={(e) => setAssignForm((f) => ({ ...f, startTime: e.target.value }))} className="w-full rounded border border-slate-300 px-1 py-1 text-xs" />
                         <input type="time" value={assignForm.endTime} onChange={(e) => setAssignForm((f) => ({ ...f, endTime: e.target.value }))} className="w-full rounded border border-slate-300 px-1 py-1 text-xs" />

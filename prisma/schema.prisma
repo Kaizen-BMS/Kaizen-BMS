@@ -935,6 +935,7 @@ model staff_profiles {
   aadhaar_no        String?                  @db.VarChar(20)
   emergency_contact String?                  @db.VarChar(64)
   blood_group       String?                  @db.VarChar(5)
+  medical_notes     String?                  @db.Text
   photo_url         String?                  @db.MediumText
   employee_id       String?                  @db.VarChar(40)
   department        String?                  @db.VarChar(100)
@@ -1753,6 +1754,8 @@ model medicines {
   gst_rate              Decimal                @default(0.00) @db.Decimal(5, 2)
   pack_size             String?                @db.VarChar(60)
   unit                  String?                @db.VarChar(30)
+  purchase_unit         String?                @db.VarChar(30)
+  units_per_purchase    Int                    @default(1) @db.UnsignedInt
   reorder_level         Int                    @default(10) @db.UnsignedInt
   max_stock             Int?                   @db.UnsignedInt
   rack                  String?                @db.VarChar(60)

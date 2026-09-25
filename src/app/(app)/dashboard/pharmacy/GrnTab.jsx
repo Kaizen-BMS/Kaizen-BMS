@@ -13,7 +13,7 @@ const help = "mt-0.5 block text-[11px] leading-tight text-slate-400";
 
 const emptyLine = () => ({
   quantity: "", medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "",
-  freeQuantity: "0", damagedQuantity: "0", rejectedQuantity: "0", gstRate: "0", ...EMPTY_PRICE,
+  freeQuantity: "0", damagedQuantity: "0", rejectedQuantity: "0", gstRate: "0", unit: "", purchaseUnit: "", unitsPerPurchase: 1, inPurchaseUnit: false, ...EMPTY_PRICE,
 });
 
 // Goods Received: what physically arrived. Each line reads
@@ -68,6 +68,7 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
         receivedQuantity: Number(l.quantity), freeQuantity: Number(l.freeQuantity || 0), damagedQuantity: Number(l.damagedQuantity || 0),
         rejectedQuantity: Number(l.rejectedQuantity || 0), purchaseRate: Number(l.purchaseRate || 0), mrp: Number(l.mrp || 0),
         ...(l.sellingRate ? { sellingRate: Number(l.sellingRate) } : {}), gstRate: Number(l.gstRate || 0),
+        inPurchaseUnit: !!l.inPurchaseUnit && l.unitsPerPurchase > 1,
       }));
       // Empty optional pickers must be left out, not sent as "".
       const { supplierId, poId, supplierInvoiceDate, ...rest } = head;
@@ -125,13 +126,20 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
           {lines.map((l, i) => (
             <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <label className={lab}>Qty
-                  <input type="number" min="0" placeholder="100" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} className={`${input} mt-1`} />
-                  <span className={help}>Units received.</span>
-                </label>
+                <div className={lab}>Qty
+                  <div className="mt-1 flex gap-1">
+                    <input type="number" min="0" placeholder="10" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} className={input} />
+                    {l.unitsPerPurchase > 1 && (
+                      <select aria-label="Unit" value={l.inPurchaseUnit ? "P" : "S"} onChange={(e) => setLine(i, { inPurchaseUnit: e.target.value === "P" })} className="rounded-lg border border-slate-300 bg-white px-1.5 text-sm">
+                        <option value="P">{l.purchaseUnit}</option><option value="S">{l.unit || "Unit"}</option>
+                      </select>
+                    )}
+                  </div>
+                  <span className={help}>{l.unitsPerPurchase > 1 && l.inPurchaseUnit && Number(l.quantity) > 0 ? `= ${Number(l.quantity) * l.unitsPerPurchase} ${l.unit || "units"} into stock. Enter rates per ${l.purchaseUnit} too.` : "Units received."}</span>
+                </div>
                 <div className={lab}>Medicine
                   <div className="mt-1">
-                    <MedicineInput value={l.medicineText} onChange={(t) => setLine(i, { medicineText: t, medicineId: "" })} onPick={(it) => setLine(i, { medicineId: String(it.id), medicineText: it.name })} placeholder="Cap Betadine 500 mg" className={input} />
+                    <MedicineInput value={l.medicineText} onChange={(t) => setLine(i, { medicineText: t, medicineId: "" })} onPick={(it) => setLine(i, { medicineId: String(it.id), medicineText: it.name, unit: it.unit || "", purchaseUnit: it.purchaseUnit || "", unitsPerPurchase: it.unitsPerPurchase || 1, inPurchaseUnit: (it.unitsPerPurchase || 1) > 1 })} placeholder="Cap Betadine 500 mg" className={input} />
                   </div>
                   <span className={help}>Start typing and pick.</span>
                 </div>

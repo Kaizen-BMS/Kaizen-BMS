@@ -21,7 +21,7 @@ function Field({ label, help, children, className = "" }) {
 
 const BLANK = {
   baseName: "", medicineType: "Tablet", strength: "", genericName: "", brandName: "", composition: "", manufacturer: "",
-  category: "", schedule: "", prescriptionRequired: false, barcode: "", hsnCode: "", gstRate: "0", packSize: "",
+  category: "", schedule: "", prescriptionRequired: false, barcode: "", hsnCode: "", gstRate: "0", packSize: "", unit: "", purchaseUnit: "", unitsPerPurchase: "1",
   reorderLevel: "10", maxStock: "", location: "",
 };
 
@@ -30,7 +30,7 @@ function toForm(m) {
     baseName: m.baseName || m.name, medicineType: m.medicineType || "Other", strength: m.strength || "", genericName: m.genericName || "",
     brandName: m.brandName || "", composition: m.composition || "", manufacturer: m.manufacturer || "", category: m.category || "",
     schedule: m.schedule || "", prescriptionRequired: !!m.prescriptionRequired, barcode: m.barcode || "", hsnCode: m.hsnCode || "",
-    gstRate: String(m.gstRate ?? 0), packSize: m.packSize || "", reorderLevel: String(m.reorderLevel ?? 10),
+    gstRate: String(m.gstRate ?? 0), packSize: m.packSize || "", unit: m.unit || "", purchaseUnit: m.purchaseUnit || "", unitsPerPurchase: String(m.unitsPerPurchase ?? 1), reorderLevel: String(m.reorderLevel ?? 10),
     maxStock: m.maxStock != null ? String(m.maxStock) : "", location: [m.rack, m.shelf, m.bin].filter(Boolean).join(" - "),
   };
 }
@@ -43,7 +43,7 @@ function toPayload(f, editing, orig) {
     genericName: f.genericName, brandName: f.brandName,
     composition: f.composition, manufacturer: f.manufacturer, category: f.category, schedule: f.schedule,
     prescriptionRequired: !!f.prescriptionRequired, barcode: f.barcode, hsnCode: f.hsnCode, gstRate: Number(f.gstRate || 0),
-    packSize: f.packSize, reorderLevel: Number(f.reorderLevel || 10),
+    packSize: f.packSize, unit: f.unit, purchaseUnit: f.purchaseUnit, unitsPerPurchase: Number(f.unitsPerPurchase || 1), reorderLevel: Number(f.reorderLevel || 10),
     ...(f.maxStock ? { maxStock: Number(f.maxStock) } : {}),
     // One free-text Location ("Rack A - Shelf 3"); the separate shelf/bin boxes are retired from the UI.
     rack: f.location, ...(editing ? { shelf: "", bin: "" } : {}),
@@ -98,6 +98,9 @@ function MedicineForm({ f, setF, onScan }) {
         <select value={f.gstRate} onChange={(e) => setF({ ...f, gstRate: e.target.value })} className={input}>{[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}</select>
       </Field>
       <Field label="Pack Size" help="Units in one pack."><input placeholder="10 capsules" value={f.packSize} onChange={(e) => setF({ ...f, packSize: e.target.value })} className={input} /></Field>
+      <Field label="Sold / stocked as" help="The unit you count stock and sell in."><input placeholder="Strip" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} className={input} /></Field>
+      <Field label="Bought as" help="Bigger pack you buy from suppliers (optional)."><input placeholder="Box" value={f.purchaseUnit} onChange={(e) => setF({ ...f, purchaseUnit: e.target.value })} className={input} /></Field>
+      {f.purchaseUnit && <Field label={`${f.unit || "Units"} in one ${f.purchaseUnit}`} help="Used to convert purchases into stock."><input type="number" min="1" placeholder="10" value={f.unitsPerPurchase} onChange={(e) => setF({ ...f, unitsPerPurchase: e.target.value })} className={input} /></Field>}
       <Field label="Reorder Level" help="Alert the pharmacist when available stock reaches this level."><input type="number" min="0" placeholder="50" value={f.reorderLevel} onChange={(e) => setF({ ...f, reorderLevel: e.target.value })} className={input} /></Field>
       <Field label="Maximum Stock" help="Most you want to keep. Leave empty for no limit."><input type="number" min="0" placeholder="500" value={f.maxStock} onChange={(e) => setF({ ...f, maxStock: e.target.value })} className={input} /></Field>
       <Field label="Location" help="Where it is kept in the pharmacy."><input placeholder="Rack A - Shelf 3" value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} className={input} /></Field>

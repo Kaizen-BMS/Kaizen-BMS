@@ -33,6 +33,7 @@ export const GET = apiRoute("staff:manage", async (_request, { session }) => {
       role: u.role,
       active: u.active !== false,
       ...serializeProfile(p),
+      medicalNotes: p?.medical_notes ?? null,
     };
   });
   return json({ staff });

@@ -1,5 +1,6 @@
 "use client";
 
+import { RX_STATUS_LABEL, RX_STATUS_TONE } from "@/lib/rxStatus";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiGet, apiSend } from "@/components/hms/api";
@@ -154,6 +155,7 @@ function QueueTab({ canDispense, onError }) {
   const [prescriptions, setPrescriptions] = useState([]);
   const [flashIds, setFlashIds] = useState(new Set());
   const [busyItemId, setBusyItemId] = useState(null);
+  const [qtys, setQtys] = useState({}); // per-line "dispense this many now" (blank = everything remaining)
 
   function flash(id) {
     setFlashIds((s) => new Set(s).add(id));
@@ -227,8 +229,8 @@ function QueueTab({ canDispense, onError }) {
             <p className="text-sm font-semibold">
               {pr.patient_name} <span className="text-xs font-normal text-slate-400">#{pr.id}</span>
             </p>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-              {pr.status.replace(/_/g, " ")}
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${RX_STATUS_TONE[pr.status] || "bg-slate-100 text-slate-600"}`}>
+              {RX_STATUS_LABEL[pr.status] || pr.status.replace(/_/g, " ")}
             </span>
           </div>
           <AllergyBadge allergies={pr.patient_allergies} className="mt-1" />
@@ -246,19 +248,22 @@ function QueueTab({ canDispense, onError }) {
                       {it.medicine_name} {it.dosage && <span className="text-slate-500">· {it.dosage}</span>}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {it.dispensed_quantity} / {it.quantity} dispensed
+                      Required {it.quantity} · Dispensed {it.dispensed_quantity} · Remaining {outstanding}
                       {it.batch_number ? ` · batch ${it.batch_number}` : ""}
                     </p>
                   </div>
                   {outstanding > 0 ? (
                     canDispense && (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                      <input type="number" min="1" max={outstanding} placeholder={String(outstanding)} value={qtys[it.id] || ""} onChange={(e) => setQtys((q) => ({ ...q, [it.id]: e.target.value }))} aria-label="Quantity to dispense now" className="w-16 rounded-md border border-slate-300 px-1.5 py-1 text-xs" />
                       <button
-                        onClick={() => dispense(it.id)}
+                        onClick={() => dispense(it.id, Math.min(outstanding, Number(qtys[it.id]) || 0) || undefined)}
                         disabled={busyItemId === it.id}
                         className="shrink-0 rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
                       >
-                        {busyItemId === it.id ? "Dispensing…" : `Dispense ${outstanding}`}
+                        {busyItemId === it.id ? "Dispensing…" : qtys[it.id] ? `Dispense ${Math.min(outstanding, Number(qtys[it.id]))}` : it.dispensed_quantity > 0 ? `Dispense remaining (${outstanding})` : `Dispense ${outstanding}`}
                       </button>
+                      </div>
                     )
                   ) : (
                     <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">

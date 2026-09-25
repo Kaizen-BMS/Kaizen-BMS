@@ -18,6 +18,7 @@ import RadiologyOrderPicker from "@/components/hms/RadiologyOrderPicker";
 import { CONTRAST_LABEL } from "@/lib/radiologyCommon";
 import { FREQUENCIES, calcQuantity, parseDosage } from "@/lib/rxQuantity";
 import { matchAllergy } from "@/lib/allergyCheck";
+import { rxStatusForDoctor } from "@/lib/rxStatus";
 
 function upsertById(list, item) {
   return list.some((x) => x.id === item.id)
@@ -423,7 +424,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
               <div key={p.id} className="mt-2 rounded-md bg-slate-50 p-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-slate-400">
-                    #{p.id} · {p.status}
+                    #{p.id} · {rxStatusForDoctor(p.status)}
                   </span>
                   <a
                     href={`/print/prescription/${p.id}`}

@@ -221,7 +221,8 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
               return (
                 <Fragment key={r.stockId}>
                   <tr className="border-b border-slate-100 transition hover:bg-slate-50/60">
-                    <td className="px-3 py-2 font-semibold tabular-nums">{r.quantity}</td>
+                    <td className="px-3 py-2 font-semibold tabular-nums">{r.quantity}{r.unit ? <span className="ml-1 text-[11px] font-normal text-slate-400">{r.unit}</span> : null}
+                      {r.purchaseUnit && r.unitsPerPurchase > 1 && r.quantity >= r.unitsPerPurchase && <span className="block text-[11px] font-normal text-slate-400">= {Math.floor(r.quantity / r.unitsPerPurchase)} {r.purchaseUnit}{r.quantity % r.unitsPerPurchase ? ` + ${r.quantity % r.unitsPerPurchase} ${r.unit || ""}` : ""}</span>}</td>
                     <td className="px-3 py-2 font-medium">{r.medicineName}</td>
                     <td className="px-3 py-2">{r.batchNumber || "—"}</td>
                     <td className="px-3 py-2 tabular-nums">{fmtDDMMYY(r.manufacturingDate)}</td>

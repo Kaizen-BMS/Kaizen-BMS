@@ -7,7 +7,8 @@ import { applyDutyFromProfile } from "@/lib/staffSchedule";
 
 export const dynamic = "force-dynamic";
 
-const patchSchema = z.object(detailsShape).refine((b) => Object.keys(b).length > 0, { message: "nothing to update" });
+// medicalNotes is privacy-sensitive: only this admin-gated route ever writes it, and only the admin directory ever reads it.
+const patchSchema = z.object({ ...detailsShape, medicalNotes: z.string().trim().max(2000).optional() }).refine((b) => Object.keys(b).length > 0, { message: "nothing to update" });
 
 // Upsert — most staff won't have a profile row yet until an admin first
 // fills one in.
@@ -23,6 +24,7 @@ export const PATCH = apiRoute("staff:manage", async (request, ctx) => {
 
   const body = await parseBody(request, patchSchema);
   const patch = toProfileData(body);
+  if (body.medicalNotes !== undefined) patch.medical_notes = body.medicalNotes || null;
 
   const existing = await tenantDb.staff_profiles.findUnique({ where: { user_id: uid } });
   if (existing) await tenantDb.staff_profiles.update({ where: { id: existing.id }, data: patch });

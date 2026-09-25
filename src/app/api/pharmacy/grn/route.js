@@ -24,6 +24,8 @@ const itemSchema = z.object({
   sellingRate: z.coerce.number().min(0).max(10_000_000).optional(),
   discountPercent: z.coerce.number().min(0).max(100).optional().default(0),
   gstRate: z.coerce.number().min(0).max(28).optional().default(0),
+  // Quantities and rates on this line are in the medicine's purchase unit (e.g. Box) — converted to stock units here.
+  inPurchaseUnit: z.boolean().optional().default(false),
 });
 
 const createSchema = z.object({
@@ -74,9 +76,23 @@ export const POST = apiRoute("grn:create", async (request, { session }) => {
       },
     });
 
-    for (const it of body.items) {
+    for (const rawItem of body.items) {
+      let it = rawItem;
       const medicine = await tx.medicines.findUnique({ where: { id: BigInt(it.medicineId) } });
       if (!medicine) throw new HttpError(400, `medicine_not_found:${it.medicineId}`);
+      // Box -> strips: multiply counts, divide money, so stock/billing only ever see stock units.
+      if (it.inPurchaseUnit) {
+        const f = medicine.units_per_purchase || 1;
+        if (f > 1) {
+          const r2 = (n) => Math.round((n / f) * 100) / 100;
+          it = {
+            ...it,
+            receivedQuantity: it.receivedQuantity * f, freeQuantity: it.freeQuantity * f,
+            damagedQuantity: it.damagedQuantity * f, rejectedQuantity: it.rejectedQuantity * f,
+            purchaseRate: r2(it.purchaseRate), mrp: r2(it.mrp), ...(it.sellingRate != null ? { sellingRate: r2(it.sellingRate) } : {}),
+          };
+        }
+      }
       const accepted = it.receivedQuantity + it.freeQuantity - it.damagedQuantity - it.rejectedQuantity;
       if (accepted < 0) throw new HttpError(400, "accepted_quantity_cannot_be_negative");
       if (it.mrp > 0 && it.sellingRate != null && it.sellingRate > it.mrp) throw new HttpError(400, "selling_price_above_mrp");

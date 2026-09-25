@@ -7,7 +7,7 @@ import DateInput from "./DateInput";
 import PhoneInput from "./PhoneInput";
 
 export const EMPTY_DETAILS = {
-  phone: "", designation: "", joinDate: "", address: "", nativePlace: "", emergencyContact: "", bloodGroup: "", aadhaarNo: "", photoDataUrl: "",
+  phone: "", designation: "", joinDate: "", address: "", nativePlace: "", emergencyContact: "", bloodGroup: "", medicalNotes: "", aadhaarNo: "", photoDataUrl: "",
   employeeId: "", department: "", dutyType: "FIXED", dutyStart: "", dutyEnd: "",
 };
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -38,7 +38,7 @@ export function dutyHoursText(start, end) {
 // Personal details + a face photo. The photo is what the attendance photo is
 // compared with, so ask for a clear front-facing picture. `showWork` adds
 // Employee ID, Department and the working hours (total hours worked out for you).
-export default function PersonDetailsFields({ name, value, onChange, showJoin = true, showDesignation = true, showEmergency = true, showWork = false, parts }) {
+export default function PersonDetailsFields({ name, value, onChange, showJoin = true, showDesignation = true, showEmergency = true, showWork = false, showMedical = false, parts }) {
   const on = (k) => (parts ? parts.includes(k) : k !== "work" || showWork);
   const [cam, setCam] = useState(false);
   const set = (k, v) => onChange({ ...value, [k]: v });
@@ -74,7 +74,13 @@ export default function PersonDetailsFields({ name, value, onChange, showJoin = 
             <option value="">—</option>
             {BLOOD_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
           </select>
-        </label></>}
+        </label>
+        {showMedical && (
+          <label className={`${label} sm:col-span-2`}>Medical notes (private)
+            <textarea rows={2} value={value.medicalNotes} onChange={(e) => set("medicalNotes", e.target.value)} placeholder="Allergies, conditions, medicines — only admins can see this." className={`${input} mt-1`} />
+            <span className={help}>Visible to hospital admins only. Never printed on the staff card.</span>
+          </label>
+        )}</>}
       </div>}
       {on("work") && (
         <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
