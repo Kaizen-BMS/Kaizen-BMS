@@ -20,6 +20,7 @@ const help = "mt-0.5 block text-[11px] font-normal leading-tight text-slate-400"
 export default function AddStaffForm({ onCreated }) {
   const [open, setOpen] = useState(false);
   const [roles, setRoles] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [f, setF] = useState({ name: "", email: "", role: "", password: "" });
   const [msg, setMsg] = useState({ error: "", ok: "", temp: "" });
   const [busy, setBusy] = useState(false);
@@ -30,6 +31,7 @@ export default function AddStaffForm({ onCreated }) {
       setRoles(d.roles);
       setF((x) => ({ ...x, role: d.roles[0]?.role || "" }));
     }).catch(() => {});
+    apiGet("/api/staff/shift-templates").then((d) => setTemplates(d.templates.filter((t) => t.active))).catch(() => {});
   }, []);
 
   async function submit(e) {
@@ -38,7 +40,7 @@ export default function AddStaffForm({ onCreated }) {
     setMsg({ error: "", ok: "", temp: "" });
     try {
       const r = await apiSend("/api/staff/accounts", "POST", { name: f.name, email: f.email, role: f.role, ...(f.password ? { password: f.password } : {}), ...detailsPayload(details) });
-      setMsg({ error: "", ok: `${r.account.name} added.`, temp: r.tempPassword || "" });
+      setMsg({ error: "", ok: `${r.account.name} added${r.account.employeeId ? ` — ${r.account.employeeId}` : ""}.`, temp: r.tempPassword || "" });
       setF((x) => ({ ...x, name: "", email: "", password: "" }));
       setDetails(EMPTY_DETAILS);
       onCreated?.();
@@ -77,7 +79,7 @@ export default function AddStaffForm({ onCreated }) {
             </div>
             <div className="mt-3"><PersonDetailsFields name={f.name} value={details} onChange={setDetails} showWork parts={["photo", "basic"]} /></div>
           </div>
-          <PersonDetailsFields name={f.name} value={details} onChange={setDetails} showWork parts={["work"]} />
+          <PersonDetailsFields name={f.name} value={details} onChange={setDetails} showWork shiftTemplates={templates} parts={["work"]} />
           <details className="rounded-xl border border-slate-200 p-3">
             <summary className="cursor-pointer text-sm font-medium">More details (address, Aadhaar, emergency contact)</summary>
             <div className="mt-3"><PersonDetailsFields name={f.name} value={details} onChange={setDetails} parts={["more"]} /></div>

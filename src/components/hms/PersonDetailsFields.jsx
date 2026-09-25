@@ -8,9 +8,10 @@ import PhoneInput from "./PhoneInput";
 
 export const EMPTY_DETAILS = {
   phone: "", designation: "", joinDate: "", address: "", nativePlace: "", emergencyContact: "", bloodGroup: "", medicalNotes: "", aadhaarNo: "", photoDataUrl: "",
-  employeeId: "", department: "", dutyType: "FIXED", dutyStart: "", dutyEnd: "",
+  employeeId: "", department: "", dutyType: "FIXED", dutyStart: "", dutyEnd: "", workDays: [1, 2, 3, 4, 5, 6],
 };
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const DAY_CHIPS = [["Sun", 0], ["Mon", 1], ["Tue", 2], ["Wed", 3], ["Thu", 4], ["Fri", 5], ["Sat", 6]];
 
 const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
 const label = "block text-xs font-medium text-slate-600";
@@ -38,10 +39,12 @@ export function dutyHoursText(start, end) {
 // Personal details + a face photo. The photo is what the attendance photo is
 // compared with, so ask for a clear front-facing picture. `showWork` adds
 // Employee ID, Department and the working hours (total hours worked out for you).
-export default function PersonDetailsFields({ name, value, onChange, showJoin = true, showDesignation = true, showEmergency = true, showWork = false, showMedical = false, parts }) {
+export default function PersonDetailsFields({ name, value, onChange, showJoin = true, showDesignation = true, showEmergency = true, showWork = false, showMedical = false, shiftTemplates = [], parts }) {
   const on = (k) => (parts ? parts.includes(k) : k !== "work" || showWork);
   const [cam, setCam] = useState(false);
   const set = (k, v) => onChange({ ...value, [k]: v });
+  const days = value.workDays ?? [1, 2, 3, 4, 5, 6];
+  const toggleDay = (d) => set("workDays", days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort());
 
   return (
     <div className="space-y-4">
@@ -58,7 +61,7 @@ export default function PersonDetailsFields({ name, value, onChange, showJoin = 
       {(on("basic") || on("more")) && <div className="grid gap-3 sm:grid-cols-2">
         {on("basic") && showWork && (
           <>
-            <label className={label}>Employee ID<input value={value.employeeId} onChange={(e) => set("employeeId", e.target.value)} placeholder="EMP-014" className={`${input} mt-1`} /><span className={help}>Your own staff number (optional).</span></label>
+            <label className={label}>Employee ID<input value={value.employeeId} onChange={(e) => set("employeeId", e.target.value)} placeholder="Auto-generated (EMP-014)" className={`${input} mt-1`} /><span className={help}>Leave blank to assign the next one automatically.</span></label>
             <label className={label}>Department<input value={value.department} onChange={(e) => set("department", e.target.value)} placeholder="Nursing" className={`${input} mt-1`} /><span className={help}>Where they work.</span></label>
           </>
         )}
@@ -85,6 +88,7 @@ export default function PersonDetailsFields({ name, value, onChange, showJoin = 
       {on("work") && (
         <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
           <p className="text-sm font-semibold">Working hours</p>
+          <p className={help}>Set once here — attendance is checked against this automatically every day, no separate trip to Duty Roster needed.</p>
           <div className="mt-2 grid gap-3 sm:grid-cols-4">
             <div className={label}>Duty Type
               <div className="mt-1 flex overflow-hidden rounded-lg border border-slate-300 text-sm">
@@ -92,11 +96,35 @@ export default function PersonDetailsFields({ name, value, onChange, showJoin = 
                   <button key={k} type="button" onClick={() => set("dutyType", k)} className={`flex-1 px-3 py-1.5 ${value.dutyType === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-white text-slate-500"}`}>{l}</button>
                 ))}
               </div>
-              <span className={help}>{value.dutyType === "SHIFT" ? "Shifts are set on the Duty Roster." : "Same hours every working day."}</span>
+              <span className={help}>{value.dutyType === "SHIFT" ? "Pick a saved shift, or set custom hours below." : "Same hours every working day."}</span>
             </div>
+            {value.dutyType === "SHIFT" && shiftTemplates.length > 0 && (
+              <label className={`${label} sm:col-span-3`}>Shift
+                <select
+                  value=""
+                  onChange={(e) => { const t = shiftTemplates.find((x) => String(x.id) === e.target.value); if (t) onChange({ ...value, dutyStart: t.start, dutyEnd: t.end }); }}
+                  className={`${input} mt-1`}
+                >
+                  <option value="">Choose a saved shift…</option>
+                  {shiftTemplates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.start}–{t.end})</option>)}
+                </select>
+                <span className={help}>Or just fill the hours in directly — that&apos;s all a shift really is.</span>
+              </label>
+            )}
             <label className={label}>Duty Start<input type="time" value={value.dutyStart} onChange={(e) => set("dutyStart", e.target.value)} className={`${input} mt-1`} /><span className={help}>e.g. 09:00 AM</span></label>
             <label className={label}>Duty End<input type="time" value={value.dutyEnd} onChange={(e) => set("dutyEnd", e.target.value)} className={`${input} mt-1`} /><span className={help}>e.g. 05:00 PM</span></label>
             <div className={label}>Total Duty Hours<p className="mt-1 rounded-lg bg-white px-2.5 py-1.5 text-sm font-semibold">{dutyHoursText(value.dutyStart, value.dutyEnd)}</p><span className={help}>Calculated automatically.</span></div>
+          </div>
+          <div className="mt-3">
+            <p className={label}>Working days</p>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {DAY_CHIPS.map(([l, d]) => (
+                <button key={d} type="button" onClick={() => toggleDay(d)} className={`rounded-full border px-2.5 py-1 text-xs font-medium ${days.includes(d) ? "border-slate-900 bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "border-slate-300 bg-white text-slate-500"}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <span className={help}>Off on the days left unselected.</span>
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 import { apiRoute, json } from "@/lib/apiRoute";
 import { prisma, tenantDb } from "@/lib/prismaClient";
 import { serializeProfile } from "@/lib/staffDetails";
+import { loadWeeklySummaries } from "@/lib/staffSchedule";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +24,13 @@ export const GET = apiRoute("staff:manage", async (_request, { session }) => {
     where: { user_id: { in: users.map((u) => u.id) } },
   });
   const byUser = new Map(profiles.map((p) => [String(p.user_id), p]));
+  // One query for everyone's working days, not one per row — the Directory table shows "Mon–Sat"
+  // next to each person's shift without an N+1 fetch.
+  const weekly = await loadWeeklySummaries(session.tenantId, users.map((u) => u.id));
 
   const staff = users.map((u) => {
     const p = byUser.get(String(u.id));
+    const w = weekly.get(String(u.id));
     return {
       userId: Number(u.id),
       name: u.name,
@@ -34,6 +39,8 @@ export const GET = apiRoute("staff:manage", async (_request, { session }) => {
       active: u.active !== false,
       ...serializeProfile(p),
       medicalNotes: p?.medical_notes ?? null,
+      workDays: w?.days || [],
+      workDaysLabel: w?.label || null,
     };
   });
   return json({ staff });

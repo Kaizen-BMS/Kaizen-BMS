@@ -8,7 +8,9 @@ import { applyDutyFromProfile } from "@/lib/staffSchedule";
 export const dynamic = "force-dynamic";
 
 // medicalNotes is privacy-sensitive: only this admin-gated route ever writes it, and only the admin directory ever reads it.
-const patchSchema = z.object({ ...detailsShape, medicalNotes: z.string().trim().max(2000).optional() }).refine((b) => Object.keys(b).length > 0, { message: "nothing to update" });
+const patchSchema = z
+  .object({ ...detailsShape, medicalNotes: z.string().trim().max(2000).optional(), workDays: z.array(z.coerce.number().int().min(0).max(6)).max(7).optional() })
+  .refine((b) => Object.keys(b).length > 0, { message: "nothing to update" });
 
 // Upsert — most staff won't have a profile row yet until an admin first
 // fills one in.

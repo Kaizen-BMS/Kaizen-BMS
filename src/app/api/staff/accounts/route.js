@@ -34,8 +34,24 @@ const schema = z.object({
   email: z.string().trim().toLowerCase().email().max(191),
   role: z.string().max(40),
   password: z.string().min(8).max(200).optional(),
+  // Which days of the week (0=Sun..6=Sat) the duty hours below apply to — set once, here, instead of
+  // a separate trip to the Duty Roster's weekly-schedule screen just to pick working days.
+  workDays: z.array(z.coerce.number().int().min(0).max(6)).max(7).optional(),
   ...detailsShape,
 });
+
+/** The next free "EMP-###" for this tenant — used whenever the admin leaves Employee ID blank. */
+async function nextEmployeeId(tenantId) {
+  const tid = BigInt(tenantId);
+  const n = (await prisma.staff_profiles.count({ where: { tenant_id: tid } })) + 1;
+  let id = `EMP-${String(n).padStart(3, "0")}`;
+  let bump = n;
+  while (await prisma.staff_profiles.findFirst({ where: { tenant_id: tid, employee_id: id }, select: { id: true } })) {
+    bump += 1;
+    id = `EMP-${String(bump).padStart(3, "0")}`;
+  }
+  return id;
+}
 
 // The admin/owner creates a login for one of their people: name, email, role
 // and a password they set (or leave blank to get a generated one, shown once).
@@ -51,8 +67,9 @@ export const POST = apiRoute("staff:manage", async (request, { session }) => {
     select: { id: true, name: true, email: true, role: true },
   });
   const details = toProfileData(body);
-  if (Object.keys(details).length) await prisma.staff_profiles.create({ data: { tenant_id: BigInt(session.tenantId), user_id: user.id, ...details } });
+  if (!details.employee_id) details.employee_id = await nextEmployeeId(session.tenantId);
+  await prisma.staff_profiles.create({ data: { tenant_id: BigInt(session.tenantId), user_id: user.id, ...details } });
   await logHistory(session.tenantId, user.id, "STAFF_ADDED", `${body.name} added as ${body.role}`, session.userId);
   await applyDutyFromProfile(session.tenantId, user.id, body, session.userId);
-  return json({ account: { id: Number(user.id), name: user.name, email: user.email, role: user.role }, ...(body.password ? {} : { tempPassword: pw }) }, 201);
+  return json({ account: { id: Number(user.id), name: user.name, email: user.email, role: user.role, employeeId: details.employee_id }, ...(body.password ? {} : { tempPassword: pw }) }, 201);
 });

@@ -64,6 +64,7 @@ function DirectoryTab({ ownUserId }) {
   const [msg, setMsg] = useState("");
   const [editing, setEditing] = useState(null); // staff row being edited
   const [form, setForm] = useState(EMPTY_DETAILS);
+  const [templates, setTemplates] = useState([]);
   const [busy, setBusy] = useState(false);
   const [zoom, setZoom] = useState(null);
   const [onlyNoPhoto, setOnlyNoPhoto] = useState(false);
@@ -75,6 +76,7 @@ function DirectoryTab({ ownUserId }) {
 
   useEffect(() => {
     load().catch((e) => setMsg(e.message));
+    apiGet("/api/staff/shift-templates").then((d) => setTemplates(d.templates.filter((t) => t.active))).catch(() => {});
   }, []);
 
   async function toggleActive(s) {
@@ -93,6 +95,7 @@ function DirectoryTab({ ownUserId }) {
       phone: s.phone || "", designation: s.designation || "", joinDate: s.joinDate ? s.joinDate.slice(0, 10) : "", address: s.address || "",
       nativePlace: s.nativePlace || "", emergencyContact: s.emergencyContact || "", bloodGroup: s.bloodGroup || "", medicalNotes: s.medicalNotes || "", aadhaarNo: s.aadhaarNo || "", photoDataUrl: "", photo: s.photo || "",
       employeeId: s.employeeId || "", department: s.department || "", dutyType: s.dutyType || "FIXED", dutyStart: s.dutyStart || "", dutyEnd: s.dutyEnd || "",
+      workDays: s.workDays?.length ? s.workDays : [1, 2, 3, 4, 5, 6],
     });
   }
 
@@ -131,7 +134,8 @@ function DirectoryTab({ ownUserId }) {
               <th className="px-3 py-2">Role</th>
               <th className="px-3 py-2">Department</th>
               <th className="px-3 py-2">Phone</th>
-              <th className="px-3 py-2">Duty</th>
+              <th className="px-3 py-2">Shift</th>
+              <th className="px-3 py-2">Health</th>
               <th className="px-3 py-2">Joined</th>
               <th className="px-3 py-2" />
             </tr>
@@ -151,18 +155,31 @@ function DirectoryTab({ ownUserId }) {
                 <td className="px-3 py-2 text-slate-500">{s.role}</td>
                 <td className="px-3 py-2 text-slate-600">{s.department || "—"}</td>
                 <td className="px-3 py-2">{s.phone || "—"}</td>
-                <td className="px-3 py-2 text-xs text-slate-600">{s.dutyStart && s.dutyEnd ? `${s.dutyStart}–${s.dutyEnd} · ${hoursText(dutyHours(s.dutyStart, s.dutyEnd))}` : "—"}{!s.photo && <p className="text-amber-600">no photo yet</p>}</td>
+                <td className="px-3 py-2 text-xs text-slate-600">
+                  {s.dutyStart && s.dutyEnd ? `${s.dutyStart}–${s.dutyEnd} · ${hoursText(dutyHours(s.dutyStart, s.dutyEnd))}` : "—"}
+                  {s.workDaysLabel && <span className="block text-slate-400">{s.workDaysLabel}</span>}
+                  {!s.photo && <p className="text-amber-600">no photo yet</p>}
+                </td>
+                <td className="px-3 py-2 text-xs">
+                  <span className="flex items-center gap-1.5">
+                    {s.bloodGroup && <span className="rounded-full bg-red-50 px-1.5 py-0.5 font-medium text-red-700">{s.bloodGroup}</span>}
+                    {s.medicalNotes && <span title="Has medical notes on file — see Details" className="cursor-default text-amber-600" onClick={() => startEdit(s)}>⚕</span>}
+                    {!s.bloodGroup && !s.medicalNotes && "—"}
+                  </span>
+                </td>
                 <td className="px-3 py-2 tabular-nums">{fmtDDMMYY(s.joinDate)}</td>
                 <td className="px-3 py-2">
-                  <button onClick={() => startEdit(s)} className={`mr-3 text-xs underline ${s.photo ? "text-slate-600" : "font-semibold text-amber-700"} hover:text-slate-900`}>{s.photo ? "Details & photo" : "Add photo & details"}</button>
-                  <a href={`/print/staff-card/${s.userId}`} target="_blank" rel="noreferrer" className="mr-3 text-xs text-slate-600 underline hover:text-slate-900">Print card</a>
-                  <ResetPasswordButton userId={s.userId} name={s.name} />
-                  {s.role !== "HOSPITAL_ADMIN" && <AccessButton userId={s.userId} name={s.name} />}
-                  {s.userId !== ownUserId && (
-                    <button onClick={() => toggleActive(s)} className={`ml-3 text-xs underline ${s.active ? "text-red-600" : "text-emerald-700"}`}>
-                      {s.active ? "Switch off" : "Switch on"}
-                    </button>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={() => startEdit(s)} className={`text-xs underline ${s.photo ? "text-slate-600" : "font-semibold text-amber-700"} hover:text-slate-900`}>{s.photo ? "Details & photo" : "Add photo & details"}</button>
+                    <a href={`/print/staff-card/${s.userId}`} target="_blank" rel="noreferrer" className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">🪪 Staff card</a>
+                    <ResetPasswordButton userId={s.userId} name={s.name} />
+                    {s.role !== "HOSPITAL_ADMIN" && <AccessButton userId={s.userId} name={s.name} />}
+                    {s.userId !== ownUserId && (
+                      <button onClick={() => toggleActive(s)} className={`text-xs underline ${s.active ? "text-red-600" : "text-emerald-700"}`}>
+                        {s.active ? "Switch off" : "Switch on"}
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -174,7 +191,7 @@ function DirectoryTab({ ownUserId }) {
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setEditing(null)}>
           <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <p className="mb-3 text-sm font-semibold">{editing.name} — details</p>
-            <PersonDetailsFields name={editing.name} value={form} onChange={setForm} showWork showMedical />
+            <PersonDetailsFields name={editing.name} value={form} onChange={setForm} showWork showMedical shiftTemplates={templates} />
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setEditing(null)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
               <button onClick={save} disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Save</button>

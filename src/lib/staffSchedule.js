@@ -113,20 +113,61 @@ async function saveWeeklySchedule(tenantId, userId, days) {
   });
 }
 
-/** A fixed duty ("09:00–17:00") becomes Mon–Sat on duty, Sunday off — configured once. */
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5, 6]; // Mon–Sat, the product's long-standing default
+
+/** A duty ("09:00–17:00") on exactly the given days of the week (0=Sun..6=Sat), off the rest. */
 function fixedWeek(start, end) {
   return [0, 1, 2, 3, 4, 5, 6].map((dow) => ({ dow, start, end, off: dow === 0 }));
 }
-
-/**
- * Called when a person's profile gets duty hours: a FIXED duty becomes their weekly
- * schedule (Mon–Sat on duty, Sunday off) so nobody re-enters hours day by day.
- * A SHIFT worker's schedule is set on the Duty Roster (shift templates / roster).
- */
-async function applyDutyFromProfile(tenantId, userId, body, actorId) {
-  if ((body.dutyType || "FIXED") !== "FIXED" || !body.dutyStart || !body.dutyEnd) return;
-  await saveWeeklySchedule(tenantId, userId, fixedWeek(body.dutyStart, body.dutyEnd));
-  await logHistory(tenantId, userId, "DUTY_CHANGED", `Fixed duty ${body.dutyStart}–${body.dutyEnd} (Mon–Sat)`, actorId);
+function customWeek(start, end, workDays) {
+  const set = new Set(workDays);
+  return [0, 1, 2, 3, 4, 5, 6].map((dow) => (set.has(dow) ? { dow, start, end, off: false } : { dow, off: true }));
 }
 
-module.exports = { ddmmyy, applyDutyFromProfile, OFFSET_MIN, timeMin, localMin, hhmm, dateKey, dowOf, makeShift, loadScheduleResolver, dayMetrics, logHistory, saveWeeklySchedule, fixedWeek };
+/** "Mon–Sat" for a contiguous run, else "Mon Wed Fri" — the compact label the Directory table shows. */
+function workDaysLabel(days) {
+  const sorted = [...days].sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  if (sorted.length === 7) return "Every day";
+  // Contiguous Mon..Sat (or any single unbroken run) reads better as a range.
+  const isRun = sorted.every((d, i) => i === 0 || d === sorted[i - 1] + 1);
+  if (isRun && sorted.length > 2) return `${DAY_SHORT[sorted[0]]}–${DAY_SHORT[sorted[sorted.length - 1]]}`;
+  return sorted.map((d) => DAY_SHORT[d]).join(" ");
+}
+
+/**
+ * Called when a person's profile gets duty hours (Add Staff, or editing their profile later): the
+ * chosen hours + working days become their weekly schedule directly — no separate trip to the Duty
+ * Roster screen just to tell the system which days they work. `workDays` (0=Sun..6=Sat) defaults to
+ * Mon–Sat, this product's existing convention, when the caller doesn't pick specific days.
+ */
+async function applyDutyFromProfile(tenantId, userId, body, actorId) {
+  if (!body.dutyStart || !body.dutyEnd) return;
+  const days = Array.isArray(body.workDays) && body.workDays.length ? [...new Set(body.workDays)] : DEFAULT_WORK_DAYS;
+  await saveWeeklySchedule(tenantId, userId, customWeek(body.dutyStart, body.dutyEnd, days));
+  await logHistory(tenantId, userId, "DUTY_CHANGED", `Duty ${body.dutyStart}–${body.dutyEnd} on ${workDaysLabel(days)}`, actorId);
+}
+
+/** Batch summary for a Directory-style table: { [userId]: { label, days: [0..6] } }, one query, no N+1. */
+async function loadWeeklySummaries(tenantId, userIds) {
+  const rows = await prisma.staff_schedules.findMany({
+    where: { tenant_id: BigInt(tenantId), user_id: { in: userIds.map((id) => BigInt(id)) }, is_off: false },
+    select: { user_id: true, day_of_week: true },
+  });
+  const byUser = new Map();
+  for (const r of rows) {
+    const k = String(r.user_id);
+    if (!byUser.has(k)) byUser.set(k, []);
+    byUser.get(k).push(r.day_of_week);
+  }
+  const out = new Map();
+  for (const [k, days] of byUser) out.set(k, { days, label: workDaysLabel(days) });
+  return out;
+}
+
+module.exports = {
+  ddmmyy, applyDutyFromProfile, OFFSET_MIN, timeMin, localMin, hhmm, dateKey, dowOf, makeShift,
+  loadScheduleResolver, dayMetrics, logHistory, saveWeeklySchedule, fixedWeek, workDaysLabel,
+  loadWeeklySummaries, DAY_SHORT, DEFAULT_WORK_DAYS,
+};
