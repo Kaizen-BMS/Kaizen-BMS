@@ -1,4 +1,4 @@
-import { Playfair_Display, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import "./kaizen.css";
 import ThemeToggle from "@/components/ThemeToggle";
 import ServiceRail from "@/components/ServiceRail";
@@ -10,17 +10,19 @@ import ServiceRail from "@/components/ServiceRail";
 // zero JS, and ThemeToggle resolves the same value on mount.
 const NO_FLASH_THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("kbms-theme");if(t==="dark"||t==="light"){document.currentScript.parentElement.setAttribute("data-theme",t);}}catch(e){}})();`;
 
-const kbmsSerif = Playfair_Display({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
+// Bundled in src/fonts so the build never depends on reaching Google Fonts.
+const kbmsSerif = localFont({
+  src: [
+    { path: "../../fonts/playfair-display-latin-wght-normal.woff2", weight: "400 900", style: "normal" },
+    { path: "../../fonts/playfair-display-latin-wght-italic.woff2", weight: "400 900", style: "italic" },
+  ],
   variable: "--font-kbms-serif",
   display: "swap",
 });
 
-const kbmsSans = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const kbmsSans = localFont({
+  src: "../../fonts/inter-latin-wght-normal.woff2",
+  weight: "100 900",
   variable: "--font-kbms-sans",
   display: "swap",
 });

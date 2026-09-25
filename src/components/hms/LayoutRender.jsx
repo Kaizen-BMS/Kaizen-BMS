@@ -3,7 +3,7 @@ import { PAPER_SIZE, resolveText } from "@/lib/printLayout";
 // Draws a print layout: a paper with positioned pieces. Used by the real
 // print pages and by the designer (which passes pointer handlers so pieces can
 // be dragged) — so the designer shows exactly what prints.
-export default function LayoutRender({ layout, data, items, totals, logo, selectedId, onPointerDownEl, showGuides }) {
+export default function LayoutRender({ layout, data, items, totals, payments, logo, selectedId, onPointerDownEl, showGuides }) {
   const size = PAPER_SIZE[layout.paper];
   const table = layout.elements.find((e) => e.type === "table" && e.visible !== false);
   const below = layout.elements.filter((e) => e.belowTable && e.visible !== false && table);
@@ -103,6 +103,18 @@ export default function LayoutRender({ layout, data, items, totals, logo, select
                 </tfoot>
               )}
             </table>
+            {payments && payments.length > 0 && (
+              <div style={{ marginTop: "4mm" }}>
+                <div style={{ fontWeight: 700, borderBottom: "0.3mm solid #111", padding: "0.8mm 1mm" }}>Payments received</div>
+                {payments.map((p, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: "3mm", padding: "0.9mm 1mm", borderBottom: "0.2mm solid #e5e7eb", color: p.negative ? "#b91c1c" : undefined }}>
+                    <span>{p.when}</span>
+                    <span style={{ flex: 1 }}>{p.label}</span>
+                    <span style={{ fontVariantNumeric: "tabular-nums" }}>{p.negative ? "-" : ""}{money(p.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {below.map((b) => renderText(b, table))}
           </div>
         );

@@ -121,7 +121,7 @@ const PRESETS = {
       build: () => [
         T({ x: 8, y: 6, w: 100, text: "Invoice", fontSize: 24 }),
         LOGO({ x: 152, y: 8, w: 50, h: 40 }),
-        T({ x: 8, y: 54, w: 190, text: "{facility} · {address} · {phone}", fontSize: 9, color: "#777777" }),
+        T({ x: 8, y: 54, w: 190, text: "{facility}\n{address}   {phone}", fontSize: 9, color: "#777777" }),
         T({ x: 8, y: 64, w: 90, text: "BILL TO", fontSize: 10, bold: true }),
         T({ x: 8, y: 70, w: 90, text: "{bill_to}\n{bill_to_phone}", fontSize: 10 }),
         T({ x: 130, y: 66, w: 40, text: "Invoice No.:\nIssue date:\nStatus:", fontSize: 9 }),

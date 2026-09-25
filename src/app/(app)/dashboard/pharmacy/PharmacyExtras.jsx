@@ -5,6 +5,7 @@ import { apiGet, apiSend } from "@/components/hms/api";
 import { fmtDDMMYY, fmtDDMMYYTime } from "@/lib/dateFormat";
 import BarcodeScanner from "@/components/hms/BarcodeScanner";
 import PhoneInput from "@/components/hms/PhoneInput";
+import MedicineInput from "@/components/hms/MedicineInput";
 import { phoneDigitsInfo } from "@/lib/phone";
 export { MedicinesTab } from "./MedicinesTab";
 export { GrnTab } from "./GrnTab";
@@ -167,7 +168,7 @@ function AddMedicineInline({ billId, onDone, onCancel }) {
 
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-      <input placeholder="Search medicine…" value={q} onChange={(e) => setQ(e.target.value)} className={`${input} w-full bg-white`} />
+      <MedicineInput value={q} onChange={setQ} onPick={(it) => { setCart((c) => (c.some((x) => x.medicineId === it.id) ? c.map((x) => (x.medicineId === it.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: it.id, name: it.name, quantity: 1 }])); setQ(""); }} placeholder="Type medicine name…" className={`${input} w-full bg-white`} />
       <div className="grid max-h-40 gap-1 overflow-auto sm:grid-cols-2">
         {shown.map((m) => (
           <button key={m.id} type="button" onClick={() => setCart((c) => (c.some((x) => x.medicineId === m.id) ? c.map((x) => (x.medicineId === m.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: m.id, name: m.name, quantity: 1 }]))} className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2 py-1 text-left text-xs hover:border-slate-400">
@@ -306,7 +307,9 @@ export function SellTab({ onError }) {
         )}
         <p className="pt-2 text-sm font-semibold">Medicines</p>
         <div className="flex gap-1">
-          <input placeholder="Search or type a barcode" value={q} onChange={(e) => setQ(e.target.value)} className={`${input} flex-1`} />
+          <div className="flex-1">
+            <MedicineInput value={q} onChange={setQ} onPick={(it) => { addToCart({ id: it.id, name: it.name }); setQ(""); }} placeholder="Type medicine name, salt or barcode…" className={`${input} w-full`} />
+          </div>
           <button type="button" onClick={() => setScanning(true)} className="rounded-lg border border-slate-300 px-3 text-xs">📷 Scan</button>
         </div>
         {scanning && (

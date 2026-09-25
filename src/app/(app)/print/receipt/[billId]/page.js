@@ -72,10 +72,24 @@ export default async function ReceiptPrintPage({ params }) {
     balance: fmt(balance),
     currency: "₹",
   };
+  // The server runs in UTC; receipts show the facility's own clock.
+  const offsetMs = Number(process.env.FACILITY_UTC_OFFSET_MIN ?? 330) * 60000;
+  const when = (d) => {
+    const x = new Date(new Date(d).getTime() + offsetMs);
+    const h = x.getUTCHours();
+    return `${fmtDDMMYY(x.toISOString().slice(0, 10))} ${String(h % 12 || 12).padStart(2, "0")}:${String(x.getUTCMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+  };
+  const MODE = { CASH: "Cash", CARD: "Card", UPI: "UPI", BANK: "Bank", OTHER: "Other" };
+  const payments = [
+    ...row.payments.map((p) => ({ at: p.paid_at, when: when(p.paid_at), label: MODE[p.mode] || p.mode, amount: Number(p.amount) })),
+    ...row.refunds.map((r) => ({ at: r.refunded_at, when: when(r.refunded_at), label: "Refund", amount: Number(r.amount), negative: true })),
+  ].sort((a, b) => new Date(a.at) - new Date(b.at));
+  const expShort = (d) => (d ? `${String(new Date(d).getUTCMonth() + 1).padStart(2, "0")}/${String(new Date(d).getUTCFullYear()).slice(2)}` : "");
   const items = row.bill_items.map((it) => {
     const qty = it.quantity ? Number(it.quantity) : 1;
     const amount = Number(it.amount);
-    return { description: it.description, qty, unit: it.unit_price ? Number(it.unit_price) : amount / qty, amount };
+    const extra = it.batch_number ? ` · Batch ${it.batch_number}${it.expiry_date ? ` · Exp ${expShort(it.expiry_date)}` : ""}` : "";
+    return { description: `${it.description.replace(/ \(Batch [^)]*\)$/, "")}${extra}`, qty, unit: it.unit_price ? Number(it.unit_price) : amount / qty, amount };
   });
   const totals = { subtotal: itemsTotal, discount: discountTotal, total: netDue, paid: Math.max(paidTotal - refundTotal, 0), balance };
   const pageSize = layout.paper.startsWith("THERMAL") ? `${paper.width} ${layout.h}mm` : paper.page;
@@ -84,7 +98,7 @@ export default async function ReceiptPrintPage({ params }) {
     <div className="p-4 print:p-0">
       <style>{`@page { size: ${pageSize}; margin: 0; }`}</style>
       <PrintButton />
-      <LayoutRender layout={layout} data={data} items={items} totals={totals} logo={branding.header.logo_url} />
+      <LayoutRender layout={layout} data={data} items={items} totals={totals} payments={payments} logo={branding.header.logo_url} />
     </div>
   );
 }
