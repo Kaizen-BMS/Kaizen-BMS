@@ -6,6 +6,7 @@ import { fmtDDMMYY } from "@/lib/dateFormat";
 import MedicineInput from "@/components/hms/MedicineInput";
 import DateInput from "@/components/hms/DateInput";
 import PriceFields, { EMPTY_PRICE } from "@/components/hms/PriceFields";
+import { tabletsFromPack } from "@/lib/pharmacyPricing";
 
 const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
 const lab = "block text-xs font-medium text-slate-600";
@@ -13,7 +14,7 @@ const help = "mt-0.5 block text-[11px] leading-tight text-slate-400";
 
 const emptyLine = () => ({
   quantity: "", medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "",
-  freeQuantity: "0", damagedQuantity: "0", rejectedQuantity: "0", gstRate: "0", unit: "", purchaseUnit: "", unitsPerPurchase: 1, inPurchaseUnit: false, ...EMPTY_PRICE,
+  freeQuantity: "0", damagedQuantity: "0", rejectedQuantity: "0", gstRate: "0", unit: "", packSize: "", purchaseUnit: "", unitsPerPurchase: 1, inPurchaseUnit: false, ...EMPTY_PRICE,
 });
 
 // Goods Received: what physically arrived. Each line reads
@@ -139,7 +140,7 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                 </div>
                 <div className={lab}>Medicine
                   <div className="mt-1">
-                    <MedicineInput value={l.medicineText} onChange={(t) => setLine(i, { medicineText: t, medicineId: "" })} onPick={(it) => setLine(i, { medicineId: String(it.id), medicineText: it.name, unit: it.unit || "", purchaseUnit: it.purchaseUnit || "", unitsPerPurchase: it.unitsPerPurchase || 1, inPurchaseUnit: (it.unitsPerPurchase || 1) > 1 })} placeholder="Cap Betadine 500 mg" className={input} />
+                    <MedicineInput value={l.medicineText} onChange={(t) => setLine(i, { medicineText: t, medicineId: "" })} onPick={(it) => setLine(i, { medicineId: String(it.id), medicineText: it.name, unit: it.unit || "", packSize: it.packSize || "", purchaseUnit: it.purchaseUnit || "", unitsPerPurchase: it.unitsPerPurchase || 1, inPurchaseUnit: (it.unitsPerPurchase || 1) > 1 })} placeholder="Cap Betadine 500 mg" className={input} />
                   </div>
                   <span className={help}>Start typing and pick.</span>
                 </div>
@@ -155,7 +156,7 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                   <DateInput value={l.expiryDate} onChange={(v) => setLine(i, { expiryDate: v })} className={`${input} mt-1`} />
                   <span className={help}>Expiry date on the pack.</span>
                 </div>
-                <PriceFields value={l} onChange={(p) => setLine(i, p)} />
+                <PriceFields value={l} onChange={(p) => setLine(i, p)} quantity={l.quantity} unitName={(l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.purchaseUnit : l.unit || "unit").toLowerCase()} tabletsPerUnit={tabletsFromPack(l.packSize) ? tabletsFromPack(l.packSize) * (l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.unitsPerPurchase : 1) : null} />
               </div>
               <details className="mt-3 text-xs text-slate-500">
                 <summary className="cursor-pointer select-none">More options (free units, damaged, rejected, GST)</summary>

@@ -5,7 +5,7 @@ import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import { fmtDDMMYY } from "@/lib/dateFormat";
 import { MEDICINE_TYPES } from "@/lib/medicineTypes";
-import { marginFromSelling } from "@/lib/pharmacyPricing";
+import { marginFromSelling, tabletsFromPack } from "@/lib/pharmacyPricing";
 import MedicineInput from "@/components/hms/MedicineInput";
 import DateInput from "@/components/hms/DateInput";
 import PriceFields, { EMPTY_PRICE } from "@/components/hms/PriceFields";
@@ -161,7 +161,7 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
               <div className={label}>
                 Medicine
                 <div className="mt-1">
-                  <MedicineInput value={form.medicineText} onChange={(t) => setForm((f) => ({ ...f, medicineText: t, medicineId: "" }))} onPick={(it) => setForm((f) => ({ ...f, medicineId: String(it.id), medicineText: it.name }))} placeholder="Cap Betadine 500 mg" className={input} />
+                  <MedicineInput value={form.medicineText} onChange={(t) => setForm((f) => ({ ...f, medicineText: t, medicineId: "" }))} onPick={(it) => setForm((f) => ({ ...f, medicineId: String(it.id), medicineText: it.name, packSize: it.packSize || "", unit: it.unit || "" }))} placeholder="Cap Betadine 500 mg" className={input} />
                 </div>
                 <span className={help}>Start typing — pick from the list.</span>
               </div>
@@ -177,7 +177,7 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                 <DateInput value={form.expiryDate} onChange={(v) => setForm((f) => ({ ...f, expiryDate: v }))} className={`${input} mt-1`} />
                 <span className={help}>Expiry date printed on the pack.</span>
               </div>
-              <PriceFields value={form} onChange={(p) => setForm((f) => ({ ...f, ...p }))} />
+              <PriceFields value={form} onChange={(p) => setForm((f) => ({ ...f, ...p }))} quantity={form.quantity} unitName={(form.unit || "unit").toLowerCase()} tabletsPerUnit={tabletsFromPack(form.packSize)} />
               <label className={label}>Location
                 <input placeholder="Rack A - Shelf 3" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={`${input} mt-1`} />
                 <span className={help}>Where it is kept (optional).</span>
