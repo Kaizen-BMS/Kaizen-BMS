@@ -8,6 +8,7 @@ import { emitToTenant } from "@/lib/realtime";
 import { requireDoctor, doctorName, expectedTimeNow } from "@/lib/opdDoctors";
 import { resolveTokenNumber, createVisitWithToken, logTokenOverride } from "@/lib/tokenOverride";
 import { insuranceInputSchema, upsertPatientInsurance, serializeInsurance } from "@/lib/patientInsurance";
+import { normalizeIndianPhone } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,10 @@ const createSchema = z.object({
   name: z.string().trim().min(1).max(191),
   age: z.coerce.number().int().min(0).max(150),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional().or(z.literal("")),
-  phone: z.string().trim().min(3).max(32),
+  // Normalized to a clean 10-digit form when it's a genuine Indian mobile number (what the
+  // registration screen's own PhoneInput always sends); anything else — a landline, a foreign
+  // number already in use somewhere — is kept as typed rather than rejected outright.
+  phone: z.string().trim().min(3).max(32).transform((v) => normalizeIndianPhone(v) ?? v),
   // Optional — see forms.js's PATIENT_REGISTRATION core fields comment.
   email: z.string().trim().toLowerCase().email().max(191).optional().or(z.literal("")),
   reason: z.string().trim().max(500).optional().default(""),

@@ -4,11 +4,13 @@ import { useState } from "react";
 import CameraCapture from "./CameraCapture";
 import Avatar from "./Avatar";
 import DateInput from "./DateInput";
+import PhoneInput from "./PhoneInput";
 
 export const EMPTY_DETAILS = {
-  phone: "", designation: "", joinDate: "", address: "", nativePlace: "", emergencyContact: "", aadhaarNo: "", photoDataUrl: "",
+  phone: "", designation: "", joinDate: "", address: "", nativePlace: "", emergencyContact: "", bloodGroup: "", aadhaarNo: "", photoDataUrl: "",
   employeeId: "", department: "", dutyType: "FIXED", dutyStart: "", dutyEnd: "",
 };
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
 const label = "block text-xs font-medium text-slate-600";
@@ -60,13 +62,19 @@ export default function PersonDetailsFields({ name, value, onChange, showJoin = 
             <label className={label}>Department<input value={value.department} onChange={(e) => set("department", e.target.value)} placeholder="Nursing" className={`${input} mt-1`} /><span className={help}>Where they work.</span></label>
           </>
         )}
-        {on("basic") && <label className={label}>Phone<input value={value.phone} onChange={(e) => set("phone", e.target.value)} placeholder="98xxxxxxxx" className={`${input} mt-1`} /></label>}
+        {on("basic") && <PhoneInput label="Phone" value={value.phone} onChange={(v) => set("phone", v)} />}
         {on("basic") && showJoin && <div className={label}>Joining date<DateInput value={value.joinDate} onChange={(v) => set("joinDate", v)} className={`${input} mt-1`} /><span className={help}>DD/MM/YY</span></div>}
         {on("basic") && showDesignation && <label className={label}>Designation<input value={value.designation} onChange={(e) => set("designation", e.target.value)} placeholder="Senior Nurse" className={`${input} mt-1`} /></label>}
         {on("more") && <><label className={label}>Aadhaar number<input value={value.aadhaarNo} onChange={(e) => set("aadhaarNo", e.target.value)} inputMode="numeric" placeholder="12 digits" maxLength={14} className={`${input} mt-1`} /></label>
         <label className={`${label} sm:col-span-2`}>Address<input value={value.address} onChange={(e) => set("address", e.target.value)} className={`${input} mt-1`} /></label>
         <label className={label}>Native place / from where<input value={value.nativePlace} onChange={(e) => set("nativePlace", e.target.value)} className={`${input} mt-1`} /></label>
-        {showEmergency && <label className={label}>Emergency contact<input value={value.emergencyContact} onChange={(e) => set("emergencyContact", e.target.value)} className={`${input} mt-1`} /></label>}</>}
+        {showEmergency && <label className={label}>Emergency contact<input value={value.emergencyContact} onChange={(e) => set("emergencyContact", e.target.value)} placeholder="Name and phone" className={`${input} mt-1`} /></label>}
+        <label className={label}>Blood group
+          <select value={value.bloodGroup} onChange={(e) => set("bloodGroup", e.target.value)} className={`${input} mt-1`}>
+            <option value="">—</option>
+            {BLOOD_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </label></>}
       </div>}
       {on("work") && (
         <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">

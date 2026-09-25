@@ -53,6 +53,22 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
   const [ok, setOk] = useState("");
   const [open, setOpen] = useState(null);
   const [adjustForm, setAdjustForm] = useState({ delta: "", reason: "", category: "OTHER" });
+  const [priceForm, setPriceForm] = useState({ stockId: null, mrp: "", sellingRate: "", all: true });
+  async function savePrice(r) {
+    setBusy(true);
+    onError("");
+    try {
+      if (Number(priceForm.sellingRate) > Number(priceForm.mrp)) throw new Error("selling_price_above_mrp");
+      const res = await apiSend(`/api/pharmacy/stock/${r.stockId}/price`, "PATCH", { mrp: Number(priceForm.mrp), sellingRate: Number(priceForm.sellingRate), applyToMedicine: priceForm.all });
+      setOk(`Price updated on ${res.updated} batch${res.updated === 1 ? "" : "es"}.`);
+      setPriceForm({ stockId: null, mrp: "", sellingRate: "", all: true });
+      await load();
+    } catch (err) {
+      onError(err.message === "selling_price_above_mrp" ? "Selling price cannot be more than MRP." : `Could not change the price (${err.message}).`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // A slow earlier search must never overwrite a later one.
   const genRef = useRef(0);
@@ -231,6 +247,23 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                             </label>
                           )}
                         </div>
+                        {canAdjust && (
+                          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-200 pt-3">
+                            <span className="w-full font-medium text-slate-500">Change price</span>
+                            {priceForm.stockId === r.stockId ? (
+                              <>
+                                <label>MRP (₹)<input type="number" min="0" step="0.01" value={priceForm.mrp} onChange={(e) => setPriceForm((s) => ({ ...s, mrp: e.target.value }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+                                <label>Selling price (₹)<input type="number" min="0" step="0.01" value={priceForm.sellingRate} onChange={(e) => setPriceForm((s) => ({ ...s, sellingRate: e.target.value }))} className={`mt-1 block w-28 rounded-md border px-2 py-1 ${Number(priceForm.sellingRate) > Number(priceForm.mrp) ? "border-red-400 bg-red-50" : "border-slate-300"}`} /></label>
+                                <label className="flex items-center gap-1.5 pb-1.5"><input type="checkbox" checked={priceForm.all} onChange={(e) => setPriceForm((s) => ({ ...s, all: e.target.checked }))} />Apply to all batches of this medicine</label>
+                                <button onClick={() => savePrice(r)} disabled={busy || !priceForm.mrp || !priceForm.sellingRate} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Save price</button>
+                                <button onClick={() => setPriceForm({ stockId: null, mrp: "", sellingRate: "", all: true })} className="px-2 py-1.5 text-slate-500">Cancel</button>
+                                {r.purchaseRate != null && Number(priceForm.sellingRate) > 0 && <span className="pb-1.5 text-slate-400">Margin {rupee(Number(priceForm.sellingRate) - Number(r.purchaseRate))} on purchase {rupee(r.purchaseRate)}</span>}
+                              </>
+                            ) : (
+                              <button onClick={() => setPriceForm({ stockId: r.stockId, mrp: String(r.mrp ?? ""), sellingRate: String(r.sellingRate ?? r.mrp ?? ""), all: true })} className="rounded-md border border-slate-300 px-3 py-1.5 font-medium hover:bg-white">MRP {rupee(r.mrp)} · Selling {rupee(r.sellingRate ?? r.mrp)} — Change</button>
+                            )}
+                          </div>
+                        )}
                         {canAdjust && (
                           <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-200 pt-3">
                             <label>± Quantity<input type="number" value={adjustForm.delta} onChange={(e) => setAdjustForm((s) => ({ ...s, delta: e.target.value }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>

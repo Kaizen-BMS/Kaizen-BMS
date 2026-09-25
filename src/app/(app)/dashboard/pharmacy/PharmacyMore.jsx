@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
+import PhoneInput from "@/components/hms/PhoneInput";
 
 const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
 const lab = "block text-xs font-medium text-slate-600";
@@ -60,7 +61,7 @@ export function SuppliersTab({ canManage, onError }) {
               <label className={lab}>Supplier Name<input required placeholder="Sharma Medical Agency" value={f.name} onChange={set("name")} className={`${input} mt-1`} /><span className={help}>How you know them.</span></label>
               <label className={lab}>Company Name<input placeholder="Sharma Pharma Pvt Ltd" value={f.companyName} onChange={set("companyName")} className={`${input} mt-1`} /></label>
               <label className={lab}>Contact Person<input placeholder="Rakesh Sharma" value={f.contactPerson} onChange={set("contactPerson")} className={`${input} mt-1`} /></label>
-              <label className={lab}>Phone<input placeholder="98xxxxxxxx" value={f.phone} onChange={set("phone")} className={`${input} mt-1`} /></label>
+              <PhoneInput label="Phone" value={f.phone} onChange={(v) => setF((s) => ({ ...s, phone: v }))} />
               <label className={lab}>Email<input type="email" placeholder="orders@supplier.com" value={f.email} onChange={set("email")} className={`${input} mt-1`} /></label>
               <label className={lab}>GSTIN<input placeholder="22AAAAA0000A1Z5" value={f.gstin} onChange={set("gstin")} className={`${input} mt-1`} /><span className={help}>Their GST number (optional).</span></label>
               <label className={lab}>Drug Licence No.<input placeholder="DL-12345" value={f.drugLicenceNo} onChange={set("drugLicenceNo")} className={`${input} mt-1`} /></label>

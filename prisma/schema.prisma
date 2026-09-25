@@ -934,6 +934,7 @@ model staff_profiles {
   native_place      String?
   aadhaar_no        String?                  @db.VarChar(20)
   emergency_contact String?                  @db.VarChar(64)
+  blood_group       String?                  @db.VarChar(5)
   photo_url         String?                  @db.MediumText
   employee_id       String?                  @db.VarChar(40)
   department        String?                  @db.VarChar(100)

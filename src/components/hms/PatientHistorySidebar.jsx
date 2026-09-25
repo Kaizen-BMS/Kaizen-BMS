@@ -49,13 +49,21 @@ export default function PatientHistorySidebar({ patientId, currentVisitId, onUse
         </div>
       )}
       {past.length === 0 && <p className="text-sm text-slate-400">First visit — no earlier records.</p>}
+      {/* Only the most recent visit opens by default — everything older stays collapsed until
+          the doctor deliberately expands it, so the panel doesn't dump the whole chart at once. */}
       <ol className="space-y-2.5">
-        {past.map((v) => (
-          <li key={v.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs">
-            <p className="flex items-center justify-between font-semibold text-slate-700">
-              <span>{fmtDDMMYY(v.date)}</span>
+        {past.map((v, i) => (
+          <li key={v.id}>
+          <details open={i === 0} className="group rounded-xl border border-slate-200 bg-slate-50/60 text-xs [&_summary::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-3 font-semibold text-slate-700">
+              <span className="flex items-center gap-1.5">
+                <span className="text-slate-400 transition group-open:rotate-90">▶</span>
+                {fmtDDMMYY(v.date)}
+                {i === 0 && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700">Latest</span>}
+              </span>
               <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium uppercase text-slate-500">{String(v.type || "").replace("_", " ").toLowerCase()}</span>
-            </p>
+            </summary>
+            <div className="px-3 pb-3">
             {v.reason && <p className="mt-1 text-slate-500">Reason: {v.reason}</p>}
             {data.clinical && (
               <div className="mt-1.5 space-y-1.5">
@@ -95,6 +103,8 @@ export default function PatientHistorySidebar({ patientId, currentVisitId, onUse
                 )}
               </div>
             )}
+            </div>
+          </details>
           </li>
         ))}
       </ol>

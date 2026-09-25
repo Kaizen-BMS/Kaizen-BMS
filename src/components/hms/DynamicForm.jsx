@@ -1,5 +1,7 @@
 "use client";
 
+import PhoneInput from "./PhoneInput";
+
 const INPUT =
   "w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900";
 
@@ -18,7 +20,9 @@ export default function DynamicForm({ fields, values, onChange, idPrefix = "f" }
         const set = (v) => onChange(f.fieldName, v);
 
         let control;
-        if (f.type === "textarea") {
+        if (f.type === "phone") {
+          control = <PhoneInput label="" value={val} onChange={set} required={f.required} />;
+        } else if (f.type === "textarea") {
           control = (
             <textarea
               id={id}

@@ -1,13 +1,14 @@
 "use strict";
 
 const { z } = require("zod");
+const { normalizeIndianPhone } = require("./phone");
 const opt = (n) => z.string().trim().max(n).optional().or(z.literal(""));
 
 const supplierInputSchema = z.object({
   name: z.string().trim().min(1).max(191),
   companyName: opt(191),
   contactPerson: opt(191),
-  phone: opt(32),
+  phone: opt(32).transform((v) => (v ? normalizeIndianPhone(v) ?? v : v)),
   email: opt(191),
   address: opt(500),
   gstin: opt(20),

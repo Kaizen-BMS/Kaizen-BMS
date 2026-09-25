@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiSend } from "./api";
 import { usePrintSettings, openSlip } from "./usePrintSettings";
+import PhoneInput from "./PhoneInput";
 
 const EMPTY = { name: "", age: "", gender: "", phone: "", reason: "", fee: "", mode: "CASH" };
 
@@ -83,7 +84,7 @@ export default function QuickRegister({ canCollectFee, onClose }) {
             <div className="grid grid-cols-3 gap-2">
               <input required type="number" min="0" max="150" placeholder="Age" value={f.age} onChange={set("age")} className={input} />
               <select value={f.gender} onChange={set("gender")} className={input}><option value="">Gender</option><option value="MALE">Male</option><option value="FEMALE">Female</option><option value="OTHER">Other</option></select>
-              <input required placeholder="Phone" value={f.phone} onChange={set("phone")} className={input} />
+              <PhoneInput label="" value={f.phone} onChange={(v) => setF((s) => ({ ...s, phone: v }))} required />
             </div>
             <input placeholder="Reason for visit" value={f.reason} onChange={set("reason")} className={input} />
             {canCollectFee && (

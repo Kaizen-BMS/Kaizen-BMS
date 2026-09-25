@@ -1,16 +1,20 @@
 import { z } from "zod";
+import { normalizeIndianPhone } from "./phone";
 
 const opt = (n) => z.string().trim().max(n).optional().or(z.literal(""));
 
 // Everything we keep about a person besides their login: used for records and
 // to match the face in the attendance photo against the profile photo.
 export const detailsShape = {
-  phone: opt(32),
+  // Normalized to a clean 10-digit form when it's a genuine Indian mobile (what the staff
+  // screen's own PhoneInput always sends); anything unusual already on file is kept as-is.
+  phone: opt(32).transform((v) => (v ? normalizeIndianPhone(v) ?? v : v)),
   designation: opt(100),
   joinDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal("")),
   address: opt(500),
   nativePlace: opt(191),
   emergencyContact: opt(64),
+  bloodGroup: z.enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]).optional().or(z.literal("")),
   aadhaarNo: z.string().trim().regex(/^[0-9 ]{12,14}$/, "aadhaar must be 12 digits").optional().or(z.literal("")),
   employeeId: opt(40),
   department: opt(100),
@@ -29,6 +33,7 @@ export function toProfileData(b) {
   if (b.address !== undefined) d.address = b.address || null;
   if (b.nativePlace !== undefined) d.native_place = b.nativePlace || null;
   if (b.emergencyContact !== undefined) d.emergency_contact = b.emergencyContact || null;
+  if (b.bloodGroup !== undefined) d.blood_group = b.bloodGroup || null;
   if (b.aadhaarNo !== undefined) d.aadhaar_no = b.aadhaarNo ? b.aadhaarNo.replace(/\s+/g, "") : null;
   if (b.employeeId !== undefined) d.employee_id = b.employeeId || null;
   if (b.department !== undefined) d.department = b.department || null;
@@ -47,6 +52,7 @@ export function serializeProfile(p) {
     address: p?.address ?? null,
     nativePlace: p?.native_place ?? null,
     emergencyContact: p?.emergency_contact ?? null,
+    bloodGroup: p?.blood_group ?? null,
     aadhaarNo: p?.aadhaar_no ?? null,
     photo: p?.photo_url ?? null,
     employeeId: p?.employee_id ?? null,

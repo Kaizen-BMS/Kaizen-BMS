@@ -91,7 +91,7 @@ function DirectoryTab({ ownUserId }) {
     setEditing(s);
     setForm({
       phone: s.phone || "", designation: s.designation || "", joinDate: s.joinDate ? s.joinDate.slice(0, 10) : "", address: s.address || "",
-      nativePlace: s.nativePlace || "", emergencyContact: s.emergencyContact || "", aadhaarNo: s.aadhaarNo || "", photoDataUrl: "", photo: s.photo || "",
+      nativePlace: s.nativePlace || "", emergencyContact: s.emergencyContact || "", bloodGroup: s.bloodGroup || "", aadhaarNo: s.aadhaarNo || "", photoDataUrl: "", photo: s.photo || "",
       employeeId: s.employeeId || "", department: s.department || "", dutyType: s.dutyType || "FIXED", dutyStart: s.dutyStart || "", dutyEnd: s.dutyEnd || "",
     });
   }
@@ -155,6 +155,7 @@ function DirectoryTab({ ownUserId }) {
                 <td className="px-3 py-2 tabular-nums">{fmtDDMMYY(s.joinDate)}</td>
                 <td className="px-3 py-2">
                   <button onClick={() => startEdit(s)} className={`mr-3 text-xs underline ${s.photo ? "text-slate-600" : "font-semibold text-amber-700"} hover:text-slate-900`}>{s.photo ? "Details & photo" : "Add photo & details"}</button>
+                  <a href={`/print/staff-card/${s.userId}`} target="_blank" rel="noreferrer" className="mr-3 text-xs text-slate-600 underline hover:text-slate-900">Print card</a>
                   <ResetPasswordButton userId={s.userId} name={s.name} />
                   {s.role !== "HOSPITAL_ADMIN" && <AccessButton userId={s.userId} name={s.name} />}
                   {s.userId !== ownUserId && (
