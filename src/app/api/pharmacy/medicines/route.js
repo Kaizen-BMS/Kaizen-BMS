@@ -31,16 +31,44 @@ export const GET = apiRoute("medicine:read", async (request) => {
     ];
   }
   const rows = await tenantDb.medicines.findMany({ where, orderBy: [{ active: "desc" }, { name: "asc" }] });
+  const tid = BigInt(requireTenantId());
   // Current usable stock per medicine (non-expired units) for the Medicine List.
   const stock = await tenantDb.$queryRawUnsafe(
-    `SELECT medicine_id, COALESCE(SUM(quantity),0) AS q FROM pharmacy_stock
-      WHERE tenant_id = ? AND medicine_id IS NOT NULL AND (expiry_date IS NULL OR expiry_date >= CURDATE())
+    `SELECT medicine_id, COALESCE(SUM(quantity),0) AS q, COUNT(*) AS batches FROM pharmacy_stock
+      WHERE tenant_id = ? AND medicine_id IS NOT NULL AND quantity > 0 AND (expiry_date IS NULL OR expiry_date >= CURDATE())
       GROUP BY medicine_id`,
-    BigInt(requireTenantId()),
+    tid,
   );
-  const stockById = new Map(stock.map((r) => [String(r.medicine_id), Number(r.q)]));
+  const stockById = new Map(stock.map((r) => [String(r.medicine_id), { stock: Number(r.q), batches: Number(r.batches) }]));
+  // The exact batch a sale would actually draw from next (same FEFO order dispense/walk-in-sale
+  // use) — so the price shown here is never a guess, it's what the next unit really costs.
+  const nextBatch = await tenantDb.$queryRawUnsafe(
+    `SELECT medicine_id, selling_rate, mrp, purchase_rate FROM (
+       SELECT medicine_id, selling_rate, mrp, purchase_rate,
+              ROW_NUMBER() OVER (PARTITION BY medicine_id ORDER BY (expiry_date IS NULL) ASC, expiry_date ASC, id ASC) AS rn
+         FROM pharmacy_stock
+        WHERE tenant_id = ? AND medicine_id IS NOT NULL AND quantity > 0 AND (expiry_date IS NULL OR expiry_date >= CURDATE())
+     ) x WHERE rn = 1`,
+    tid,
+  );
+  const priceById = new Map(nextBatch.map((r) => [String(r.medicine_id), {
+    sellingRate: r.selling_rate != null ? Number(r.selling_rate) : r.mrp != null ? Number(r.mrp) : null,
+    mrp: r.mrp != null ? Number(r.mrp) : null,
+    purchaseRate: r.purchase_rate != null ? Number(r.purchase_rate) : null,
+  }]));
   return json({
-    medicines: rows.map((m) => ({ ...serializeMedicine(m), stock: stockById.get(String(m.id)) || 0 })),
+    medicines: rows.map((m) => {
+      const s = stockById.get(String(m.id));
+      return {
+        ...serializeMedicine(m),
+        stock: s?.stock || 0,
+        batchCount: s?.batches || 0,
+        // Price of the next batch that would actually be dispensed — null when there's no usable
+        // stock to price from yet. Multiple batches can each carry a different rate; this is
+        // always the one FEFO would use next, never an average or a guess.
+        ...(priceById.get(String(m.id)) || { sellingRate: null, mrp: null, purchaseRate: null }),
+      };
+    }),
     types: MEDICINE_TYPES,
     schedules: SCHEDULES,
   });

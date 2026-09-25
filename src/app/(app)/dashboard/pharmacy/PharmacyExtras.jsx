@@ -172,7 +172,11 @@ function AddMedicineInline({ billId, onDone, onCancel }) {
       <div className="grid max-h-40 gap-1 overflow-auto sm:grid-cols-2">
         {shown.map((m) => (
           <button key={m.id} type="button" onClick={() => setCart((c) => (c.some((x) => x.medicineId === m.id) ? c.map((x) => (x.medicineId === m.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: m.id, name: m.name, quantity: 1 }]))} className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2 py-1 text-left text-xs hover:border-slate-400">
-            <span>{m.name}</span><span className="text-slate-400">{m.stock}</span>
+            <span>{m.name}</span>
+            <span className="text-right text-slate-400">
+              {m.sellingRate != null && <span className="mr-1 font-medium text-slate-600">{rupee(m.sellingRate)}</span>}
+              {m.stock}{m.unit ? ` ${m.unit}` : ""}
+            </span>
           </button>
         ))}
       </div>
@@ -326,9 +330,15 @@ export function SellTab({ onError }) {
         )}
         <div className="grid max-h-72 gap-1 overflow-auto sm:grid-cols-2">
           {shown.map((m) => (
-            <button key={m.id} type="button" onClick={() => addToCart(m)} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 px-2.5 py-1.5 text-left text-sm hover:border-slate-400">
-              <span className="font-medium">{m.name}</span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${m.stock > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{m.stock > 0 ? `Stock: ${m.stock}` : "Out of stock"}</span>
+            <button key={m.id} type="button" onClick={() => addToCart(m)} title={m.mrp != null ? `MRP ₹${m.mrp}${m.purchaseRate != null ? ` · Purchase ₹${m.purchaseRate}` : ""}${m.batchCount > 1 ? ` · ${m.batchCount} batches (price shown is the next one to be used)` : ""}` : undefined} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 px-2.5 py-1.5 text-left text-sm hover:border-slate-400">
+              <span>
+                <span className="font-medium">{m.name}</span>
+                <span className="block text-xs text-slate-400">
+                  {m.sellingRate != null ? <span className="font-semibold text-slate-600">{rupee(m.sellingRate)}{m.unit ? ` / ${m.unit}` : ""}</span> : "No price set"}
+                  {m.mrp != null && m.mrp !== m.sellingRate && <span className="ml-1.5 line-through">{rupee(m.mrp)}</span>}
+                </span>
+              </span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${m.stock > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{m.stock > 0 ? `Stock: ${m.stock}${m.unit ? ` ${m.unit}` : ""}` : "Out of stock"}</span>
             </button>
           ))}
           {shown.length === 0 && <p className="text-xs text-slate-400">No medicines match.</p>}
