@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
+import MedicineInput from "@/components/hms/MedicineInput";
 
 const STATUS_STYLE = {
   OPEN: "bg-slate-100 text-slate-600",
@@ -14,8 +15,19 @@ const STATUS_STYLE = {
 function WalkInBill({ onCreated, onError }) {
   const [f, setF] = useState({ customerName: "", phone: "" });
   const [items, setItems] = useState([{ description: "", quantity: 1, unitPrice: "" }]);
+  const [medQuery, setMedQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [prices, setPrices] = useState([]);
+
+  // Search the pharmacy's own medicine catalog to add a line quickly — a misc/manual line here, not
+  // a real dispense (that stays Pharmacy → Sales / Billing, which actually deducts batch stock). The
+  // price isn't guessed from any batch, since a medicine can have several batches at different
+  // rates — billing staff price it here exactly as every other manual line already works.
+  function addMedicine(m) {
+    const row = { description: m.name, quantity: 1, unitPrice: "" };
+    setItems((xs) => (xs.length === 1 && !xs[0].description && !xs[0].unitPrice ? [row] : [...xs, row]));
+    setMedQuery("");
+  }
   useEffect(() => {
     apiGet("/api/billing/price-list").then((d) => setPrices(d.items || [])).catch(() => {});
   }, []);
@@ -70,6 +82,10 @@ function WalkInBill({ onCreated, onError }) {
           {prices.map((p) => <option key={p.serviceId} value={p.serviceId}>{p.name} — ₹{p.price}{p.taxPercent ? ` (+${p.taxPercent}% GST)` : ""}</option>)}
         </select>
       )}
+      <div>
+        <MedicineInput endpoint="/api/pharmacy/medicines/suggest" value={medQuery} onChange={setMedQuery} onPick={addMedicine} placeholder="Search medicine to add a line…" className={input} />
+        <p className="mt-0.5 text-[11px] text-slate-400">Adds a manual line here — price it yourself. To actually dispense against pharmacy stock, use Pharmacy → Sales / Billing instead.</p>
+      </div>
       {items.map((it, idx) => (
         <div key={idx} className="flex flex-wrap items-center gap-2">
           <input placeholder="Item / medicine / test" value={it.description} readOnly={!!it.serviceId} onChange={(e) => upd(idx, { description: e.target.value })} className={`${input} min-w-[12rem] flex-1`} />
