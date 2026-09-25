@@ -529,8 +529,15 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <p className="text-sm font-semibold">Lab order → Lab</p>
+          <details open={labOrders.length > 0} className="group rounded-lg border border-slate-200 bg-white [&_summary::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4">
+              <span className="flex items-center gap-1.5 text-sm font-semibold">
+                <span className="text-slate-400 transition group-open:rotate-90">▶</span>
+                Lab order → Lab
+              </span>
+              {labOrders.length > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">{labOrders.length}</span>}
+            </summary>
+            <div className="px-4 pb-4">
             {labOrders.map((lo) => (
               <div key={lo.id} className="mt-2 rounded-md bg-slate-50 p-2 text-sm">
                 <div className="flex items-center justify-between">
@@ -564,10 +571,18 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
               onError={setMsg}
               onOrdered={(labOrder) => setData((d) => ({ ...d, labOrders: upsertById(d.labOrders, labOrder) }))}
             />
-          </div>
+            </div>
+          </details>
 
-          <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <p className="text-sm font-semibold">Imaging order → Radiology</p>
+          <details open={radiologyOrders.length > 0} className="group rounded-lg border border-slate-200 bg-white [&_summary::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4">
+              <span className="flex items-center gap-1.5 text-sm font-semibold">
+                <span className="text-slate-400 transition group-open:rotate-90">▶</span>
+                Imaging order → Radiology
+              </span>
+              {radiologyOrders.length > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">{radiologyOrders.length}</span>}
+            </summary>
+            <div className="px-4 pb-4">
             {radiologyOrders.map((ro) => (
               <div key={ro.id} className="mt-2 rounded-md bg-slate-50 p-2 text-sm">
                 <div className="flex items-center justify-between">
@@ -590,7 +605,8 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
               onError={setMsg}
               onOrdered={(radiologyOrder) => setData((d) => ({ ...d, radiologyOrders: upsertById(d.radiologyOrders, radiologyOrder) }))}
             />
-          </div>
+            </div>
+          </details>
         </div>
       )}
     </div>
