@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
-import { MEDICINE_TYPES, SCHEDULES } from "@/lib/medicineTypes";
+import { MEDICINE_TYPES, SCHEDULES, TYPE_DEFAULTS } from "@/lib/medicineTypes";
 import { composeMedicineName } from "@/lib/medicineName";
 import BarcodeScanner from "@/components/hms/BarcodeScanner";
 
@@ -21,7 +21,9 @@ function Field({ label, help, children, className = "" }) {
 
 const BLANK = {
   baseName: "", medicineType: "Tablet", strength: "", genericName: "", brandName: "", composition: "", manufacturer: "",
-  category: "", schedule: "", prescriptionRequired: false, barcode: "", hsnCode: "", gstRate: "0", packSize: "", unit: "", purchaseUnit: "", unitsPerPurchase: "1",
+  category: "", schedule: "", prescriptionRequired: false, barcode: "", hsnCode: "", gstRate: "0",
+  unit: TYPE_DEFAULTS.Tablet.unit, contentUnit: TYPE_DEFAULTS.Tablet.contentUnit, contentPerPack: String(TYPE_DEFAULTS.Tablet.contentPerPack),
+  purchaseUnit: "", unitsPerPurchase: "1",
   reorderLevel: "10", maxStock: "", location: "",
 };
 
@@ -30,7 +32,8 @@ function toForm(m) {
     baseName: m.baseName || m.name, medicineType: m.medicineType || "Other", strength: m.strength || "", genericName: m.genericName || "",
     brandName: m.brandName || "", composition: m.composition || "", manufacturer: m.manufacturer || "", category: m.category || "",
     schedule: m.schedule || "", prescriptionRequired: !!m.prescriptionRequired, barcode: m.barcode || "", hsnCode: m.hsnCode || "",
-    gstRate: String(m.gstRate ?? 0), packSize: m.packSize || "", unit: m.unit || "", purchaseUnit: m.purchaseUnit || "", unitsPerPurchase: String(m.unitsPerPurchase ?? 1), reorderLevel: String(m.reorderLevel ?? 10),
+    gstRate: String(m.gstRate ?? 0), unit: m.unit || "", contentUnit: m.contentUnit || "", contentPerPack: m.contentPerPack != null ? String(m.contentPerPack) : "",
+    purchaseUnit: m.purchaseUnit || "", unitsPerPurchase: String(m.unitsPerPurchase ?? 1), reorderLevel: String(m.reorderLevel ?? 10),
     maxStock: m.maxStock != null ? String(m.maxStock) : "", location: [m.rack, m.shelf, m.bin].filter(Boolean).join(" - "),
   };
 }
@@ -43,7 +46,8 @@ function toPayload(f, editing, orig) {
     genericName: f.genericName, brandName: f.brandName,
     composition: f.composition, manufacturer: f.manufacturer, category: f.category, schedule: f.schedule,
     prescriptionRequired: !!f.prescriptionRequired, barcode: f.barcode, hsnCode: f.hsnCode, gstRate: Number(f.gstRate || 0),
-    packSize: f.packSize, unit: f.unit, purchaseUnit: f.purchaseUnit, unitsPerPurchase: Number(f.unitsPerPurchase || 1), reorderLevel: Number(f.reorderLevel || 10),
+    unit: f.unit, contentUnit: f.contentUnit, ...(f.contentUnit ? { contentPerPack: Number(f.contentPerPack || 0) || 1 } : {}),
+    purchaseUnit: f.purchaseUnit, unitsPerPurchase: Number(f.unitsPerPurchase || 1), reorderLevel: Number(f.reorderLevel || 10),
     ...(f.maxStock ? { maxStock: Number(f.maxStock) } : {}),
     // One free-text Location ("Rack A - Shelf 3"); the separate shelf/bin boxes are retired from the UI.
     rack: f.location, ...(editing ? { shelf: "", bin: "" } : {}),
@@ -52,13 +56,28 @@ function toPayload(f, editing, orig) {
 
 function MedicineForm({ f, setF, onScan }) {
   const preview = f.baseName ? composeMedicineName(f.medicineType, f.baseName, f.strength) : "";
+  // Picking a type suggests how it's normally stocked (a Tablet in Strips of 10, a Syrup in a
+  // 100 ml Bottle) — every pharmacy POS does this so nobody has to work it out from scratch. It only
+  // overwrites fields the pharmacist hasn't already customized for this medicine.
+  function onTypeChange(type) {
+    const d = TYPE_DEFAULTS[type] || TYPE_DEFAULTS.Other;
+    const prevDefault = TYPE_DEFAULTS[f.medicineType] || TYPE_DEFAULTS.Other;
+    const untouched = (field) => !f[field] || f[field] === prevDefault[field] || f[field] === String(prevDefault[field] ?? "");
+    setF({
+      ...f,
+      medicineType: type,
+      unit: untouched("unit") ? d.unit : f.unit,
+      contentUnit: untouched("contentUnit") ? d.contentUnit : f.contentUnit,
+      contentPerPack: untouched("contentPerPack") ? (d.contentPerPack ? String(d.contentPerPack) : "") : f.contentPerPack,
+    });
+  }
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <Field label="Medicine Name" help="Just the name, e.g. Betadine." className="lg:col-span-1">
         <input required placeholder="Betadine" value={f.baseName} onChange={(e) => setF({ ...f, baseName: e.target.value })} className={input} />
       </Field>
       <Field label="Medicine Type" help="Tablet, Capsule, Syrup…">
-        <select value={f.medicineType} onChange={(e) => setF({ ...f, medicineType: e.target.value })} className={input}>
+        <select value={f.medicineType} onChange={(e) => onTypeChange(e.target.value)} className={input}>
           {MEDICINE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </Field>
@@ -97,10 +116,31 @@ function MedicineForm({ f, setF, onScan }) {
       <Field label="GST Rate" help="Tax charged when this medicine is sold.">
         <select value={f.gstRate} onChange={(e) => setF({ ...f, gstRate: e.target.value })} className={input}>{[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}</select>
       </Field>
-      <Field label="Pack Size" help="Units in one pack."><input placeholder="10 capsules" value={f.packSize} onChange={(e) => setF({ ...f, packSize: e.target.value })} className={input} /></Field>
-      <Field label="Sold / stocked as" help="The unit you count stock and sell in."><input placeholder="Strip" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} className={input} /></Field>
-      <Field label="Bought as" help="Bigger pack you buy from suppliers (optional)."><input placeholder="Box" value={f.purchaseUnit} onChange={(e) => setF({ ...f, purchaseUnit: e.target.value })} className={input} /></Field>
-      {f.purchaseUnit && <Field label={`${f.unit || "Units"} in one ${f.purchaseUnit}`} help="Used to convert purchases into stock."><input type="number" min="1" placeholder="10" value={f.unitsPerPurchase} onChange={(e) => setF({ ...f, unitsPerPurchase: e.target.value })} className={input} /></Field>}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 sm:col-span-2 lg:col-span-3">
+        <p className="text-xs font-semibold text-slate-600">Packaging</p>
+        <p className="mt-0.5 text-[11px] text-slate-400">Suggested from the medicine type above — change anything that&apos;s different for this one.</p>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Sold / stocked as" help="The unit stock and billing count in."><input placeholder="Strip" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} className={input} /></Field>
+          <Field label="Contains" help={`How many ${f.contentUnit || "pieces"} in one ${f.unit || "unit"}.`}>
+            <input type="number" min="1" placeholder="10" value={f.contentPerPack} onChange={(e) => setF({ ...f, contentPerPack: e.target.value })} className={input} />
+          </Field>
+          <Field label="Content unit" help="What each piece is called."><input placeholder="Tablet" value={f.contentUnit} onChange={(e) => setF({ ...f, contentUnit: e.target.value })} className={input} /></Field>
+          <Field label="Bought as" help="Bigger pack you buy from suppliers (optional)."><input placeholder="Box" value={f.purchaseUnit} onChange={(e) => setF({ ...f, purchaseUnit: e.target.value })} className={input} /></Field>
+        </div>
+        {f.purchaseUnit && (
+          <div className="mt-2">
+            <Field label={`${f.unit || "Units"} in one ${f.purchaseUnit}`} help="Used to convert purchases into stock.">
+              <input type="number" min="1" placeholder="10" value={f.unitsPerPurchase} onChange={(e) => setF({ ...f, unitsPerPurchase: e.target.value })} className={`${input} max-w-40`} />
+            </Field>
+          </div>
+        )}
+        {f.contentUnit && Number(f.contentPerPack) > 0 && (
+          <p className="mt-2 text-[11px] text-slate-500">
+            = {Number(f.contentPerPack)} {f.contentUnit.toLowerCase()}{Number(f.contentPerPack) === 1 ? "" : "s"} per {(f.unit || "unit").toLowerCase()}
+            {f.purchaseUnit && Number(f.unitsPerPurchase) > 1 ? `, ${Number(f.contentPerPack) * Number(f.unitsPerPurchase)} per ${f.purchaseUnit.toLowerCase()}` : ""}.
+          </p>
+        )}
+      </div>
       <Field label="Reorder Level" help="Alert the pharmacist when available stock reaches this level."><input type="number" min="0" placeholder="50" value={f.reorderLevel} onChange={(e) => setF({ ...f, reorderLevel: e.target.value })} className={input} /></Field>
       <Field label="Maximum Stock" help="Most you want to keep. Leave empty for no limit."><input type="number" min="0" placeholder="500" value={f.maxStock} onChange={(e) => setF({ ...f, maxStock: e.target.value })} className={input} /></Field>
       <Field label="Location" help="Where it is kept in the pharmacy."><input placeholder="Rack A - Shelf 3" value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} className={input} /></Field>

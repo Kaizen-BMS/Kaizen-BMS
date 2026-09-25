@@ -2,14 +2,6 @@
 // Margin can be typed as ₹ or %; selling price never exceeds MRP.
 const r2 = (n) => Math.round(n * 100) / 100;
 
-/** "10 tablets" / "10's" / "1x15" -> how many single tablets/capsules a strip holds (null if unknown). */
-export function tabletsFromPack(packSize) {
-  const m = String(packSize || "").match(/(\d+)\s*(?:x\s*(\d+))?/i);
-  if (!m) return null;
-  const n = m[2] ? Number(m[2]) : Number(m[1]);
-  return n > 1 ? n : null;
-}
-
 export function sellingFromMargin(purchase, mrp, mode, margin) {
   const p = Number(purchase);
   const m = Number(margin);

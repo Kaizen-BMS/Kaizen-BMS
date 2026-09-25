@@ -1753,6 +1753,8 @@ model medicines {
   hsn_code              String?                @db.VarChar(20)
   gst_rate              Decimal                @default(0.00) @db.Decimal(5, 2)
   pack_size             String?                @db.VarChar(60)
+  content_unit          String?                @db.VarChar(30)
+  content_per_pack      Int?                   @db.UnsignedInt
   unit                  String?                @db.VarChar(30)
   purchase_unit         String?                @db.VarChar(30)
   units_per_purchase    Int                    @default(1) @db.UnsignedInt

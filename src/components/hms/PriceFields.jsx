@@ -10,7 +10,7 @@ export const EMPTY_PRICE = { totalPaid: "", purchaseRate: "", mrp: "", marginMod
 // Purchase Rate -> MRP -> Margin (₹ or %) -> Selling Price. Selling price is
 // worked out for you and can never go above MRP; type a selling price and the
 // margin is worked out instead.
-export default function PriceFields({ value, onChange, compact = false, quantity, unitName = "unit", tabletsPerUnit }) {
+export default function PriceFields({ value, onChange, compact = false, quantity, unitName = "unit", contentUnit, contentPerPack }) {
   const v = { ...EMPTY_PRICE, ...value };
   const qty = Number(quantity);
   const total = Number(v.totalPaid);
@@ -73,12 +73,12 @@ export default function PriceFields({ value, onChange, compact = false, quantity
         <input type="number" min="0" step="0.01" placeholder="₹ 60.00" value={v.sellingRate} onChange={(e) => recompute({ sellingRate: e.target.value }, "selling")} className={`${inp} mt-1 ${cap ? "border-red-400 bg-red-50" : ""}`} />
         <span className={`${help} ${cap ? "text-red-600" : ""}`}>{cap ? "Cannot be more than MRP." : compact ? "Auto-calculated." : "Automatically calculated from purchase rate and margin."}</span>
       </label>
-      {tabletsPerUnit > 1 && (Number(v.purchaseRate) > 0 || Number(v.mrp) > 0) && (
+      {contentUnit && contentPerPack > 1 && (Number(v.purchaseRate) > 0 || Number(v.mrp) > 0) && (
         <p className="col-span-full rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
-          Per tablet ({tabletsPerUnit} per {unitName}):
-          {Number(v.purchaseRate) > 0 && <> cost <b>₹{(Number(v.purchaseRate) / tabletsPerUnit).toFixed(2)}</b></>}
-          {Number(v.mrp) > 0 && <> · MRP <b>₹{(Number(v.mrp) / tabletsPerUnit).toFixed(2)}</b></>}
-          {Number(v.sellingRate) > 0 && <> · selling <b>₹{(Number(v.sellingRate) / tabletsPerUnit).toFixed(2)}</b></>}
+          Per {contentUnit.toLowerCase()} ({contentPerPack} {contentUnit.toLowerCase()}{contentPerPack === 1 ? "" : "s"} per {unitName}):
+          {Number(v.purchaseRate) > 0 && <> cost <b>₹{(Number(v.purchaseRate) / contentPerPack).toFixed(2)}</b></>}
+          {Number(v.mrp) > 0 && <> · MRP <b>₹{(Number(v.mrp) / contentPerPack).toFixed(2)}</b></>}
+          {Number(v.sellingRate) > 0 && <> · selling <b>₹{(Number(v.sellingRate) / contentPerPack).toFixed(2)}</b></>}
         </p>
       )}
     </>
