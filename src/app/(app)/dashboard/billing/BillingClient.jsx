@@ -233,6 +233,30 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
   const [payment, setPayment] = useState({ amount: "", mode: "CASH" });
   const [discount, setDiscount] = useState({ amount: "", reason: "" });
   const [refund, setRefund] = useState({ amount: "", reason: "" });
+  const [addForm, setAddForm] = useState({ description: "", quantity: 1, unitPrice: "" });
+  const [addBusy, setAddBusy] = useState(false);
+  const input = "rounded-lg border border-slate-300 px-2 py-1.5 text-sm";
+
+  // The same bill stays open across a patient's whole visit — they can step out and come back a
+  // couple of hours later for more medicine and it lands on this one running bill, never a fresh
+  // one each time (CLAUDE.md "Running / Combined Bill"). Only a finalized bill can't take more lines.
+  async function addItem(e) {
+    e.preventDefault();
+    if (!addForm.description.trim() || addForm.unitPrice === "") return;
+    setAddBusy(true);
+    onError("");
+    try {
+      await apiSend(`/api/billing/${bill.id}/items`, "POST", {
+        description: addForm.description, quantity: Number(addForm.quantity) || 1, unitPrice: Number(addForm.unitPrice), source: "PHARMACY",
+      });
+      setAddForm({ description: "", quantity: 1, unitPrice: "" });
+      onChanged();
+    } catch (err) {
+      onError(err.message === "bill_finalized" ? "This bill is already finalized — start a new one." : err.message);
+    } finally {
+      setAddBusy(false);
+    }
+  }
 
   // Stable per-attempt key: a manual retry after a failed/timed-out submit
   // reuses the same key (so the server recognizes it and returns the
@@ -349,6 +373,24 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
           ))}
         </tbody>
       </table>
+
+      {canUpdate && !bill.finalized_at && (
+        <form onSubmit={addItem} className="space-y-1.5 border-t border-slate-100 pt-2">
+          <MedicineInput
+            endpoint="/api/pharmacy/medicines/suggest"
+            value={addForm.description}
+            onChange={(t) => setAddForm((f) => ({ ...f, description: t }))}
+            onPick={(m) => setAddForm((f) => ({ ...f, description: m.name }))}
+            placeholder="Add another medicine to this bill…"
+            className={`${input} w-full`}
+          />
+          <div className="flex items-center gap-2">
+            <input type="number" min="0.01" step="1" value={addForm.quantity} onChange={(e) => setAddForm((f) => ({ ...f, quantity: e.target.value }))} aria-label="Quantity" className={`${input} w-16`} />
+            <input type="number" min="0" step="0.01" placeholder="₹ price" value={addForm.unitPrice} onChange={(e) => setAddForm((f) => ({ ...f, unitPrice: e.target.value }))} className={`${input} w-24`} />
+            <button disabled={addBusy || !addForm.description.trim() || addForm.unitPrice === ""} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{addBusy ? "Adding…" : "Add to this bill"}</button>
+          </div>
+        </form>
+      )}
 
       <div className="space-y-1 border-t border-slate-200 pt-2 text-xs">
         <div className="flex justify-between"><span>Items total</span><span>₹{itemsTotal.toFixed(2)}</span></div>
