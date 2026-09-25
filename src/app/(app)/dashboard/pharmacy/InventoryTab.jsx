@@ -6,6 +6,7 @@ import { useRealtime } from "@/components/hms/useRealtime";
 import { fmtDDMMYY } from "@/lib/dateFormat";
 import { MEDICINE_TYPES } from "@/lib/medicineTypes";
 import { marginFromSelling } from "@/lib/pharmacyPricing";
+import { TYPE_DEFAULTS } from "@/lib/medicineTypes";
 import MedicineInput from "@/components/hms/MedicineInput";
 import DateInput from "@/components/hms/DateInput";
 import PriceFields, { EMPTY_PRICE } from "@/components/hms/PriceFields";
@@ -38,7 +39,7 @@ const label = "block text-xs font-medium text-slate-600";
 const help = "mt-0.5 block text-[11px] leading-tight text-slate-400";
 const rupee = (n) => (n != null ? `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—");
 
-const BLANK = { medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "", quantity: "", location: "", ...EMPTY_PRICE };
+const BLANK = { medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "", quantity: "", location: "", unit: "", contentUnit: "", contentPerPack: "", packagingUnset: false, ...EMPTY_PRICE };
 
 // One line per batch: Qty · Medicine · Batch · MFD · Expiry · Purchase Rate · MRP · Margin · Selling Price · Status.
 // Everything else (type, salt, location, reorder level, adjust) opens under "Details".
@@ -95,6 +96,9 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
     try {
       if (!form.medicineId) throw new Error("pick_a_medicine");
       if (form.mrp && form.sellingRate && Number(form.sellingRate) > Number(form.mrp)) throw new Error("selling_price_above_mrp");
+      if (form.packagingUnset && form.unit && form.contentUnit && Number(form.contentPerPack) > 0) {
+        await apiSend(`/api/pharmacy/medicines/${form.medicineId}`, "PATCH", { unit: form.unit, contentUnit: form.contentUnit, contentPerPack: Number(form.contentPerPack) });
+      }
       await apiSend("/api/pharmacy/stock", "POST", {
         medicineName: form.medicineText,
         medicineId: Number(form.medicineId),
@@ -161,7 +165,19 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
               <div className={label}>
                 Medicine
                 <div className="mt-1">
-                  <MedicineInput value={form.medicineText} onChange={(t) => setForm((f) => ({ ...f, medicineText: t, medicineId: "" }))} onPick={(it) => setForm((f) => ({ ...f, medicineId: String(it.id), medicineText: it.name, contentUnit: it.contentUnit || "", contentPerPack: it.contentPerPack || "", unit: it.unit || "" }))} placeholder="Cap Betadine 500 mg" className={input} />
+                  <MedicineInput value={form.medicineText} onChange={(t) => setForm((f) => ({ ...f, medicineText: t, medicineId: "" }))} onPick={(it) => {
+                    // A medicine that's never had its packaging set gets the same type-based
+                    // suggestion the Medicine List uses (a Tablet -> Strip of 10, ...) — filled in
+                    // here so a pharmacist never has to redo it, and remembered on the medicine the
+                    // moment this batch is saved (never asked again after that).
+                    const has = it.unit && it.contentUnit;
+                    const d = TYPE_DEFAULTS[it.type] || TYPE_DEFAULTS.Other;
+                    setForm((f) => ({
+                      ...f, medicineId: String(it.id), medicineText: it.name,
+                      unit: has ? it.unit : d.unit, contentUnit: has ? it.contentUnit : d.contentUnit,
+                      contentPerPack: has ? it.contentPerPack : (d.contentPerPack || ""), packagingUnset: !has,
+                    }));
+                  }} placeholder="Cap Betadine 500 mg" className={input} />
                 </div>
                 <span className={help}>Start typing — pick from the list.</span>
               </div>
@@ -177,6 +193,16 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                 <DateInput value={form.expiryDate} onChange={(v) => setForm((f) => ({ ...f, expiryDate: v }))} className={`${input} mt-1`} />
                 <span className={help}>Expiry date printed on the pack.</span>
               </div>
+              {form.medicineId && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2.5 sm:col-span-2 lg:col-span-4">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="text-xs font-medium text-slate-600">Sold as<input placeholder="Strip" value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value, packagingUnset: true }))} className={`${input} mt-1 w-28`} /></label>
+                    <label className="text-xs font-medium text-slate-600">Contains<input type="number" min="1" placeholder="10" value={form.contentPerPack} onChange={(e) => setForm((f) => ({ ...f, contentPerPack: e.target.value, packagingUnset: true }))} className={`${input} mt-1 w-20`} /></label>
+                    <label className="text-xs font-medium text-slate-600">Per {form.unit || "unit"}<input placeholder="Tablet" value={form.contentUnit} onChange={(e) => setForm((f) => ({ ...f, contentUnit: e.target.value, packagingUnset: true }))} className={`${input} mt-1 w-24`} /></label>
+                    {form.packagingUnset && <span className="pb-1.5 text-[11px] text-amber-700">Not set on this medicine yet — saving this batch will remember it.</span>}
+                  </div>
+                </div>
+              )}
               <PriceFields value={form} onChange={(p) => setForm((f) => ({ ...f, ...p }))} quantity={form.quantity} unitName={(form.unit || "unit").toLowerCase()} contentUnit={form.contentUnit} contentPerPack={Number(form.contentPerPack) || null} />
               <label className={label}>Location
                 <input placeholder="Rack A - Shelf 3" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={`${input} mt-1`} />

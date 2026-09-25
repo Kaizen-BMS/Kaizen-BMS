@@ -6,6 +6,7 @@ import { fmtDDMMYY } from "@/lib/dateFormat";
 import MedicineInput from "@/components/hms/MedicineInput";
 import DateInput from "@/components/hms/DateInput";
 import PriceFields, { EMPTY_PRICE } from "@/components/hms/PriceFields";
+import { TYPE_DEFAULTS } from "@/lib/medicineTypes";
 
 const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
 const lab = "block text-xs font-medium text-slate-600";
@@ -13,7 +14,7 @@ const help = "mt-0.5 block text-[11px] leading-tight text-slate-400";
 
 const emptyLine = () => ({
   quantity: "", medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "",
-  freeQuantity: "0", damagedQuantity: "0", rejectedQuantity: "0", gstRate: "0", unit: "", contentUnit: "", contentPerPack: "", purchaseUnit: "", unitsPerPurchase: 1, inPurchaseUnit: false, ...EMPTY_PRICE,
+  freeQuantity: "0", damagedQuantity: "0", rejectedQuantity: "0", gstRate: "0", unit: "", contentUnit: "", contentPerPack: "", packagingUnset: false, purchaseUnit: "", unitsPerPurchase: 1, inPurchaseUnit: false, ...EMPTY_PRICE,
 });
 
 // Goods Received: what physically arrived. Each line reads
@@ -63,6 +64,11 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
         if (l.mrp && l.sellingRate && Number(l.sellingRate) > Number(l.mrp)) throw new Error("selling_price_above_mrp");
       }
       if (!filled.length) throw new Error("no_items");
+      for (const l of filled) {
+        if (l.packagingUnset && l.unit && l.contentUnit && Number(l.contentPerPack) > 0) {
+          await apiSend(`/api/pharmacy/medicines/${l.medicineId}`, "PATCH", { unit: l.unit, contentUnit: l.contentUnit, contentPerPack: Number(l.contentPerPack) });
+        }
+      }
       const items = filled.map((l) => ({
         medicineId: Number(l.medicineId), batchNumber: l.batchNumber, manufacturingDate: l.manufacturingDate, expiryDate: l.expiryDate,
         receivedQuantity: Number(l.quantity), freeQuantity: Number(l.freeQuantity || 0), damagedQuantity: Number(l.damagedQuantity || 0),
@@ -139,7 +145,18 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                 </div>
                 <div className={lab}>Medicine
                   <div className="mt-1">
-                    <MedicineInput value={l.medicineText} onChange={(t) => setLine(i, { medicineText: t, medicineId: "" })} onPick={(it) => setLine(i, { medicineId: String(it.id), medicineText: it.name, unit: it.unit || "", contentUnit: it.contentUnit || "", contentPerPack: it.contentPerPack || "", purchaseUnit: it.purchaseUnit || "", unitsPerPurchase: it.unitsPerPurchase || 1, inPurchaseUnit: (it.unitsPerPurchase || 1) > 1 })} placeholder="Cap Betadine 500 mg" className={input} />
+                    <MedicineInput value={l.medicineText} onChange={(t) => setLine(i, { medicineText: t, medicineId: "" })} onPick={(it) => {
+                      // Same type-based suggestion as Inventory's quick stock-in — filled in once, remembered
+                      // on the medicine when this GRN is saved, never asked again after that.
+                      const has = it.unit && it.contentUnit;
+                      const d = TYPE_DEFAULTS[it.type] || TYPE_DEFAULTS.Other;
+                      setLine(i, {
+                        medicineId: String(it.id), medicineText: it.name,
+                        unit: has ? it.unit : d.unit, contentUnit: has ? it.contentUnit : d.contentUnit,
+                        contentPerPack: has ? it.contentPerPack : (d.contentPerPack || ""), packagingUnset: !has,
+                        purchaseUnit: it.purchaseUnit || "", unitsPerPurchase: it.unitsPerPurchase || 1, inPurchaseUnit: (it.unitsPerPurchase || 1) > 1,
+                      });
+                    }} placeholder="Cap Betadine 500 mg" className={input} />
                   </div>
                   <span className={help}>Start typing and pick.</span>
                 </div>
@@ -155,6 +172,16 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                   <DateInput value={l.expiryDate} onChange={(v) => setLine(i, { expiryDate: v })} className={`${input} mt-1`} />
                   <span className={help}>Expiry date on the pack.</span>
                 </div>
+                {l.medicineId && (
+                  <div className="rounded-lg border border-slate-200 bg-white p-2 sm:col-span-2 lg:col-span-4">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <label className="text-xs font-medium text-slate-600">Sold as<input placeholder="Strip" value={l.unit} onChange={(e) => setLine(i, { unit: e.target.value, packagingUnset: true })} className={`${input} mt-1 w-28`} /></label>
+                      <label className="text-xs font-medium text-slate-600">Contains<input type="number" min="1" placeholder="10" value={l.contentPerPack} onChange={(e) => setLine(i, { contentPerPack: e.target.value, packagingUnset: true })} className={`${input} mt-1 w-20`} /></label>
+                      <label className="text-xs font-medium text-slate-600">Per {l.unit || "unit"}<input placeholder="Tablet" value={l.contentUnit} onChange={(e) => setLine(i, { contentUnit: e.target.value, packagingUnset: true })} className={`${input} mt-1 w-24`} /></label>
+                      {l.packagingUnset && <span className="pb-1.5 text-[11px] text-amber-700">Not set on this medicine yet — saving will remember it.</span>}
+                    </div>
+                  </div>
+                )}
                 <PriceFields value={l} onChange={(p) => setLine(i, p)} quantity={l.quantity} unitName={(l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.purchaseUnit : l.unit || "unit").toLowerCase()} contentUnit={l.contentUnit} contentPerPack={l.contentPerPack ? Number(l.contentPerPack) * (l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.unitsPerPurchase : 1) : null} />
               </div>
               <details className="mt-3 text-xs text-slate-500">
