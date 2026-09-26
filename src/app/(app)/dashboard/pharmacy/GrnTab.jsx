@@ -182,7 +182,21 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                     </div>
                   </div>
                 )}
-                <PriceFields value={l} onChange={(p) => setLine(i, p)} quantity={l.quantity} unitName={(l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.purchaseUnit : l.unit || "unit").toLowerCase()} contentUnit={l.contentUnit} contentPerPack={l.contentPerPack ? Number(l.contentPerPack) * (l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.unitsPerPurchase : 1) : null} />
+                <PriceFields
+                  value={l}
+                  onChange={(p) => setLine(i, p)}
+                  quantity={l.quantity}
+                  unitName={(l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.purchaseUnit : l.unit || "unit").toLowerCase()}
+                  contentUnit={l.contentUnit}
+                  contentPerPack={l.contentPerPack ? Number(l.contentPerPack) * (l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.unitsPerPurchase : 1) : null}
+                  stockPer={l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.unitsPerPurchase : 1}
+                  stockUnitName={(l.unit || "unit").toLowerCase()}
+                  levels={l.inPurchaseUnit && l.unitsPerPurchase > 1 ? [
+                    { label: l.purchaseUnit.toLowerCase(), per: 1 },
+                    { label: (l.unit || "unit").toLowerCase(), per: l.unitsPerPurchase },
+                    ...(l.contentUnit && l.contentPerPack ? [{ label: l.contentUnit.toLowerCase(), per: l.unitsPerPurchase * Number(l.contentPerPack) }] : []),
+                  ] : undefined}
+                />
               </div>
               <details className="mt-3 text-xs text-slate-500">
                 <summary className="cursor-pointer select-none">More options (free units, damaged, rejected, GST)</summary>
