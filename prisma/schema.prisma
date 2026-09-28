@@ -553,6 +553,7 @@ model users {
   email                                                        String
   password_hash                                                String                       @db.VarChar(255)
   role                                                         users_role
+  notification_prefs                                           String?                      @db.LongText
   created_at                                                   DateTime                     @default(now())
   active                                                       Boolean                      @default(true)
   access_deny                                                  String?                      @db.Text

@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Icon from "./icons";
-import { apiGet } from "./api";
+import { apiGet, apiSend } from "./api";
 import { useRealtime } from "./useRealtime";
 import { fmtDDMMYY } from "@/lib/dateFormat";
+import { NOTIFICATION_CATEGORIES } from "@/lib/notificationCategories";
 
 // Alerts & Notifications Center (the phase after Workflow Automation) —
 // a computed, on-demand summary of business conditions that already exist
@@ -57,7 +58,26 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState("alerts");
   const [alerts, setAlerts] = useState(null);
+  const [prefs, setPrefs] = useState(null);
+  const [prefsSaving, setPrefsSaving] = useState(false);
   const ref = useRef(null);
+
+  useEffect(() => {
+    if (tab === "settings" && prefs === null) {
+      apiGet("/api/me/notification-prefs").then((d) => setPrefs(d.prefs || {})).catch(() => setPrefs({}));
+    }
+  }, [tab, prefs]);
+
+  async function togglePref(key) {
+    const next = { ...prefs, [key]: prefs[key] === false ? true : false };
+    setPrefs(next);
+    setPrefsSaving(true);
+    try {
+      await apiSend("/api/me/notification-prefs", "PATCH", { prefs: next });
+    } finally {
+      setPrefsSaving(false);
+    }
+  }
 
   const unread = items.filter((n) => !n.read).length;
   const alertsCount = countAlerts(alerts?.categories);
@@ -151,7 +171,7 @@ export default function NotificationBell() {
           className="absolute right-0 top-full mt-1.5 w-80 overflow-hidden rounded-md border bg-white shadow-lg"
           style={{ borderColor: "var(--hms-border)" }}
         >
-          <div className="flex border-b text-xs font-semibold uppercase tracking-wide" style={{ borderColor: "var(--hms-border)" }}>
+          <div className="flex items-stretch border-b text-xs font-semibold uppercase tracking-wide" style={{ borderColor: "var(--hms-border)" }}>
             <button
               onClick={() => setTab("alerts")}
               className={`flex-1 px-3 py-2 text-left ${tab === "alerts" ? "text-[var(--hms-ink)]" : "text-[var(--hms-ink-faint)]"}`}
@@ -163,6 +183,14 @@ export default function NotificationBell() {
               className={`flex-1 px-3 py-2 text-left ${tab === "activity" ? "text-[var(--hms-ink)]" : "text-[var(--hms-ink-faint)]"}`}
             >
               Activity
+            </button>
+            <button
+              onClick={() => setTab("settings")}
+              aria-label="Notification settings"
+              title="Which toasts you want to see"
+              className={`px-2.5 ${tab === "settings" ? "text-[var(--hms-ink)]" : "text-[var(--hms-ink-faint)]"}`}
+            >
+              <Icon name="settings" size={15} />
             </button>
           </div>
 
@@ -262,6 +290,36 @@ export default function NotificationBell() {
                     </button>
                   )}
                 </div>
+              )}
+            </div>
+          ) : tab === "settings" ? (
+            <div className="max-h-96 overflow-y-auto p-3">
+              <p className="mb-2 text-xs text-[var(--hms-ink-faint)]">
+                Choose which pop-up toasts you want to see. Turning one off only mutes the toast — it
+                won&apos;t affect Alerts above.
+              </p>
+              {prefs === null ? (
+                <p className="py-4 text-center text-sm text-[var(--hms-ink-faint)]">Loading…</p>
+              ) : (
+                <ul className="space-y-1">
+                  {NOTIFICATION_CATEGORIES.map((c) => {
+                    const on = prefs[c.key] !== false;
+                    return (
+                      <li key={c.key}>
+                        <label className="flex cursor-pointer items-center justify-between gap-2 rounded-md px-1.5 py-1.5 text-sm hover:bg-slate-50">
+                          <span>{c.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            disabled={prefsSaving}
+                            onChange={() => togglePref(c.key)}
+                            className="h-4 w-4 shrink-0"
+                          />
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </div>
           ) : items.length === 0 ? (

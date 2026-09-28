@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { fmtDDMMYY, fmtDDMMYYTime } from "@/lib/dateFormat";
 import BarcodeScanner from "@/components/hms/BarcodeScanner";
@@ -220,6 +220,23 @@ export function SellTab({ onError }) {
     apiGet("/api/pharmacy/medicines?active=true").then((d) => setMeds(d.medicines)).catch((e) => setMsg(e.message));
   }, []);
 
+  // Ctrl+Enter completes the sale from anywhere on this screen — a
+  // pharmacist keying in a fast queue of customers shouldn't need to reach
+  // for the mouse just to hit "Complete sale". Kept as a modifier
+  // combination (not bare Enter) so it never fires by accident while
+  // someone is just typing a name or quantity.
+  const submitRef = useRef(() => {});
+  useEffect(() => {
+    function onKeyDown(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        submitRef.current();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // Look up an already-open bill the moment a full, valid phone number is typed.
   useEffect(() => {
     const { digits, valid } = phoneDigitsInfo(customer.phone);
@@ -273,6 +290,11 @@ export function SellTab({ onError }) {
       setBusy(false);
     }
   }
+  // Refs must not be written during render — keep the shortcut's ref pointed
+  // at the latest closure via an effect instead (runs after every render).
+  useEffect(() => {
+    submitRef.current = submit;
+  });
 
   if (doneBillId) {
     return (
@@ -290,7 +312,7 @@ export function SellTab({ onError }) {
       <div className="space-y-3 rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
         <p className="text-sm font-semibold">Who is it for?</p>
         <div className="grid gap-2 sm:grid-cols-2">
-          <input required disabled={!!continuingId} placeholder="Customer name" value={continuingId ? openBills.find((b) => b.id === continuingId)?.customerName || "" : customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} className={`${input} ${continuingId ? "bg-slate-100 text-slate-500" : ""}`} />
+          <input autoFocus required disabled={!!continuingId} placeholder="Customer name" value={continuingId ? openBills.find((b) => b.id === continuingId)?.customerName || "" : customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} className={`${input} ${continuingId ? "bg-slate-100 text-slate-500" : ""}`} />
           <PhoneInput label="" placeholder="Phone (optional)" value={customer.phone} onChange={(v) => { setCustomer({ ...customer, phone: v }); setContinuingId(null); }} disabled={!!continuingId} />
         </div>
         {openBills.length > 0 && !continuingId && (
@@ -354,7 +376,10 @@ export function SellTab({ onError }) {
             <button onClick={() => removeItem(c.medicineId)} className="text-red-500">✕</button>
           </div>
         ))}
-        <button onClick={submit} disabled={busy || cart.length === 0 || (!continuingId && !customer.name.trim())} className="w-full rounded-lg bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{continuingId ? `Add to bill #${continuingId}` : "Complete sale"}</button>
+        <button onClick={submit} disabled={busy || cart.length === 0 || (!continuingId && !customer.name.trim())} className="w-full rounded-lg bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
+          {busy ? "Saving…" : continuingId ? `Add to bill #${continuingId}` : "Complete sale"}
+          {!busy && cart.length > 0 && <span className="ml-1.5 font-normal opacity-70">(Ctrl+Enter)</span>}
+        </button>
         <p className="text-[11px] text-slate-400">Price + GST are taken from stock&rsquo;s selling rate / MRP and the medicine&rsquo;s GST rate.</p>
         {msg && <p className="text-xs text-red-600">{msg}</p>}
       </aside>

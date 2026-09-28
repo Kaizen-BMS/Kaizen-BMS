@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import { useRealtime } from "./useRealtime";
+import { apiGet } from "./api";
 
 // Live pop-up notifications (bottom-right). They appear the moment something
 // happens that concerns THIS person's screens — a new prescription for the
@@ -30,10 +32,18 @@ export default function Toasts({ navKeys }) {
   const [items, setItems] = useState([]);
   const seq = useRef(0);
   const last = useRef({});
+  // Per-user category mute list (NotificationBell's settings gear writes
+  // this). Loaded once; undefined key = on (today's existing behavior for
+  // anyone who's never opened settings) — only an explicit `false` mutes it.
+  const prefs = useRef({});
+  useEffect(() => {
+    apiGet("/api/me/notification-prefs").then((d) => { prefs.current = d.prefs || {}; }).catch(() => {});
+  }, []);
 
   const push = useCallback((event, payload) => {
     const rule = RULES[event];
     if (!rule || !rule.show(keys.current)) return;
+    if (prefs.current[event] === false) return;
     const text = rule.text(payload);
     // same message twice within 2s (several events for one action) = one toast
     const now = Date.now();
@@ -48,19 +58,30 @@ export default function Toasts({ navKeys }) {
   // eslint-disable-next-line react-hooks/refs
   useRealtime(Object.fromEntries(Object.keys(RULES).map((e) => [e, (p) => push(e, p)])));
 
-  if (items.length === 0) return null;
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2" aria-live="polite">
-      {items.map((t) => (
-        <div key={t.id} className="pointer-events-auto flex items-start gap-2 rounded-lg border bg-white p-3 shadow-lg" style={{ borderColor: "var(--hms-border)" }} role="status">
-          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--hms-accent)]" />
-          <button className="hms-plain flex-1 text-left text-sm" onClick={() => { setItems((xs) => xs.filter((x) => x.id !== t.id)); router.push(t.href); }}>
-            {t.text}
-            <span className="block text-xs text-[var(--hms-ink-faint)]">Click to open</span>
-          </button>
-          <button aria-label="Close" onClick={() => setItems((xs) => xs.filter((x) => x.id !== t.id))} className="text-lg leading-none text-[var(--hms-ink-faint)]">×</button>
-        </div>
-      ))}
+      <AnimatePresence>
+        {items.map((t) => (
+          <motion.div
+            key={t.id}
+            layout
+            initial={{ opacity: 0, y: 12, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 24, transition: { duration: 0.15 } }}
+            transition={{ type: "spring", stiffness: 420, damping: 32 }}
+            className="pointer-events-auto flex items-start gap-2.5 rounded-xl border bg-white p-3 shadow-lg shadow-black/5"
+            style={{ borderColor: "var(--hms-border)" }}
+            role="status"
+          >
+            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--hms-accent)]" />
+            <button className="hms-plain flex-1 text-left text-sm" onClick={() => { setItems((xs) => xs.filter((x) => x.id !== t.id)); router.push(t.href); }}>
+              {t.text}
+              <span className="block text-xs text-[var(--hms-ink-faint)]">Click to open</span>
+            </button>
+            <button aria-label="Close" onClick={() => setItems((xs) => xs.filter((x) => x.id !== t.id))} className="text-lg leading-none text-[var(--hms-ink-faint)] hover:text-[var(--hms-ink)]">×</button>
+          </motion.div>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }

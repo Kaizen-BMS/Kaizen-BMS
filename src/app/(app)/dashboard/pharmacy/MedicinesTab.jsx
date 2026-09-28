@@ -160,6 +160,9 @@ export function MedicinesTab({ canManage, onError }) {
   const [showForm, setShowForm] = useState(false);
   const [scanFor, setScanFor] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const fileRef = useRef(null);
 
   // A slow earlier search must not overwrite a newer one.
   const genRef = useRef(0);
@@ -218,6 +221,28 @@ export function MedicinesTab({ canManage, onError }) {
     }
   }
 
+  // Bulk import — build the list in Excel, upload it back. Not JSON, so
+  // this bypasses apiSend()'s JSON body and posts a real file upload.
+  async function importFile(file) {
+    setImporting(true);
+    setImportResult(null);
+    setMsg("");
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/pharmacy/medicines/import", { method: "POST", body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setImportResult(data);
+      await load();
+    } catch (err) {
+      setMsg(`Could not import the file (${err.message}).`);
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
   return (
     <div className="space-y-4">
       {canManage && (
@@ -232,6 +257,45 @@ export function MedicinesTab({ canManage, onError }) {
               <button disabled={busy} className="rounded-lg bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{busy ? "Adding…" : "Add medicine"}</button>
             </form>
           )}
+        </div>
+      )}
+
+      {canManage && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-3 text-sm">
+          <span className="font-medium text-slate-600">Adding many at once?</span>
+          {/* A file download from an API route, not a page transition — a plain <a> is the correct
+              element here (triggers a real browser download), not next/link's client-side routing. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/api/pharmacy/medicines/import/template" className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50">
+            ⬇ Download Excel template
+          </a>
+          <label className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] cursor-pointer">
+            {importing ? "Importing…" : "⬆ Import from Excel"}
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              disabled={importing}
+              onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])}
+              className="hidden"
+            />
+          </label>
+          <span className="text-xs text-slate-400">Fill the template, then upload it back — new medicines are added, existing names are skipped.</span>
+        </div>
+      )}
+      {importResult && (
+        <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          <p className="font-medium">
+            Imported {importResult.createdCount} medicine{importResult.createdCount === 1 ? "" : "s"}
+            {importResult.skipped.length > 0 ? `, skipped ${importResult.skipped.length} (already in your list)` : ""}
+            {importResult.errors.length > 0 ? `, ${importResult.errors.length} row${importResult.errors.length === 1 ? "" : "s"} had an issue` : ""}.
+          </p>
+          {importResult.errors.length > 0 && (
+            <ul className="mt-1 list-disc pl-4 text-red-700">
+              {importResult.errors.slice(0, 10).map((e, i) => <li key={i}>Row {e.row}: {e.error}</li>)}
+            </ul>
+          )}
+          <button onClick={() => setImportResult(null)} className="mt-1 text-emerald-700 underline">dismiss</button>
         </div>
       )}
       {msg && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{msg}</p>}

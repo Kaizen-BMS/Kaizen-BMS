@@ -287,7 +287,16 @@ function QueueTab({ canDispense, onError }) {
                   {outstanding > 0 ? (
                     canDispense && (
                       <div className="flex shrink-0 items-center gap-1.5">
-                      <input type="number" min="1" max={outstanding} placeholder={String(outstanding)} value={qtys[it.id] || ""} onChange={(e) => setQtys((q) => ({ ...q, [it.id]: e.target.value }))} aria-label="Quantity to dispense now" className="w-16 rounded-md border border-slate-300 px-1.5 py-1 text-xs" />
+                      <input
+                        type="number" min="1" max={outstanding} placeholder={String(outstanding)}
+                        value={qtys[it.id] || ""}
+                        onChange={(e) => setQtys((q) => ({ ...q, [it.id]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          // Enter dispenses this line directly — a pharmacist typing a
+                          // quantity shouldn't have to reach for the mouse to confirm it.
+                          if (e.key === "Enter") { e.preventDefault(); dispense(it.id, Math.min(outstanding, Number(qtys[it.id]) || 0) || undefined); }
+                        }}
+                        aria-label="Quantity to dispense now" className="w-16 rounded-md border border-slate-300 px-1.5 py-1 text-xs" />
                       <button
                         onClick={() => dispense(it.id, Math.min(outstanding, Number(qtys[it.id]) || 0) || undefined)}
                         disabled={busyItemId === it.id}

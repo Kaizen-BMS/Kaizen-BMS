@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import MedicineInput from "@/components/hms/MedicineInput";
+import { fmtDDMMYYTime } from "@/lib/dateFormat";
 
 // Pharmacy's queue links here (once a prescription is fully dispensed) as
 // /dashboard/billing?visitId=N — read once on mount, per Next's
@@ -250,7 +251,7 @@ export default function BillingClient({ permissions }) {
 
         <div>
           {detail ? (
-            <BillDetail bill={detail} canUpdate={permissions.canUpdate} onChanged={() => { loadDetail(openId); loadList(); }} onError={setMsg} />
+            <BillDetail key={detail.id} bill={detail} canUpdate={permissions.canUpdate} onChanged={() => { loadDetail(openId); loadList(); }} onError={setMsg} />
           ) : (
             <p className="text-sm text-slate-400">Select a bill.</p>
           )}
@@ -432,9 +433,25 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
         <div className="flex justify-between font-semibold"><span>Balance due</span><span>₹{balance.toFixed(2)}</span></div>
       </div>
 
+      {(bill.payments.length > 0 || bill.refunds.length > 0) && (
+        <div className="border-t border-slate-100 pt-2 text-xs">
+          <p className="mb-1 font-medium text-slate-500">Payment history</p>
+          <ul className="space-y-0.5">
+            {[...bill.payments.map((p) => ({ ...p, kind: "payment", at: p.paid_at })), ...bill.refunds.map((r) => ({ ...r, kind: "refund", at: r.refunded_at }))]
+              .sort((a, b) => new Date(a.at) - new Date(b.at))
+              .map((row) => (
+                <li key={`${row.kind}-${row.id}`} className={`flex justify-between ${row.kind === "refund" ? "text-red-700" : "text-slate-600"}`}>
+                  <span>{fmtDDMMYYTime(row.at)} · {row.kind === "refund" ? "Refund" : (row.mode || "").charAt(0) + (row.mode || "").slice(1).toLowerCase()}</span>
+                  <span>{row.kind === "refund" ? "-" : ""}₹{Number(row.amount).toFixed(2)}</span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+
       {canUpdate && balance > 0 && (
         <form onSubmit={recordPayment} className="flex items-end gap-2 border-t border-slate-100 pt-2">
-          <input type="number" min="0.01" step="0.01" required placeholder="amount" value={payment.amount}
+          <input autoFocus type="number" min="0.01" step="0.01" required placeholder="amount" value={payment.amount}
             onChange={(e) => setPayment((s) => ({ ...s, amount: e.target.value }))}
             className="w-24 rounded border border-slate-300 px-2 py-1 text-xs" />
           <select value={payment.mode} onChange={(e) => setPayment((s) => ({ ...s, mode: e.target.value }))}
