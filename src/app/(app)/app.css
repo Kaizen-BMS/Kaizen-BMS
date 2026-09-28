@@ -278,3 +278,30 @@ select:disabled {
 .hms-shell button:not([class*="bg-"]):not([class*="border"]):not([class*="rounded"]):not([aria-label="Close"]):not(.hms-plain):hover:not(:disabled) {
   background-color: var(--color-slate-100);
 }
+
+/* Printing FROM a normal dashboard screen (Reports/Analytics — the sidebar,
+   topbar, tab pills and action buttons already carry print:hidden on the
+   individual elements that need it). This just lets the remaining content
+   actually use the full printed page instead of staying boxed into the
+   flex layout's narrow "main content" column, and keeps tables from being
+   sliced across a page break mid-row. Unrelated to (app)/print/* — those
+   routes render outside DashboardShell entirely and are untouched. */
+@media print {
+  .hms-app-frame {
+    display: block !important;
+  }
+  .hms-main {
+    width: 100% !important;
+    padding: 0 !important;
+  }
+  .hms-shell table {
+    page-break-inside: auto;
+  }
+  .hms-shell tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  .hms-shell thead {
+    display: table-header-group;
+  }
+}

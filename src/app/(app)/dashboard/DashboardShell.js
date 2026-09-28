@@ -68,9 +68,9 @@ export default function DashboardShell({ user, groups, children }) {
   );
 
   return (
-    <div className="flex min-h-screen">
+    <div className="hms-app-frame flex min-h-screen">
       <aside
-        className="sticky top-0 flex h-screen shrink-0 flex-col border-r bg-white transition-[width] duration-200"
+        className="hms-sidebar sticky top-0 flex h-screen shrink-0 flex-col border-r bg-white transition-[width] duration-200 print:hidden"
         style={{
           width: collapsed
             ? "var(--hms-sidebar-w-collapsed)"
@@ -129,10 +129,14 @@ export default function DashboardShell({ user, groups, children }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar user={user} navItems={flatNav} onSidebarToggle={toggleCollapse} />
-        <main className="flex-1 overflow-x-auto p-6">{children}</main>
-        <Toasts navKeys={flatNav.map((i) => i.key)} />
-        <PartnerRequestPopup enabled={user.role === "HOSPITAL_ADMIN" || String(user.role).startsWith("OWNER_")} />
+        <div className="print:hidden">
+          <Topbar user={user} navItems={flatNav} onSidebarToggle={toggleCollapse} />
+        </div>
+        <main className="hms-main flex-1 overflow-x-auto p-6 print:overflow-visible print:p-0">{children}</main>
+        <div className="print:hidden">
+          <Toasts navKeys={flatNav.map((i) => i.key)} />
+          <PartnerRequestPopup enabled={user.role === "HOSPITAL_ADMIN" || String(user.role).startsWith("OWNER_")} />
+        </div>
       </div>
     </div>
   );

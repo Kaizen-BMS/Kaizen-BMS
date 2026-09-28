@@ -1,9 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import MedicineInput from "@/components/hms/MedicineInput";
+
+// Pharmacy's queue links here (once a prescription is fully dispensed) as
+// /dashboard/billing?visitId=N — read once on mount, per Next's
+// useSearchParams() requirement wrapped in its own Suspense boundary.
+function VisitIdParamReader({ onReady }) {
+  const params = useSearchParams();
+  useEffect(() => {
+    onReady(params.get("visitId"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
 
 const STATUS_STYLE = {
   OPEN: "bg-slate-100 text-slate-600",
@@ -109,6 +122,7 @@ export default function BillingClient({ permissions }) {
   const [msg, setMsg] = useState("");
   const [newVisitId, setNewVisitId] = useState("");
   const [flashIds, setFlashIds] = useState(new Set());
+  const [deepLinked, setDeepLinked] = useState(false);
 
   function flash(id) {
     setFlashIds((s) => new Set(s).add(id));
@@ -152,6 +166,7 @@ export default function BillingClient({ permissions }) {
     try {
       const { bill } = await apiSend("/api/billing/opd", "POST", { visitId: Number(newVisitId) });
       setNewVisitId("");
+      setDeepLinked(false);
       await loadList();
       openBill(bill.id);
     } catch (err) {
@@ -166,26 +181,43 @@ export default function BillingClient({ permissions }) {
 
   return (
     <div className="space-y-4">
+      <Suspense fallback={null}>
+        <VisitIdParamReader
+          onReady={(visitId) => {
+            if (visitId) {
+              setNewVisitId(visitId);
+              setDeepLinked(true);
+            }
+          }}
+        />
+      </Suspense>
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Billing</h1>
       </div>
       {msg && <p className="text-sm text-red-600">{msg}</p>}
+      {deepLinked && !permissions.canCreate && (
+        <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          A prescription for visit #{newVisitId} was just fully dispensed — billing staff can create its bill from here.
+        </p>
+      )}
 
       {permissions.canCreate && permissions.soloWalkIn && (
         <WalkInBill onError={setMsg} onCreated={async (id) => { await loadList(); openBill(id); }} />
       )}
 
       {permissions.canCreate && !permissions.soloWalkIn && (
-        <form onSubmit={createOpdBill} className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+        <form onSubmit={createOpdBill} className={`flex items-end gap-2 rounded-2xl border bg-white shadow-sm p-4 ${deepLinked ? "border-green-300 ring-1 ring-green-200" : "border-slate-200"}`}>
           <div>
             <p className="text-sm font-semibold">Create OPD bill</p>
-            <p className="text-xs text-slate-500">Aggregates consultation fee + dispensed pharmacy + lab tests for a visit.</p>
+            <p className="text-xs text-slate-500">
+              {deepLinked ? "Fully dispensed — review and create this visit's bill." : "Aggregates consultation fee + dispensed pharmacy + lab tests for a visit."}
+            </p>
           </div>
           <input
             placeholder="visit id"
             required
             value={newVisitId}
-            onChange={(e) => setNewVisitId(e.target.value)}
+            onChange={(e) => { setNewVisitId(e.target.value); setDeepLinked(false); }}
             className="ml-auto w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
           />
           <button className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)]">Create</button>

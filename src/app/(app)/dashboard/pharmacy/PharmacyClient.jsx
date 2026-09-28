@@ -90,11 +90,11 @@ export default function PharmacyClient({ permissions }) {
       <Suspense fallback={null}>
         <TabParamsReader onReady={(t, f) => { if (t) setTab(t); if (f) setInitialFilter(f); }} />
       </Suspense>
-      <div>
+      <div className="print:hidden">
         <h1 className="text-2xl font-semibold tracking-tight">Pharmacy</h1>
         <p className="text-sm text-slate-500">{category.hint}</p>
       </div>
-      <div className="grid gap-2 sm:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-4 print:hidden">
         {visibleCategories.map((c) => (
           <button
             key={c.key}
@@ -109,7 +109,7 @@ export default function PharmacyClient({ permissions }) {
         ))}
       </div>
       {subTabs.length > 1 && (
-        <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100 p-1 text-sm">
+        <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100 p-1 text-sm print:hidden">
           {subTabs.map(([key, label]) => (
             <button
               key={key}
@@ -156,6 +156,12 @@ function QueueTab({ canDispense, onError }) {
   const [flashIds, setFlashIds] = useState(new Set());
   const [busyItemId, setBusyItemId] = useState(null);
   const [qtys, setQtys] = useState({}); // per-line "dispense this many now" (blank = everything remaining)
+  // A prescription drops off this queue the moment it's fully dispensed
+  // (server-side filter + the filter below) — without this, that felt like
+  // it vanished into nowhere instead of flowing on to billing. Keep a
+  // short, dismissible trail of what just finished, each linking straight
+  // to that visit's OPD bill.
+  const [justFulfilled, setJustFulfilled] = useState([]);
 
   function flash(id) {
     setFlashIds((s) => new Set(s).add(id));
@@ -196,6 +202,13 @@ function QueueTab({ canDispense, onError }) {
     try {
       const { item, prescriptionStatus } = await apiSend(`/api/pharmacy/dispense/${itemId}`, "POST", quantity ? { quantity } : {});
       flash(item.prescription_id);
+      if (prescriptionStatus === "FULFILLED") {
+        const pr = prescriptions.find((p) => p.id === item.prescription_id);
+        setJustFulfilled((xs) => [
+          { id: item.prescription_id, patientName: pr?.patient_name || "Patient", visitId: pr?.visit_id },
+          ...xs.filter((x) => x.id !== item.prescription_id),
+        ].slice(0, 5));
+      }
       setPrescriptions((prev) =>
         prescriptionStatus === "FULFILLED"
           ? prev.filter((pr) => pr.id !== item.prescription_id)
@@ -212,12 +225,32 @@ function QueueTab({ canDispense, onError }) {
     }
   }
 
-  if (prescriptions.length === 0) {
-    return <p className="text-sm text-slate-400">Nothing waiting — the queue is empty.</p>;
-  }
-
   return (
     <div className="space-y-3">
+      {justFulfilled.length > 0 && (
+        <div className="space-y-1.5">
+          {justFulfilled.map((f) => (
+            <div key={f.id} className="flex items-center justify-between gap-3 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-sm">
+              <p className="text-green-800">
+                ✓ <span className="font-medium">{f.patientName}</span>&apos;s prescription is fully dispensed.
+              </p>
+              <div className="flex shrink-0 items-center gap-2">
+                {f.visitId ? (
+                  <a href={`/dashboard/billing?visitId=${f.visitId}`} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1 text-xs font-medium text-[var(--hms-btn-fg)]">
+                    Go to Billing →
+                  </a>
+                ) : null}
+                <button onClick={() => setJustFulfilled((xs) => xs.filter((x) => x.id !== f.id))} className="text-green-700/60 hover:text-green-900" aria-label="Dismiss">
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {prescriptions.length === 0 && justFulfilled.length === 0 && (
+        <p className="text-sm text-slate-400">Nothing waiting — the queue is empty.</p>
+      )}
       {prescriptions.map((pr) => (
         <div
           key={pr.id}
@@ -234,7 +267,6 @@ function QueueTab({ canDispense, onError }) {
             </span>
           </div>
           <AllergyBadge allergies={pr.patient_allergies} className="mt-1" />
-          <AvailabilityPanel prescriptionId={pr.id} onError={onError} />
           <div className="mt-3 space-y-2">
             {pr.items.map((it) => {
               const outstanding = it.quantity - it.dispensed_quantity;
@@ -276,142 +308,6 @@ function QueueTab({ canDispense, onError }) {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── Availability check (Phase 8C — CLAUDE.md "First real cross-module
-// data exchange — Prescription → Pharmacy"). Read-only: never deducts
-// stock, never a substitute for the "Dispense" buttons already in this
-// same card, which remain the one real dispensing action (unchanged FEFO
-// flow). Requires an ACTIVE Clinical → Pharmacy connection — if none
-// exists yet, or more than one Pharmacy instance is connected, this says
-// so plainly instead of guessing. ────────────────────────────────────
-
-const AVAILABILITY_STATUS_STYLE = {
-  AVAILABLE: "border border-green-300 bg-green-50 text-green-700",
-  FULFILLED: "border border-green-300 bg-green-50 text-green-700",
-  PARTIAL: "border border-amber-300 bg-amber-50 text-amber-700",
-  OUT_OF_STOCK: "border border-red-300 bg-red-50 text-red-700",
-  UNMAPPED: "bg-slate-100 text-slate-500",
-};
-
-function AvailabilityPanel({ prescriptionId, onError }) {
-  const [open, setOpen] = useState(false);
-  const [data, setData] = useState(null);
-  const [options, setOptions] = useState(null);
-  const [notice, setNotice] = useState("");
-  const [selectedInstance, setSelectedInstance] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function check(instanceId) {
-    setLoading(true);
-    setNotice("");
-    setOptions(null);
-    try {
-      const q = instanceId ? `?pharmacyInstanceId=${instanceId}` : "";
-      const res = await apiGet(`/api/pharmacy/prescriptions/${prescriptionId}/availability${q}`);
-      setData(res);
-    } catch (err) {
-      if (err.status === 409 && err.message === "no_active_connection") {
-        setNotice("No connected pharmacy instance yet — connect Clinical to Pharmacy in the Connection Center.");
-      } else if (err.status === 409 && err.message === "pharmacy_instance_required") {
-        // apiSend/apiGet's parse() only surfaces `data.error` as the
-        // message today, not the accompanying `options` array — re-fetch
-        // the raw body once, here, rather than changing that shared
-        // helper's contract for every other caller in this codebase.
-        try {
-          const raw = await fetch(`/api/pharmacy/prescriptions/${prescriptionId}/availability`).then((r) => r.json());
-          setOptions(raw.options || []);
-        } catch {
-          setNotice("Multiple pharmacy instances are connected — pick one to continue.");
-        }
-      } else {
-        onError(err.message);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => {
-          setOpen(true);
-          check();
-        }}
-        className="mt-2 text-xs font-medium text-slate-500 hover:text-slate-800 hover:underline"
-      >
-        Check pharmacy availability
-      </button>
-    );
-  }
-
-  return (
-    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs">
-      <div className="flex items-center justify-between">
-        <p className="font-medium text-slate-600">Pharmacy availability</p>
-        <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700">
-          close
-        </button>
-      </div>
-
-      {loading && <p className="mt-2 text-slate-400">Checking…</p>}
-      {notice && <p className="mt-2 text-slate-500">{notice}</p>}
-
-      {options && (
-        <div className="mt-2 flex items-center gap-2">
-          <select
-            value={selectedInstance}
-            onChange={(e) => setSelectedInstance(e.target.value)}
-            className="rounded border border-slate-300 px-2 py-1 text-xs"
-          >
-            <option value="">— select pharmacy —</option>
-            {options.map((o) => (
-              <option key={o.id} value={o.id}>{o.name}</option>
-            ))}
-          </select>
-          <button
-            disabled={!selectedInstance}
-            onClick={() => check(selectedInstance)}
-            className="rounded bg-[var(--hms-btn-bg)] px-2 py-1 text-[var(--hms-btn-fg)] disabled:opacity-50"
-          >
-            Check
-          </button>
-        </div>
-      )}
-
-      {data && (
-        <div className="mt-2">
-          <p className="text-slate-500">Pharmacy: {data.pharmacyInstanceName}</p>
-          <table className="mt-1.5 w-full">
-            <thead>
-              <tr className="text-left text-slate-400">
-                <th className="py-1 pr-2">Medicine</th>
-                <th className="py-1 pr-2">Requested</th>
-                <th className="py-1 pr-2">Available</th>
-                <th className="py-1">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((it) => (
-                <tr key={it.prescriptionItemId} className="border-t border-slate-200">
-                  <td className="py-1.5 pr-2">{it.medicineName}</td>
-                  <td className="py-1.5 pr-2">{it.outstandingQuantity} of {it.requestedQuantity}</td>
-                  <td className="py-1.5 pr-2">{it.availableQuantity ?? "—"}</td>
-                  <td className="py-1.5">
-                    <span className={`rounded-full px-2 py-0.5 ${AVAILABILITY_STATUS_STYLE[it.status]}`}>
-                      {it.status.replace(/_/g, " ")}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="mt-1.5 text-slate-400">Use the Dispense button below to actually fulfill an item.</p>
-        </div>
-      )}
     </div>
   );
 }

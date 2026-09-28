@@ -36,7 +36,7 @@ function upsertById(list, item) {
 // matching (which keys on medicine_name being byte-for-byte the same drug
 // name a pharmacist stocked in) are completely unchanged.
 function emptyRxRow() {
-  return { medicineName: "", dose: "1", frequency: "OD", customFrequency: "", days: "5", notes: "", quantity: "", overrideQty: false, overrideReason: "", ack: false };
+  return { medicineName: "", medicineId: null, dose: "1", frequency: "OD", customFrequency: "", days: "5", notes: "", quantity: "", overrideQty: false, overrideReason: "", ack: false };
 }
 
 /** The one place a row becomes the single `dosage` string the API stores (e.g. "1 BD (Twice daily) × 5 days · after food"). */
@@ -180,6 +180,7 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
       .filter((r) => r.medicineName.trim())
       .map((r) => ({
         medicineName: r.medicineName.trim(),
+        ...(r.medicineId ? { medicineId: r.medicineId } : {}),
         dosage: composeDosage(r),
         quantity: rowQuantity(r).qty || 1,
         allergyAck: r.ack,
@@ -464,7 +465,8 @@ export default function ConsultationClient({ visitId, doctorUserId }) {
                         <MedicineInput
                           endpoint="/api/opd/medicine-suggest"
                           value={r.medicineName}
-                          onChange={(t) => update({ medicineName: t })}
+                          onChange={(t) => update({ medicineName: t, medicineId: null })}
+                          onPick={(it) => update({ medicineId: it.id })}
                           placeholder="Medicine — e.g. Cap Cefixime 200 mg"
                           className={`${cell} ${r.match ? "border-red-300" : ""}`}
                         />

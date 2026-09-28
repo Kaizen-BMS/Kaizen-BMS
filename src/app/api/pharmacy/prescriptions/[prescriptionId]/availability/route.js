@@ -82,23 +82,43 @@ export const GET = apiRoute("dispense:read", async (request, ctx) => {
   // whole tenant's inventory, and never a per-item round trip (CLAUDE.md
   // Phase 8C Part 22 "avoid N+1 inventory queries").
   const medicineNames = [...new Set(items.map((it) => it.medicine_name))];
-  const stockSums = medicineNames.length
-    ? await tenantDb.pharmacy_stock.groupBy({
-        by: ["medicine_name"],
+  const medicineIds = [...new Set(items.filter((it) => it.medicine_id != null).map((it) => it.medicine_id))];
+  // Matches by catalog medicine_id (when the line was picked from a
+  // suggestion) as well as by name — prescription_items.medicine_name is
+  // freeform doctor-typed text while pharmacy_stock.medicine_name is the
+  // catalog-composed display name, and the two can diverge for the same
+  // medicine (e.g. "Omeprazole 20mg" vs "Tab Omeprazole 20mg").
+  const stockRows = medicineNames.length
+    ? await tenantDb.pharmacy_stock.findMany({
         where: {
           module_instance_id: targetInstance.instance.id,
-          medicine_name: { in: medicineNames },
           quantity: { gt: 0 },
           OR: [{ expiry_date: null }, { expiry_date: { gte: new Date(new Date().toDateString()) } }],
+          AND: {
+            OR: [
+              { medicine_name: { in: medicineNames } },
+              ...(medicineIds.length ? [{ medicine_id: { in: medicineIds } }] : []),
+            ],
+          },
         },
-        _sum: { quantity: true },
+        select: { medicine_id: true, medicine_name: true, quantity: true },
       })
     : [];
-  const availableByMedicine = new Map(stockSums.map((s) => [s.medicine_name, s._sum.quantity || 0]));
+  const availableByName = new Map();
+  const availableById = new Map();
+  for (const row of stockRows) {
+    availableByName.set(row.medicine_name, (availableByName.get(row.medicine_name) || 0) + row.quantity);
+    if (row.medicine_id != null) {
+      const key = String(row.medicine_id);
+      availableById.set(key, (availableById.get(key) || 0) + row.quantity);
+    }
+  }
 
   const availabilityItems = items.map((it) => {
     const outstanding = it.quantity - it.dispensed_quantity;
-    const availableQuantity = availableByMedicine.get(it.medicine_name) || 0;
+    const availableQuantity = it.medicine_id != null && availableById.has(String(it.medicine_id))
+      ? availableById.get(String(it.medicine_id))
+      : availableByName.get(it.medicine_name) || 0;
     let status;
     if (it.service_id == null) status = "UNMAPPED";
     else if (outstanding <= 0) status = "FULFILLED";

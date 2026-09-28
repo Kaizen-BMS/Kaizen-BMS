@@ -14,6 +14,15 @@ const createSchema = z.object({
     .array(
       z.object({
         medicineName: z.string().trim().min(1).max(191),
+        // Optional — set when the doctor picked a real catalog suggestion
+        // (MedicineInput's onPick) rather than typing free text. Lets
+        // dispense/availability match the exact catalog medicine even when
+        // this typed medicineName and pharmacy_stock's composed display
+        // name diverge byte-for-byte (e.g. "Omeprazole 20mg" vs "Tab
+        // Omeprazole 20mg") — see CLAUDE.md-documented dispense bug.
+        // Omitted (free-typed text, or a pre-existing caller) falls back
+        // to the original exact medicine_name match, unchanged.
+        medicineId: z.coerce.number().int().positive().optional(),
         dosage: z.string().trim().max(191).optional().default(""),
         quantity: z.coerce.number().int().min(1).max(9999),
         // Set only when the client showed an allergy-match warning for this
@@ -83,6 +92,7 @@ export const POST = apiRoute("prescription:create", async (request, ctx) => {
         data: {
           prescription_id: created.id,
           medicine_name: it.medicineName,
+          medicine_id: it.medicineId ?? null,
           dosage: it.dosage || null,
           quantity: it.quantity,
           service_id: it.serviceId ?? null,

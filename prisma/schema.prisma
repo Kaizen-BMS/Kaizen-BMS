@@ -378,6 +378,7 @@ model prescription_items {
   tenant_id                BigInt                     @db.UnsignedBigInt
   prescription_id          BigInt                     @db.UnsignedBigInt
   medicine_name            String
+  medicine_id              BigInt?                    @db.UnsignedBigInt
   service_id               BigInt?                    @db.UnsignedBigInt
   dosage                   String?
   quantity                 Int                        @default(1) @db.UnsignedInt
@@ -393,6 +394,7 @@ model prescription_items {
   @@index([tenant_id], map: "idx_presc_items_hospital")
   @@index([prescription_id], map: "idx_presc_items_prescription")
   @@index([service_id], map: "idx_presc_items_service")
+  @@index([medicine_id], map: "idx_prescription_items_medicine_id")
 }
 
 model prescriptions {

@@ -69,21 +69,41 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
       ...rawLockedItem,
       quantity: Number(rawLockedItem.quantity),
       dispensed_quantity: Number(rawLockedItem.dispensed_quantity),
+      medicine_id: rawLockedItem.medicine_id != null ? Number(rawLockedItem.medicine_id) : null,
     };
     const outstanding = lockedItem.quantity - lockedItem.dispensed_quantity;
     if (outstanding <= 0) throw new HttpError(400, "already fully dispensed");
     const requested = Math.min(body.quantity ?? outstanding, outstanding);
 
-    const batches = await tx.$queryRawUnsafe(
-      `SELECT * FROM pharmacy_stock
-        WHERE tenant_id = ? AND module_instance_id = ? AND medicine_name = ? AND quantity > 0
-          AND (expiry_date IS NULL OR expiry_date >= CURDATE())
-        ORDER BY (expiry_date IS NULL) ASC, expiry_date ASC, id ASC
-        FOR UPDATE`,
-      BigInt(tid),
-      instance.id,
-      lockedItem.medicine_name,
-    );
+    // Match by the catalog medicine_id when the prescription line was
+    // picked from a suggestion (never guessed) — falls back to the
+    // original exact medicine_name match for legacy/free-typed rows, or
+    // any older stock batch never linked to the catalog. Prevents a real
+    // bug: prescription_items.medicine_name is freeform doctor-typed text
+    // while pharmacy_stock.medicine_name is the catalog-composed display
+    // name, and the two can diverge byte-for-byte for the same medicine.
+    const batches = lockedItem.medicine_id
+      ? await tx.$queryRawUnsafe(
+          `SELECT * FROM pharmacy_stock
+            WHERE tenant_id = ? AND module_instance_id = ? AND (medicine_id = ? OR medicine_name = ?) AND quantity > 0
+              AND (expiry_date IS NULL OR expiry_date >= CURDATE())
+            ORDER BY (expiry_date IS NULL) ASC, expiry_date ASC, id ASC
+            FOR UPDATE`,
+          BigInt(tid),
+          instance.id,
+          BigInt(lockedItem.medicine_id),
+          lockedItem.medicine_name,
+        )
+      : await tx.$queryRawUnsafe(
+          `SELECT * FROM pharmacy_stock
+            WHERE tenant_id = ? AND module_instance_id = ? AND medicine_name = ? AND quantity > 0
+              AND (expiry_date IS NULL OR expiry_date >= CURDATE())
+            ORDER BY (expiry_date IS NULL) ASC, expiry_date ASC, id ASC
+            FOR UPDATE`,
+          BigInt(tid),
+          instance.id,
+          lockedItem.medicine_name,
+        );
 
     let remaining = requested;
     const consumed = [];

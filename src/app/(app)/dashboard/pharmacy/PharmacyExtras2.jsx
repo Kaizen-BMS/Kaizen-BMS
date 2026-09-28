@@ -6,6 +6,8 @@ import { useRealtime } from "@/components/hms/useRealtime";
 import { fmtDDMMYY } from "@/lib/dateFormat";
 import { PharmacyPayBox } from "./PharmacyExtras";
 import DateInput from "@/components/hms/DateInput";
+import PrintButton from "@/components/hms/PrintButton";
+import ReportPrintHeader from "@/components/hms/ReportPrintHeader";
 export { PurchaseOrdersTab } from "./PurchaseOrdersTab";
 
 const input = "rounded-lg border border-slate-300 px-2 py-1.5 text-sm";
@@ -92,22 +94,43 @@ export function PharmacyReportsTab({ only }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sub]);
 
+  const activeLabel = REPORT_TABS.find((t) => t[0] === sub)?.[1] || "Report";
+  const subtitle = sub === "partner-sales" ? partnerDate : dated ? `${from} to ${to}` : "";
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-1.5">
+      <ReportPrintHeader title={`Pharmacy — ${activeLabel}`} subtitle={subtitle} />
+      <div className="flex flex-wrap items-center gap-1.5 print:hidden">
         {tabs.length > 1 && tabs.map(([k, l]) => (
-          <button key={k} onClick={() => setSub(k)} className={`rounded-md px-2.5 py-1 text-xs ${sub === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"}`}>{l}</button>
+          <button
+            key={k}
+            onClick={() => {
+              // Clear the PREVIOUS tab's data in the same click, batched with
+              // setSub — otherwise React can paint one render where `sub` has
+              // already moved to the new tab but `data` still holds the old
+              // tab's shape (e.g. an object like {totals, byType} instead of
+              // an array), and ReportBody's array-expecting branch (.map/
+              // .length) throws. A real, reproducible bug — not a race
+              // specific to any one tab pair.
+              setData(null);
+              setSub(k);
+            }}
+            className={`rounded-md px-2.5 py-1 text-xs ${sub === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"}`}
+          >
+            {l}
+          </button>
         ))}
+        <PrintButton />
       </div>
       {dated && (
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2 print:hidden">
           <label className="text-xs"><span className="block text-slate-500">From</span><DateInput value={from} onChange={setFrom} className={input} /></label>
           <label className="text-xs"><span className="block text-slate-500">To</span><DateInput value={to} onChange={setTo} className={input} /></label>
           <button onClick={load} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm text-[var(--hms-btn-fg)]">Apply</button>
         </div>
       )}
       {sub === "partner-sales" && (
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2 print:hidden">
           <label className="text-xs"><span className="block text-slate-500">Date</span><DateInput value={partnerDate} onChange={setPartnerDate} className={input} /></label>
           <button onClick={load} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm text-[var(--hms-btn-fg)]">Apply</button>
         </div>
@@ -169,7 +192,7 @@ function ReportBody({ sub, data, onChanged }) {
       </div>
     );
   }
-  if (sub === "expiry") return <SimpleTable rows={data} cols={[["medicineName", "Medicine"], ["batchNumber", "Batch"], ["expiryDate", "Expiry", fmtDDMMYY], ["quantity", "Qty"], ["daysRemaining", "Days remaining", (v) => (v < 0 ? `Expired ${-v}d ago` : v)]]} />;
+  if (sub === "expiry") return <SimpleTable rows={data.rows} cols={[["medicineName", "Medicine"], ["batchNumber", "Batch"], ["expiryDate", "Expiry", fmtDDMMYY], ["quantity", "Qty"], ["daysRemaining", "Days remaining", (v) => (v < 0 ? `Expired ${-v}d ago` : v)]]} />;
   if (sub === "low-stock") return <SimpleTable rows={data} cols={[["medicineName", "Medicine"], ["totalQuantity", "Stock"], ["threshold", "Reorder level"]]} />;
   if (sub === "purchases") return <SimpleTable rows={data} cols={[["medicineName", "Medicine"], ["quantity", "Qty"], ["value", "Value", rupee], ["grnCount", "GRNs"]]} />;
   if (sub === "grns") return <SimpleTable rows={data} cols={[["grnNumber", "GRN #"], ["grnDate", "Date", fmtDDMMYY], ["supplierName", "Supplier"], ["lineCount", "Lines"], ["acceptedQuantity", "Accepted qty"], ["value", "Value", rupee]]} />;

@@ -5,6 +5,8 @@ import { fmtDDMMYY } from "@/lib/dateFormat";
 import { useEffect, useState } from "react";
 import { apiGet } from "@/components/hms/api";
 import TabPills from "@/components/hms/TabPills";
+import PrintButton from "@/components/hms/PrintButton";
+import ReportPrintHeader from "@/components/hms/ReportPrintHeader";
 
 // Core revenue/collection reports (CLAUDE.md "Reports" — Phase 7).
 // Deliberately practical, not a BI platform: one tabbed page, a shared
@@ -57,7 +59,7 @@ function Table({ columns, rows, empty }) {
 
 function DateFilter({ from, to, setFrom, setTo, onApply, children }) {
   return (
-    <div className="flex flex-wrap items-end gap-2">
+    <div className="flex flex-wrap items-end gap-2 print:hidden">
       <div>
         <label className="block text-xs text-slate-500">From</label>
         <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
@@ -87,17 +89,22 @@ const TABS = [
 
 export default function ReportsClient() {
   const [tab, setTab] = useState("collection");
+  const activeLabel = TABS.find((t) => t.key === tab)?.label || "Report";
   return (
     <div className="max-w-6xl space-y-6">
-      <div>
+      <div className="print:hidden">
         <h1 className="text-xl font-semibold">Reports</h1>
         <p className="mt-1 text-sm text-slate-500">
           Collections, outstanding balances, and revenue by department — drawn from real bills, payments and
           refunds, never estimated.
         </p>
       </div>
+      <ReportPrintHeader title={`Reports — ${activeLabel}`} />
+      <PrintButton />
 
-      <TabPills value={tab} onChange={setTab} tabs={TABS.map((t) => [t.key, t.label])} />
+      <div className="print:hidden">
+        <TabPills value={tab} onChange={setTab} tabs={TABS.map((t) => [t.key, t.label])} />
+      </div>
 
       {tab === "collection" && <CollectionTab />}
       {tab === "outstanding" && <OutstandingTab />}
@@ -212,7 +219,7 @@ function OutstandingTab() {
         empty="No outstanding bills — everything's settled."
       />
       {total > 25 && (
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-sm print:hidden">
           <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded-md border border-slate-300 px-2 py-1 disabled:opacity-40">
             Prev
           </button>
