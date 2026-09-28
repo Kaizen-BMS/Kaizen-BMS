@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiRoute, json } from "@/lib/apiRoute";
+import { apiRoute, json, HttpError } from "@/lib/apiRoute";
 import { parseBody } from "@/lib/validate";
 import { tenantDb } from "@/lib/prismaClient";
 import { resolveInstance } from "@/lib/moduleInstances";
@@ -30,6 +30,10 @@ const createSchema = z.object({
   // the tenant's default Pharmacy instance, so this is fully backward
   // compatible. See CLAUDE.md "Platform rebuild — Phase 2".
   moduleInstanceId: z.coerce.number().int().positive().optional(),
+  // Quantity/rates below were entered in the medicine's own content unit (e.g. Tablet) rather than
+  // its stock unit (e.g. Strip) — a pharmacist who counted "200 tablets received" rather than "20
+  // strips received" shouldn't have to do that division and rate multiplication by hand.
+  inContentUnit: z.boolean().optional().default(false),
 });
 
 // Stock-IN — receive new stock into a batch. Adding to an existing
@@ -42,7 +46,7 @@ const createSchema = z.object({
 // its own commercial detail (rate/MRP/rack), same as a real pharmacy: two
 // batches of the one medicine can legitimately cost different amounts.
 export const POST = apiRoute("stock:create", async (request, { session }) => {
-  const body = await parseBody(request, createSchema);
+  let body = await parseBody(request, createSchema);
   const expiry = body.expiryDate || null;
   const mfg = body.manufacturingDate || null;
   const instance = await resolveInstance(tenantDb, session.tenantId, "PHARMACY", body.moduleInstanceId);
@@ -52,6 +56,24 @@ export const POST = apiRoute("stock:create", async (request, { session }) => {
     if (!medicineId) {
       const match = await tx.medicines.findFirst({ where: { name: body.medicineName }, select: { id: true } });
       medicineId = match?.id ?? null;
+    }
+
+    // Tablet -> Strip: divide the count, multiply the rates, so stock and pricing only ever store
+    // the medicine's real stock unit — same conversion GRN already does one level up (Box -> Strip).
+    if (body.inContentUnit) {
+      if (!medicineId) throw new HttpError(400, "medicine_not_in_catalog");
+      const medicine = await tx.medicines.findUnique({ where: { id: BigInt(medicineId) }, select: { content_per_pack: true, content_unit: true } });
+      const f = medicine?.content_per_pack || 1;
+      if (f <= 1) throw new HttpError(400, "no_content_unit_set");
+      if (body.quantity % f !== 0) throw new HttpError(400, `quantity_not_whole_${medicine.content_unit || "units"}`);
+      const r2 = (n) => Math.round(n * f * 100) / 100;
+      body = {
+        ...body,
+        quantity: body.quantity / f,
+        ...(body.purchaseRate != null ? { purchaseRate: r2(body.purchaseRate) } : {}),
+        ...(body.mrp != null ? { mrp: r2(body.mrp) } : {}),
+        ...(body.sellingRate != null ? { sellingRate: r2(body.sellingRate) } : {}),
+      };
     }
 
     const existing = await tx.pharmacy_stock.findFirst({

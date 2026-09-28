@@ -39,7 +39,7 @@ const label = "block text-xs font-medium text-slate-600";
 const help = "mt-0.5 block text-[11px] leading-tight text-slate-400";
 const rupee = (n) => (n != null ? `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—");
 
-const BLANK = { medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "", quantity: "", location: "", unit: "", contentUnit: "", contentPerPack: "", packagingUnset: false, ...EMPTY_PRICE };
+const BLANK = { medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "", quantity: "", location: "", unit: "", contentUnit: "", contentPerPack: "", packagingUnset: false, enterAsContent: false, ...EMPTY_PRICE };
 
 // One line per batch: Qty · Medicine · Batch · MFD · Expiry · Purchase Rate · MRP · Margin · Selling Price · Status.
 // Everything else (type, salt, location, reorder level, adjust) opens under "Details".
@@ -110,6 +110,7 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
         ...(form.mrp ? { mrp: Number(form.mrp) } : {}),
         ...(form.sellingRate ? { sellingRate: Number(form.sellingRate) } : {}),
         ...(form.location ? { rack: form.location } : {}),
+        ...(form.enterAsContent ? { inContentUnit: true } : {}),
       });
       setOk(`Added ${form.quantity} × ${form.medicineText} (batch ${form.batchNumber}).`);
       setForm(BLANK);
@@ -118,6 +119,8 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
       onError(
         err.message === "pick_a_medicine" ? "Pick the medicine from the suggestions (add it in Medicine List first if it isn't there)."
         : err.message === "selling_price_above_mrp" ? "Selling price cannot be more than MRP."
+        : err.message.startsWith("quantity_not_whole_") ? `That's not a whole number of ${form.unit || "units"} — check the ${form.contentUnit?.toLowerCase() || "unit"} count.`
+        : err.message === "no_content_unit_set" ? "Set how many units this medicine's pack contains first (below), then save again."
         : err.message,
       );
     } finally {
@@ -158,10 +161,22 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
           {ok && <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700">{ok}</p>}
           {showAdd && (
             <form onSubmit={submitStockIn} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <label className={label}>Quantity
-                <input type="number" min="1" required placeholder="100" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className={`${input} mt-1`} />
-                <span className={help}>How many units you are adding.</span>
-              </label>
+              <div className={label}>Quantity
+                <div className="mt-1 flex gap-1">
+                  <input type="number" min="1" required placeholder="100" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className={input} />
+                  {form.contentUnit && Number(form.contentPerPack) > 1 && (
+                    <select aria-label="Counted in" value={form.enterAsContent ? "C" : "U"} onChange={(e) => setForm((f) => ({ ...f, enterAsContent: e.target.value === "C" }))} className="shrink-0 rounded-lg border border-slate-300 bg-white px-1.5 text-sm">
+                      <option value="U">{form.unit || "unit"}</option>
+                      <option value="C">{form.contentUnit}</option>
+                    </select>
+                  )}
+                </div>
+                <span className={help}>
+                  {form.enterAsContent && Number(form.contentPerPack) > 1 && Number(form.quantity) > 0
+                    ? `= ${(Number(form.quantity) / Number(form.contentPerPack)).toFixed(2)} ${form.unit || "unit"} into stock (must be a whole number).`
+                    : `How many ${form.enterAsContent ? (form.contentUnit || "").toLowerCase() : (form.unit || "unit").toLowerCase()}${form.quantity === "1" ? "" : "s"} you are adding.`}
+                </span>
+              </div>
               <div className={label}>
                 Medicine
                 <div className="mt-1">
@@ -203,7 +218,18 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                   </div>
                 </div>
               )}
-              <PriceFields value={form} onChange={(p) => setForm((f) => ({ ...f, ...p }))} quantity={form.quantity} unitName={(form.unit || "unit").toLowerCase()} contentUnit={form.contentUnit} contentPerPack={Number(form.contentPerPack) || null} />
+              <PriceFields
+                value={form}
+                onChange={(p) => setForm((f) => ({ ...f, ...p }))}
+                quantity={form.quantity}
+                unitName={(form.enterAsContent ? form.contentUnit : form.unit || "unit").toLowerCase()}
+                contentUnit={form.contentUnit}
+                contentPerPack={Number(form.contentPerPack) || null}
+                levels={form.enterAsContent && Number(form.contentPerPack) > 1 ? [
+                  { label: (form.contentUnit || "unit").toLowerCase(), per: 1 },
+                  { label: (form.unit || "unit").toLowerCase(), per: 1 / Number(form.contentPerPack) },
+                ] : undefined}
+              />
               <label className={label}>Location
                 <input placeholder="Rack A - Shelf 3" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={`${input} mt-1`} />
                 <span className={help}>Where it is kept (optional).</span>
