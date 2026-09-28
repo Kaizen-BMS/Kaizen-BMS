@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import ReferralSourcesClient from "../referral-sources/ReferralSourcesClient";
+import TabPills from "@/components/hms/TabPills";
 
 const FORM_TYPES = ["PATIENT_REGISTRATION", "CONSULTATION", "LAB_ORDER", "BILLING"];
 const FIELD_TYPES = ["text", "textarea", "number", "date", "select", "checkbox", "phone"];
@@ -72,19 +73,7 @@ function FormsEditor() {
     <div className="max-w-3xl space-y-5">
       <h1 className="text-xl font-semibold">Form builder</h1>
 
-      <div className="flex gap-1 text-sm">
-        {FORM_TYPES.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`rounded-md px-3 py-1.5 ${
-              t === tab ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100"
-            }`}
-          >
-            {t.replace(/_/g, " ").toLowerCase()}
-          </button>
-        ))}
-      </div>
+      <TabPills value={tab} onChange={setTab} tabs={FORM_TYPES.map((t) => [t, t.replace(/_/g, " ").toLowerCase()])} />
 
       {msg && (
         <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">

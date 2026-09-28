@@ -7,6 +7,7 @@ import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
 import { parseMaybeJson } from "@/components/hms/json";
 import PartnerSend from "@/components/hms/PartnerSend";
+import TabPills from "@/components/hms/TabPills";
 import { WalkInTab, TestsTab, ReportsTab, PayBox } from "./LabExtras";
 
 const FLAGS = ["NORMAL", "HIGH", "LOW", "ABNORMAL"];
@@ -39,11 +40,15 @@ export default function LabClient({ permissions }) {
   const [tab, setTab] = useState("queue");
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 text-sm">
-        {[["queue", "Lab queue"], ...(permissions.canWalkin ? [["walkin", "New walk-in order"]] : []), ["reports", "Reports"], ["tests", "Tests & prices"], ["partner", "Partner orders"]].map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 ${tab === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-slate-100 text-slate-600"}`}>{label}</button>
-        ))}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Lab</h1>
+        <p className="text-sm text-slate-500">Orders, results and reports — for your own lab and connected partner labs.</p>
       </div>
+      <TabPills
+        value={tab}
+        onChange={setTab}
+        tabs={[["queue", "Lab queue"], ...(permissions.canWalkin ? [["walkin", "New walk-in order"]] : []), ["reports", "Reports"], ["tests", "Tests & prices"], ["partner", "Partner orders"]]}
+      />
       {tab === "queue" && <LabQueueView permissions={permissions} />}
       {tab === "walkin" && <WalkInTab onDone={() => setTab("queue")} />}
       {tab === "reports" && <ReportsTab />}
@@ -148,7 +153,6 @@ function LabQueueView({ permissions }) {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Lab</h1>
       {msg && <p className="text-sm text-red-600">{msg}</p>}
       {justResulted && (
         <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">

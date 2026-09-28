@@ -4,6 +4,7 @@ import { fmtDDMMYY } from "@/lib/dateFormat";
 
 import { useEffect, useState } from "react";
 import { apiGet } from "@/components/hms/api";
+import TabPills from "@/components/hms/TabPills";
 
 // Core revenue/collection reports (CLAUDE.md "Reports" — Phase 7).
 // Deliberately practical, not a BI platform: one tabbed page, a shared
@@ -96,21 +97,7 @@ export default function ReportsClient() {
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
-              tab === t.key
-                ? "border-[var(--hms-btn-bg)] bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]"
-                : "border-slate-300 text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabPills value={tab} onChange={setTab} tabs={TABS.map((t) => [t.key, t.label])} />
 
       {tab === "collection" && <CollectionTab />}
       {tab === "outstanding" && <OutstandingTab />}

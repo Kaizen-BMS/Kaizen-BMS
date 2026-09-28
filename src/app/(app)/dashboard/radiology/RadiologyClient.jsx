@@ -6,6 +6,7 @@ import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import RadiologyCatalog from "./RadiologyCatalog";
 import { CONTRAST_LABEL } from "@/lib/radiologyCommon";
+import TabPills from "@/components/hms/TabPills";
 
 const TABS = [
   { key: "", label: "All" },
@@ -101,29 +102,18 @@ export default function RadiologyClient({ permissions }) {
 
   return (
     <div className="max-w-4xl space-y-4">
-      <h1 className="text-xl font-semibold">Radiology</h1>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Radiology</h1>
+        <p className="text-sm text-slate-500">Imaging orders, reports and the studies you offer.</p>
+      </div>
       {msg && <p className="text-sm text-red-600">{msg}</p>}
 
-      <div className="flex gap-2">
-        {[["orders", "Orders"], ["catalog", "Studies & sets"]].map(([k, l]) => (
-          <button key={k} onClick={() => setView(k)} className={`rounded-full px-3 py-1 text-sm ${view === k ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "border border-slate-300 text-slate-600"}`}>{l}</button>
-        ))}
-      </div>
+      <TabPills value={view} onChange={setView} tabs={[["orders", "Orders"], ["catalog", "Studies & sets"]]} />
 
       {view === "catalog" && <RadiologyCatalog canManage={permissions.canManage} />}
 
       {view === "orders" && <>
-      <div className="flex gap-1 border-b border-slate-200">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-3 py-2 text-sm ${tab === t.key ? "border-b-2 border-slate-900 font-medium text-slate-900" : "text-slate-500"}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabPills value={tab} onChange={setTab} tabs={TABS.map((t) => [t.key, t.label])} />
 
       {orders.length === 0 && <p className="text-sm text-slate-400">No orders in this view.</p>}
 
