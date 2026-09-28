@@ -14,7 +14,7 @@
 const { serverEvents, emitToModule } = require("./realtime");
 const { runWithContext } = require("./requestContext");
 const { tenantDb } = require("./prismaClient");
-const { resolveAndPriceService, resolvePatientCategory, money2 } = require("./pricing");
+const { resolveAndPriceService, resolvePatientCategory, priceLine, money2 } = require("./pricing");
 const { recomputeBillStatus } = require("./billing");
 
 /** The tenant's single OPEN, not-yet-finalized IPD bill for this visit, or null. */
@@ -22,6 +22,23 @@ async function findOpenIpdBill(visitId) {
   return tenantDb.bills.findFirst({
     where: { visit_id: visitId, bill_type: "IPD", finalized_at: null },
   });
+}
+
+/**
+ * The OPD equivalent — find the visit's checkout bill (created either here
+ * or by the manual POST /api/billing/opd path; same find-or-create key as
+ * that route, `visit_id` + `bill_type: "OPD"`, so the two can never diverge
+ * into two different bills for the same visit). Unlike IPD there's no
+ * separate "admission:created" moment to create this ahead of time — the
+ * FIRST thing that needs to bill against this visit (usually a dispense)
+ * creates it, same as it always did when a human clicked "Create" first.
+ */
+async function findOrCreateOpdBill(visitId, patientId, tenantId) {
+  let bill = await tenantDb.bills.findFirst({ where: { visit_id: visitId, bill_type: "OPD" } });
+  if (bill) return bill;
+  bill = await tenantDb.bills.create({ data: { patient_id: patientId, visit_id: visitId, bill_type: "OPD" } });
+  emitToModule(tenantId, "BILLING", "bill:created", { bill });
+  return bill;
 }
 
 /**
@@ -79,37 +96,107 @@ serverEvents.on("dispense:created", ({ tenantId, payload }) => {
       select: { visit_id: true },
     });
     if (!rx?.visit_id) return;
-    const bill = await findOpenIpdBill(rx.visit_id);
-    if (!bill) return; // not an IPD stay (or no open running bill) — OPD pharmacy items are aggregated at checkout instead
 
-    // Explicit mapping only (item.service_id) — same rule as OPD's
-    // billing/opd route. No mapping -> the pre-Phase-7 amount:0 behavior.
-    let priced = { ok: false };
+    // IPD's running bill takes priority when one is open; otherwise this is
+    // an OPD visit — find (or, on the very first dispense, create) its
+    // checkout bill, so billing happens the moment medicine is actually
+    // handed over instead of waiting for a human to remember to open
+    // Billing later. Skip entirely once the bill is finalized — nothing
+    // should append to a closed bill.
+    let bill = await findOpenIpdBill(rx.visit_id);
+    if (!bill) {
+      const visit = await tenantDb.visits.findUnique({ where: { id: rx.visit_id }, select: { patient_id: true } });
+      if (!visit?.patient_id) return;
+      bill = await findOrCreateOpdBill(rx.visit_id, visit.patient_id, tenantId);
+    }
+    if (bill.finalized_at) return;
+
+    // Explicit Service/Tariff mapping (item.service_id), when a doctor
+    // chose one at prescribing time — same rule as OPD's billing/opd
+    // route. This is the rare path; unchanged from before.
     if (item.service_id) {
       const category = await resolvePatientCategory(tenantDb, bill.patient_id);
-      priced = await resolveAndPriceService(tenantDb, item.service_id, category, item.dispensed_quantity);
+      const priced = await resolveAndPriceService(tenantDb, item.service_id, category, item.dispensed_quantity);
+      await appendItemOnce(bill.id, tenantId, {
+        source: priced.ok ? "SERVICE" : "PHARMACY",
+        description: `${item.medicine_name} × ${item.dispensed_quantity}`,
+        amount: priced.ok ? priced.line.amount : 0,
+        reference_type: "prescription_item",
+        reference_id: BigInt(item.id),
+        ...(priced.ok
+          ? {
+              service_id: priced.service.id,
+              tariff_id: priced.tariff.id,
+              quantity: priced.line.quantity,
+              unit_price: priced.line.unit_price,
+              taxable_amount: priced.line.taxable_amount,
+              tax_rate: priced.line.tax_rate,
+              cgst_amount: priced.line.cgst_amount,
+              sgst_amount: priced.line.sgst_amount,
+              igst_amount: priced.line.igst_amount,
+              tax_amount: priced.line.tax_amount,
+            }
+          : {}),
+      });
+      return;
     }
-    await appendItemOnce(bill.id, tenantId, {
-      source: priced.ok ? "SERVICE" : "PHARMACY",
-      description: `${item.medicine_name} × ${item.dispensed_quantity}`,
-      amount: priced.ok ? priced.line.amount : 0,
-      reference_type: "prescription_item",
-      reference_id: BigInt(item.id),
-      ...(priced.ok
-        ? {
-            service_id: priced.service.id,
-            tariff_id: priced.tariff.id,
-            quantity: priced.line.quantity,
-            unit_price: priced.line.unit_price,
-            taxable_amount: priced.line.taxable_amount,
-            tax_rate: priced.line.tax_rate,
-            cgst_amount: priced.line.cgst_amount,
-            sgst_amount: priced.line.sgst_amount,
-            igst_amount: priced.line.igst_amount,
-            tax_amount: priced.line.tax_amount,
-          }
-        : {}),
-    });
+
+    // The overwhelming majority of dispenses — no Service/Tariff mapping
+    // exists. Price each batch this dispense actually drew from using the
+    // exact same formula Pharmacy's own counter sale (sellItems()) already
+    // uses: the batch's own selling_rate (falling back to its mrp) plus
+    // the medicine's gst_rate, split CGST/SGST — a real price from real
+    // stock data, never a guess and never a second/different formula.
+    // One bill_item PER STOCK MOVEMENT (not per prescription_item) — a
+    // later partial dispense on the same line creates new movements with
+    // new ids, so it always gets its own new bill line instead of being
+    // silently dropped by appendItemOnce's dedupe.
+    const consumed = Array.isArray(payload.consumed) ? payload.consumed : [];
+    if (consumed.length === 0) return; // nothing was actually given this call (e.g. genuinely out of stock)
+
+    const batchIds = consumed.map((c) => BigInt(c.batchId));
+    const batches = await tenantDb.pharmacy_stock.findMany({ where: { id: { in: batchIds } } });
+    const batchById = new Map(batches.map((b) => [String(b.id), b]));
+    const medicineIds = [...new Set(batches.map((b) => b.medicine_id).filter((v) => v != null))];
+    const medicines = medicineIds.length ? await tenantDb.medicines.findMany({ where: { id: { in: medicineIds } } }) : [];
+    const medById = new Map(medicines.map((m) => [String(m.id), m]));
+
+    for (const c of consumed) {
+      if (!c.movementId) continue;
+      const batch = batchById.get(String(c.batchId));
+      const rate = batch ? batch.selling_rate ?? batch.mrp : null;
+      const medicine = batch?.medicine_id ? medById.get(String(batch.medicine_id)) : null;
+      const gst = Number(medicine?.gst_rate || 0);
+      const priced =
+        rate != null
+          ? priceLine({ price: Number(rate), tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, c.quantity)
+          : null;
+      await appendItemOnce(bill.id, tenantId, {
+        source: "PHARMACY",
+        description: `${item.medicine_name}${c.batchNumber ? ` (Batch ${c.batchNumber})` : ""} × ${c.quantity}`,
+        amount: priced ? priced.amount : 0,
+        reference_type: "pharmacy_stock_movement",
+        reference_id: BigInt(c.movementId),
+        stock_id: batch ? batch.id : null,
+        medicine_id: batch?.medicine_id ?? null,
+        batch_number: c.batchNumber || null,
+        expiry_date: batch?.expiry_date ?? null,
+        mrp: batch?.mrp ?? null,
+        purchase_rate: batch?.purchase_rate ?? null,
+        ...(priced
+          ? {
+              quantity: priced.quantity,
+              unit_price: priced.unit_price,
+              taxable_amount: priced.taxable_amount,
+              tax_rate: priced.tax_rate,
+              cgst_amount: priced.cgst_amount,
+              sgst_amount: priced.sgst_amount,
+              igst_amount: priced.igst_amount,
+              tax_amount: priced.tax_amount,
+            }
+          : {}),
+      });
+    }
   }).catch((err) => console.error("billingEvents dispense:created failed", err));
 });
 

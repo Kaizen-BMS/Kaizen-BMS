@@ -7,6 +7,7 @@ import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
 import AllergyBadge from "@/components/hms/AllergyBadge";
 import PartnerSend from "@/components/hms/PartnerSend";
+import MedicineInput from "@/components/hms/MedicineInput";
 import { fmtDDMMYY } from "@/lib/dateFormat";
 import InventoryTab from "./InventoryTab";
 import { MedicinesTab, SuppliersTab, GrnTab, TransferTab, ReturnsTab, SellTab } from "./PharmacyExtras";
@@ -156,6 +157,13 @@ function QueueTab({ canDispense, onError }) {
   const [flashIds, setFlashIds] = useState(new Set());
   const [busyItemId, setBusyItemId] = useState(null);
   const [qtys, setQtys] = useState({}); // per-line "dispense this many now" (blank = everything remaining)
+  // Per-line explicit substitute pick — {itemId: {id, name}}. Set only when
+  // a pharmacist actively picks something from the suggestion list, never
+  // guessed. Also doubles as "resolve this legacy line's catalog identity"
+  // for an item that was never linked (see medicine_id on the dispense
+  // route) — same one action either way.
+  const [substitutes, setSubstitutes] = useState({});
+  const [substOpenFor, setSubstOpenFor] = useState(null);
   // A prescription drops off this queue the moment it's fully dispensed
   // (server-side filter + the filter below) — without this, that felt like
   // it vanished into nowhere instead of flowing on to billing. Keep a
@@ -196,28 +204,56 @@ function QueueTab({ canDispense, onError }) {
   // Apply the server's own response straight to local state — instant for
   // the pharmacist who clicked, no waiting on the realtime round trip (that
   // still fires, for every OTHER open tab/screen watching this queue).
+  function applyDispenseResult(item, prescriptionStatus) {
+    flash(item.prescription_id);
+    if (prescriptionStatus === "FULFILLED") {
+      const pr = prescriptions.find((p) => p.id === item.prescription_id);
+      setJustFulfilled((xs) => [
+        { id: item.prescription_id, patientName: pr?.patient_name || "Patient", visitId: pr?.visit_id },
+        ...xs.filter((x) => x.id !== item.prescription_id),
+      ].slice(0, 5));
+    }
+    setPrescriptions((prev) =>
+      prescriptionStatus === "FULFILLED"
+        ? prev.filter((pr) => pr.id !== item.prescription_id)
+        : prev.map((pr) =>
+            pr.id !== item.prescription_id
+              ? pr
+              : { ...pr, status: prescriptionStatus, items: pr.items.map((it) => (it.id === item.id ? item : it)) },
+          ),
+    );
+  }
+
   async function dispense(itemId, quantity) {
     setBusyItemId(itemId);
     onError("");
     try {
-      const { item, prescriptionStatus } = await apiSend(`/api/pharmacy/dispense/${itemId}`, "POST", quantity ? { quantity } : {});
-      flash(item.prescription_id);
-      if (prescriptionStatus === "FULFILLED") {
-        const pr = prescriptions.find((p) => p.id === item.prescription_id);
-        setJustFulfilled((xs) => [
-          { id: item.prescription_id, patientName: pr?.patient_name || "Patient", visitId: pr?.visit_id },
-          ...xs.filter((x) => x.id !== item.prescription_id),
-        ].slice(0, 5));
-      }
-      setPrescriptions((prev) =>
-        prescriptionStatus === "FULFILLED"
-          ? prev.filter((pr) => pr.id !== item.prescription_id)
-          : prev.map((pr) =>
-              pr.id !== item.prescription_id
-                ? pr
-                : { ...pr, status: prescriptionStatus, items: pr.items.map((it) => (it.id === item.id ? item : it)) },
-            ),
-      );
+      const sub = substitutes[itemId];
+      const { item, prescriptionStatus } = await apiSend(`/api/pharmacy/dispense/${itemId}`, "POST", {
+        ...(quantity ? { quantity } : {}),
+        ...(sub ? { medicineId: sub.id } : {}),
+      });
+      applyDispenseResult(item, prescriptionStatus);
+      setSubstitutes((s) => { const n = { ...s }; delete n[itemId]; return n; });
+      setSubstOpenFor((cur) => (cur === itemId ? null : cur));
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusyItemId(null);
+    }
+  }
+
+  // "We don't have the rest — stop asking." Closes the outstanding balance
+  // on this line without giving anything more (it never touches stock —
+  // see the route's own comment). Only offered once at least a genuine
+  // attempt/partial has happened, so it's a deliberate close, not a way to
+  // skip dispensing altogether.
+  async function closeRemainder(itemId) {
+    setBusyItemId(itemId);
+    onError("");
+    try {
+      const { item, prescriptionStatus } = await apiSend(`/api/pharmacy/dispense/${itemId}/close`, "POST", {});
+      applyDispenseResult(item, prescriptionStatus);
     } catch (err) {
       onError(err.message);
     } finally {
@@ -270,46 +306,87 @@ function QueueTab({ canDispense, onError }) {
           <div className="mt-3 space-y-2">
             {pr.items.map((it) => {
               const outstanding = it.quantity - it.dispensed_quantity;
+              const sub = substitutes[it.id];
               return (
-                <div
-                  key={it.id}
-                  className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2 text-sm"
-                >
-                  <div>
-                    <p className="font-medium">
-                      {it.medicine_name} {it.dosage && <span className="text-slate-500">· {it.dosage}</span>}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Required {it.quantity} · Dispensed {it.dispensed_quantity} · Remaining {outstanding}
-                      {it.batch_number ? ` · batch ${it.batch_number}` : ""}
-                    </p>
+                <div key={it.id} className="rounded-md bg-slate-50 px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">
+                        {it.medicine_name} {it.dosage && <span className="text-slate-500">· {it.dosage}</span>}
+                        {sub && <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">giving: {sub.name}</span>}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Required {it.quantity} · Dispensed {it.dispensed_quantity} · Remaining {outstanding}
+                        {it.batch_number ? ` · batch ${it.batch_number}` : ""}
+                      </p>
+                    </div>
+                    {outstanding > 0 ? (
+                      canDispense && (
+                        <div className="flex shrink-0 items-center gap-1.5">
+                        <input
+                          type="number" min="1" max={outstanding} placeholder={String(outstanding)}
+                          value={qtys[it.id] || ""}
+                          onChange={(e) => setQtys((q) => ({ ...q, [it.id]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            // Enter dispenses this line directly — a pharmacist typing a
+                            // quantity shouldn't have to reach for the mouse to confirm it.
+                            if (e.key === "Enter") { e.preventDefault(); dispense(it.id, Math.min(outstanding, Number(qtys[it.id]) || 0) || undefined); }
+                          }}
+                          aria-label="Quantity to dispense now" className="w-16 rounded-md border border-slate-300 px-1.5 py-1 text-xs" />
+                        <button
+                          onClick={() => dispense(it.id, Math.min(outstanding, Number(qtys[it.id]) || 0) || undefined)}
+                          disabled={busyItemId === it.id}
+                          className="shrink-0 rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
+                        >
+                          {busyItemId === it.id ? "Dispensing…" : qtys[it.id] ? `Dispense ${Math.min(outstanding, Number(qtys[it.id]))}` : it.dispensed_quantity > 0 ? `Dispense remaining (${outstanding})` : `Dispense ${outstanding}`}
+                        </button>
+                        </div>
+                      )
+                    ) : (
+                      <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
+                        done
+                      </span>
+                    )}
                   </div>
-                  {outstanding > 0 ? (
-                    canDispense && (
-                      <div className="flex shrink-0 items-center gap-1.5">
-                      <input
-                        type="number" min="1" max={outstanding} placeholder={String(outstanding)}
-                        value={qtys[it.id] || ""}
-                        onChange={(e) => setQtys((q) => ({ ...q, [it.id]: e.target.value }))}
-                        onKeyDown={(e) => {
-                          // Enter dispenses this line directly — a pharmacist typing a
-                          // quantity shouldn't have to reach for the mouse to confirm it.
-                          if (e.key === "Enter") { e.preventDefault(); dispense(it.id, Math.min(outstanding, Number(qtys[it.id]) || 0) || undefined); }
-                        }}
-                        aria-label="Quantity to dispense now" className="w-16 rounded-md border border-slate-300 px-1.5 py-1 text-xs" />
-                      <button
-                        onClick={() => dispense(it.id, Math.min(outstanding, Number(qtys[it.id]) || 0) || undefined)}
-                        disabled={busyItemId === it.id}
-                        className="shrink-0 rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50"
-                      >
-                        {busyItemId === it.id ? "Dispensing…" : qtys[it.id] ? `Dispense ${Math.min(outstanding, Number(qtys[it.id]))}` : it.dispensed_quantity > 0 ? `Dispense remaining (${outstanding})` : `Dispense ${outstanding}`}
-                      </button>
-                      </div>
-                    )
-                  ) : (
-                    <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
-                      done
-                    </span>
+
+                  {outstanding > 0 && canDispense && (
+                    <div className="mt-1.5">
+                      {substOpenFor === it.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-56">
+                            <MedicineInput
+                              autoFocus
+                              value={sub?.name || ""}
+                              onChange={(t) => setSubstitutes((s) => ({ ...s, [it.id]: { id: s[it.id]?.id, name: t } }))}
+                              onPick={(m) => { setSubstitutes((s) => ({ ...s, [it.id]: { id: m.id, name: m.name } })); setSubstOpenFor(null); }}
+                              placeholder="Search a medicine to give instead…"
+                              className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+                            />
+                          </div>
+                          <button onClick={() => setSubstOpenFor(null)} className="text-xs text-slate-400 hover:text-slate-700">cancel</button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-3 text-[11px]">
+                          <button onClick={() => setSubstOpenFor(it.id)} className="text-slate-500 underline hover:text-slate-800">
+                            {sub ? "change substitute" : "don't have this — give another"}
+                          </button>
+                          {sub && (
+                            <button onClick={() => setSubstitutes((s) => { const n = { ...s }; delete n[it.id]; return n; })} className="text-slate-400 hover:text-slate-700">
+                              use original medicine instead
+                            </button>
+                          )}
+                          {it.dispensed_quantity > 0 || it.status === "OUT_OF_STOCK" ? (
+                            <button
+                              onClick={() => { if (window.confirm(`Close this line without giving the remaining ${outstanding}? This won't be asked again.`)) closeRemainder(it.id); }}
+                              disabled={busyItemId === it.id}
+                              className="text-slate-400 hover:text-red-600 disabled:opacity-50"
+                            >
+                              can&apos;t give the rest — close
+                            </button>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );

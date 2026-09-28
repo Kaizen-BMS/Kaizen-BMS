@@ -16,6 +16,14 @@ const dispenseSchema = z.object({
   // should draw from) is deferred to when Module Connections actually
   // carry that routing — see CLAUDE.md "Platform rebuild — Phase 2".
   moduleInstanceId: z.coerce.number().int().positive().optional(),
+  // Explicit pharmacist override: dispense against a DIFFERENT catalog
+  // medicine than whatever this line currently resolves to — covers both
+  // "this legacy line was never linked to the catalog, here's which one it
+  // really is" and a genuine substitution (exact medicine out of stock,
+  // giving an equivalent instead). Never guessed/fuzzy-matched — always an
+  // explicit pick from the suggestion list, same discipline as every other
+  // explicit-mapping-only feature in this codebase.
+  medicineId: z.coerce.number().int().positive().optional(),
 });
 
 // FEFO dispensing: consumes the item's remaining quantity from whichever
@@ -75,6 +83,19 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
     if (outstanding <= 0) throw new HttpError(400, "already fully dispensed");
     const requested = Math.min(body.quantity ?? outstanding, outstanding);
 
+    // An explicit substitute/resolve override for THIS dispense — re-point
+    // the line at the picked catalog medicine (and its real display name)
+    // before matching stock, and persist it so the next partial dispense
+    // on the same line, the queue display, and the eventual bill
+    // description all agree on what's actually being given.
+    if (body.medicineId) {
+      const picked = await tx.medicines.findFirst({ where: { id: BigInt(body.medicineId) }, select: { id: true, name: true } });
+      if (!picked) throw new HttpError(400, "medicine_not_found");
+      lockedItem.medicine_id = Number(picked.id);
+      lockedItem.medicine_name = picked.name;
+      await tx.prescription_items.update({ where: { id }, data: { medicine_id: picked.id, medicine_name: picked.name } });
+    }
+
     // Match by the catalog medicine_id when the prescription line was
     // picked from a suggestion (never guessed) — falls back to the
     // original exact medicine_name match for legacy/free-typed rows, or
@@ -115,7 +136,7 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
         where: { id: batch.id },
         data: { quantity: { decrement: take } },
       });
-      await tx.pharmacy_stock_movements.create({
+      const movement = await tx.pharmacy_stock_movements.create({
         data: {
           stock_id: batch.id,
           type: "DISPENSE",
@@ -124,7 +145,12 @@ export const POST = apiRoute("dispense:create", async (request, ctx) => {
           performed_by: BigInt(ctx.session.userId),
         },
       });
-      consumed.push({ batchId: Number(batch.id), batchNumber: batch.batch_number, quantity: take });
+      // movementId is the idempotency key billingEvents.js's dispense:created
+      // listener bills against (one bill_item per movement, never per
+      // prescription_item) — so a LATER partial dispense on the same line
+      // always gets its own new bill line instead of being silently
+      // dropped by the append-once dedupe.
+      consumed.push({ batchId: Number(batch.id), batchNumber: batch.batch_number, quantity: take, movementId: Number(movement.id) });
       remaining -= take;
     }
 
