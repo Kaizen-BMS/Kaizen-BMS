@@ -518,11 +518,25 @@ async function completeInbound(session, id, { findings, quantityFulfilled, amoun
       : { providerEventId: crypto.randomUUID(), externalOrderRef: order.external_order_ref, status: "COMPLETED", quantityFulfilled: quantityFulfilled != null ? Number(quantityFulfilled) : payload.quantity ?? null };
   const raw = JSON.stringify(body);
   const signature = crypto.createHmac("sha256", secret).update(raw, "utf8").digest("hex");
-  const res = await fetch(`${origin}/api/webhooks/${conn.service_type.toLowerCase()}/${conn.requester_provider_id}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-webhook-signature": signature, "x-webhook-timestamp": String(Math.floor(Date.now() / 1000)) },
-    body: raw,
-  });
+  // Bounded — this is an internal loopback call whose own handler does
+  // several sequential DB writes under this project's documented remote-DB
+  // latency; a hung/very-slow webhook must fail fast here rather than
+  // stalling the caller indefinitely (dispensePartnerOrder() already
+  // treats this step as best-effort/retryable, but a bound is still needed
+  // so "best-effort" doesn't mean "wait forever first").
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  let res;
+  try {
+    res = await fetch(`${origin}/api/webhooks/${conn.service_type.toLowerCase()}/${conn.requester_provider_id}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-webhook-signature": signature, "x-webhook-timestamp": String(Math.floor(Date.now() / 1000)) },
+      body: raw,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) throw new HttpError(502, "result_delivery_failed");
 
   await prisma.peer_inbound_orders.update({

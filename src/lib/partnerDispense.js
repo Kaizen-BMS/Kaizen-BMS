@@ -130,7 +130,24 @@ async function dispensePartnerOrder(session, id, origin, requestedQty) {
     );
   }
   if (done.dispensed <= 0) throw new HttpError(409, "out_of_stock");
-  await partners.completeInbound(session, id, { quantityFulfilled: done.dispensed, amount: done.amount }, origin);
+  // The medicine has ALREADY been physically dispensed at this point (real
+  // stock deducted, result_payload durably written above) — everything
+  // from here is just reporting that fact back to the sending hospital
+  // over a webhook, a separate, retryable, lower-stakes concern. A real
+  // incident: this webhook call — an HTTP round trip plus its own several
+  // sequential DB writes on the SENDER's side — was slow/flaky enough
+  // under this project's documented remote-DB latency that its failure
+  // surfaced to the pharmacist as "Could not dispense (internal_error)",
+  // even though the medicine was genuinely already given. Never again
+  // couple "did we tell the other hospital" to "did we give the
+  // medicine" — log it and let the next call to this same endpoint retry
+  // just the report (dispense itself is a no-op then, since `done` is
+  // already cached in result_payload).
+  try {
+    await partners.completeInbound(session, id, { quantityFulfilled: done.dispensed, amount: done.amount }, origin);
+  } catch (err) {
+    console.error(`[partnerDispense] report-back to sending hospital failed for order ${id} (medicine was already dispensed — will retry on next call):`, err?.message || err);
+  }
   return done;
 }
 
