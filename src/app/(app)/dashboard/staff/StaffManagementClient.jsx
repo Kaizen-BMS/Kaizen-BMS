@@ -9,6 +9,7 @@ import AccessButton from "@/components/hms/AccessButton";
 import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
+import { useToast, ToastBanner } from "@/components/hms/useToast";
 import AttendanceClient from "../attendance/AttendanceClient";
 import { StaffOverviewTab, WeeklySchedules, AttendanceHistoryTab, StaffHistoryTab, hoursText, dutyHours } from "./StaffExtras";
 import { fmtDDMMYY } from "@/lib/dateFormat";
@@ -69,6 +70,7 @@ function DirectoryTab({ ownUserId }) {
   const [busy, setBusy] = useState(false);
   const [zoom, setZoom] = useState(null);
   const [onlyNoPhoto, setOnlyNoPhoto] = useState(false);
+  const [toast, showToast] = useToast();
 
   async function load() {
     const { staff } = await apiGet("/api/staff/profiles");
@@ -108,6 +110,7 @@ function DirectoryTab({ ownUserId }) {
       const { photo: _keep, ...rest } = form;
       await apiSend(`/api/staff/profiles/${editing.userId}`, "PATCH", rest.photoDataUrl === "" ? { ...rest, photoDataUrl: undefined } : rest);
       setEditing(null);
+      showToast("Details saved.");
       await load();
     } catch (err) {
       setSaveErr(err.message);
@@ -121,7 +124,7 @@ function DirectoryTab({ ownUserId }) {
   return (
     <div className="space-y-3">
       {msg && <p className="text-sm text-red-600">{msg}</p>}
-      <AddStaffForm onCreated={load} />
+      <AddStaffForm onCreated={(name) => { load(); if (name) showToast(`${name} added.`); }} />
       {staff.some((s) => !s.photo && s.active) && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <span>{staff.filter((s) => !s.photo && s.active).length} of {staff.filter((s) => s.active).length} people have no photo — attendance photos cannot be matched for them.</span>
@@ -208,6 +211,7 @@ function DirectoryTab({ ownUserId }) {
           <img src={zoom.photo} alt={zoom.name} className="max-h-[80vh] rounded-lg" />
         </div>
       )}
+      <ToastBanner text={toast} />
     </div>
   );
 }
@@ -246,7 +250,9 @@ function DutyRosterTab({ canManage }) {
   const [msg, setMsg] = useState("");
   const [showAssign, setShowAssign] = useState(null); // date string
   const [assignForm, setAssignForm] = useState({ userId: "", startTime: "09:00", endTime: "17:00" });
+  const [assignErr, setAssignErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [toast, showToast] = useToast();
 
   const range =
     view === "week"
@@ -274,7 +280,7 @@ function DutyRosterTab({ canManage }) {
 
   async function assign(dateStr) {
     setBusy(true);
-    setMsg("");
+    setAssignErr("");
     try {
       await apiSend("/api/staff/duty-shifts", "POST", {
         userId: Number(assignForm.userId),
@@ -283,9 +289,10 @@ function DutyRosterTab({ canManage }) {
         endTime: assignForm.endTime,
       });
       setShowAssign(null);
+      showToast("Shift assigned.");
       await load();
     } catch (err) {
-      setMsg(err.message);
+      setAssignErr(err.message);
     } finally {
       setBusy(false);
     }
@@ -294,6 +301,7 @@ function DutyRosterTab({ canManage }) {
   async function remove(id) {
     try {
       await apiSend(`/api/staff/duty-shifts/${id}`, "DELETE");
+      showToast("Shift removed.");
       await load();
     } catch (err) {
       setMsg(err.message);
@@ -362,12 +370,13 @@ function DutyRosterTab({ canManage }) {
                     </div>
                   ))}
                   {canManage && (
-                    <button onClick={() => setShowAssign(showAssign === key ? null : key)} className="text-slate-400 underline">
+                    <button onClick={() => { setShowAssign(showAssign === key ? null : key); setAssignErr(""); }} className="text-slate-400 underline">
                       + assign
                     </button>
                   )}
                   {showAssign === key && (
                     <div className="mt-1 space-y-1 rounded border border-amber-200 bg-amber-50 p-1.5">
+                      {assignErr && <p className="rounded bg-red-100 px-1.5 py-1 text-[11px] text-red-700">{assignErr}</p>}
                       <select
                         value={assignForm.userId}
                         onChange={(e) => setAssignForm((f) => ({ ...f, userId: e.target.value }))}
@@ -408,6 +417,7 @@ function DutyRosterTab({ canManage }) {
           );
         })}
       </div>
+      <ToastBanner text={toast} />
     </div>
   );
 }
@@ -422,6 +432,7 @@ function LeaveRequestsTab({ canManage, ownUserId }) {
     const to = addDays(new Date(), 30);
     return { from: toDateStr(from), to: toDateStr(to) };
   });
+  const [toast, showToast] = useToast();
 
   async function load() {
     const { leaveRequests } = await apiGet(`/api/staff/leave-requests?from=${range.from}&to=${range.to}`);
@@ -445,6 +456,7 @@ function LeaveRequestsTab({ canManage, ownUserId }) {
     try {
       await apiSend("/api/staff/leave-requests", "POST", form);
       setForm({ fromDate: "", toDate: "", reason: "" });
+      showToast("Leave request submitted.");
       await load();
     } catch (err) {
       setMsg(err.message);
@@ -456,6 +468,7 @@ function LeaveRequestsTab({ canManage, ownUserId }) {
   async function decide(id, status) {
     try {
       await apiSend(`/api/staff/leave-requests/${id}`, "PATCH", { status });
+      showToast(status === "APPROVED" ? "Leave approved." : "Leave rejected.");
       await load();
     } catch (err) {
       setMsg(err.message);
@@ -472,9 +485,8 @@ function LeaveRequestsTab({ canManage, ownUserId }) {
         <button disabled={busy} className="col-span-full rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50 sm:col-span-1">
           Submit
         </button>
+        {msg && <p className="col-span-full rounded-md bg-red-50 px-2 py-1.5 text-sm text-red-700">{msg}</p>}
       </form>
-
-      {msg && <p className="text-sm text-red-600">{msg}</p>}
 
       <div className="space-y-2">
         {!rows && <p className="text-sm text-slate-400">Loading…</p>}
@@ -504,6 +516,7 @@ function LeaveRequestsTab({ canManage, ownUserId }) {
           );
         })}
       </div>
+      <ToastBanner text={toast} />
     </div>
   );
 }

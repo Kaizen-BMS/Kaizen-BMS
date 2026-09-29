@@ -43,7 +43,7 @@ export default function AddStaffForm({ onCreated }) {
       setMsg({ error: "", ok: `${r.account.name} added${r.account.employeeId ? ` — ${r.account.employeeId}` : ""}.`, temp: r.tempPassword || "" });
       setF((x) => ({ ...x, name: "", email: "", password: "" }));
       setDetails(EMPTY_DETAILS);
-      onCreated?.();
+      onCreated?.(r.account.name);
     } catch (err) {
       setMsg({ error: ERR[err.message] || `Could not add (${err.message}).`, ok: "", temp: "" });
     } finally {

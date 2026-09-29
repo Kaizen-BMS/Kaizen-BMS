@@ -21,6 +21,12 @@ export function parseDDMMYY(text) {
   return `${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
 }
 
+/** Slashes are inserted automatically as digits come in — typing "150126" alone becomes "15/01/26" (or up to 8 digits for a 4-digit year), so nobody has to type the separator themselves. */
+function autoSlash(raw) {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)].filter(Boolean).join("/");
+}
+
 export default function DateInput({ value, onChange, placeholder = "DD/MM/YY", className = "", title }) {
   const [text, setText] = useState(isoToDDMMYY(value));
   const [lastValue, setLastValue] = useState(value);
@@ -44,7 +50,12 @@ export default function DateInput({ value, onChange, placeholder = "DD/MM/YY", c
       title={title}
       inputMode="numeric"
       placeholder={placeholder}
-      onChange={(e) => { setText(e.target.value); const iso = parseDDMMYY(e.target.value); if (iso) { setBad(false); setLastValue(iso); onChange(iso); } }}
+      onChange={(e) => {
+        const formatted = autoSlash(e.target.value);
+        setText(formatted);
+        const iso = parseDDMMYY(formatted);
+        if (iso) { setBad(false); setLastValue(iso); onChange(iso); }
+      }}
       onBlur={(e) => commit(e.target.value)}
       aria-invalid={bad}
       className={`${className} ${bad ? "border-red-400 bg-red-50" : ""}`}

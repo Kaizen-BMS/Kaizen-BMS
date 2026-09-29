@@ -15,7 +15,9 @@ export const detailsShape = {
   nativePlace: opt(191),
   emergencyContact: opt(64),
   bloodGroup: z.enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]).optional().or(z.literal("")),
-  aadhaarNo: z.string().trim().regex(/^[0-9 ]{12,14}$/, "aadhaar must be 12 digits").optional().or(z.literal("")),
+  // AadhaarInput.jsx only ever sends plain digits (never spaces/hyphens) —
+  // a bare 12-digit regex is enough now that the client already enforces it.
+  aadhaarNo: z.string().trim().regex(/^\d{12}$/, "Aadhaar must be exactly 12 digits").optional().or(z.literal("")),
   employeeId: opt(40),
   department: opt(100),
   dutyType: z.enum(["FIXED", "SHIFT"]).optional(),

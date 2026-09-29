@@ -5,6 +5,7 @@ import CameraCapture from "./CameraCapture";
 import Avatar from "./Avatar";
 import DateInput from "./DateInput";
 import PhoneInput from "./PhoneInput";
+import AadhaarInput from "./AadhaarInput";
 
 export const EMPTY_DETAILS = {
   phone: "", designation: "", joinDate: "", address: "", nativePlace: "", emergencyContact: "", bloodGroup: "", medicalNotes: "", aadhaarNo: "", photoDataUrl: "",
@@ -68,7 +69,7 @@ export default function PersonDetailsFields({ name, value, onChange, showJoin = 
         {on("basic") && <PhoneInput label="Phone" value={value.phone} onChange={(v) => set("phone", v)} />}
         {on("basic") && showJoin && <div className={label}>Joining date<DateInput value={value.joinDate} onChange={(v) => set("joinDate", v)} className={`${input} mt-1`} /><span className={help}>DD/MM/YY</span></div>}
         {on("basic") && showDesignation && <label className={label}>Designation<input value={value.designation} onChange={(e) => set("designation", e.target.value)} placeholder="Senior Nurse" className={`${input} mt-1`} /></label>}
-        {on("more") && <><label className={label}>Aadhaar number<input value={value.aadhaarNo} onChange={(e) => set("aadhaarNo", e.target.value)} inputMode="numeric" placeholder="12 digits" maxLength={14} className={`${input} mt-1`} /></label>
+        {on("more") && <><AadhaarInput value={value.aadhaarNo} onChange={(v) => set("aadhaarNo", v)} />
         <label className={`${label} sm:col-span-2`}>Address<input value={value.address} onChange={(e) => set("address", e.target.value)} className={`${input} mt-1`} /></label>
         <label className={label}>Native place / from where<input value={value.nativePlace} onChange={(e) => set("nativePlace", e.target.value)} className={`${input} mt-1`} /></label>
         {showEmergency && <label className={label}>Emergency contact<input value={value.emergencyContact} onChange={(e) => set("emergencyContact", e.target.value)} placeholder="Name and phone" className={`${input} mt-1`} /></label>}

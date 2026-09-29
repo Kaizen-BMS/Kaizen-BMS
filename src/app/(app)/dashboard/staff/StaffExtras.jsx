@@ -7,6 +7,7 @@ import { useRealtime } from "@/components/hms/useRealtime";
 import { fmtDDMMYY } from "@/lib/dateFormat";
 import DateInput from "@/components/hms/DateInput";
 import Avatar from "@/components/hms/Avatar";
+import { useToast, ToastBanner } from "@/components/hms/useToast";
 
 const inp = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -105,8 +106,10 @@ export function WeeklySchedules({ canManage }) {
   const [templates, setTemplates] = useState([]);
   const [edit, setEdit] = useState(null); // { userId, name, days }
   const [msg, setMsg] = useState("");
+  const [saveErr, setSaveErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [tf, setTf] = useState({ name: "", start: "09:00", end: "17:00" });
+  const [toast, showToast] = useToast();
 
   const load = () => Promise.all([apiGet("/api/staff/schedules").then((d) => setStaff(d.staff)), apiGet("/api/staff/shift-templates").then((d) => setTemplates(d.templates))]);
   useEffect(() => { load().catch((e) => setMsg(e.message)); }, []);
@@ -117,13 +120,14 @@ export function WeeklySchedules({ canManage }) {
 
   async function save() {
     setBusy(true);
-    setMsg("");
+    setSaveErr("");
     try {
       await apiSend(`/api/staff/schedules/${edit.userId}`, "PUT", { days: edit.days.map((d) => ({ dow: d.dow, off: d.off, start: d.off ? null : d.start, end: d.off ? null : d.end })) });
       setEdit(null);
+      showToast("Schedule saved.");
       await load();
     } catch (err) {
-      setMsg(`Could not save (${err.message}).`);
+      setSaveErr(err.message);
     } finally {
       setBusy(false);
     }
@@ -133,6 +137,7 @@ export function WeeklySchedules({ canManage }) {
     try {
       await apiSend("/api/staff/shift-templates", "POST", tf);
       setTf({ name: "", start: "09:00", end: "17:00" });
+      showToast(`"${tf.name}" shift saved.`);
       await load();
     } catch (err) {
       setMsg(err.message === "template_already_exists" ? "A shift with that name already exists." : `Could not add (${err.message}).`);
@@ -164,7 +169,7 @@ export function WeeklySchedules({ canManage }) {
             <button className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">Save shift</button>
           </form>
           {templates.filter((t) => !t.active).length > 0 && (
-            <p className="text-[11px] text-slate-400">Switched off: {templates.filter((t) => !t.active).map((t) => <button key={t.id} onClick={() => toggleTemplate(t)} className="mr-1 underline">{t.name}</button>)}</p>
+            <p className="text-[11px] text-[var(--hms-ink-faint)]">Switched off: {templates.filter((t) => !t.active).map((t) => <button key={t.id} onClick={() => toggleTemplate(t)} className="mr-1 underline">{t.name}</button>)}</p>
           )}
         </div>
       )}
@@ -179,7 +184,7 @@ export function WeeklySchedules({ canManage }) {
                 <td className="py-2 pr-3 font-medium">{s.name}<span className="ml-1 text-slate-400">{s.role}</span></td>
                 {ORDER.map((d) => {
                   const day = s.days[d];
-                  return <td key={d} className={`px-2 py-2 tabular-nums ${day.off ? "text-slate-300" : ""}`}>{day.off ? (day.configured ? "Off" : "—") : `${day.start}–${day.end}`}</td>;
+                  return <td key={d} className={`px-2 py-2 tabular-nums ${day.off ? "text-[var(--hms-ink-faint)]" : ""}`}>{day.off ? (day.configured ? "Off" : "—") : `${day.start}–${day.end}`}</td>;
                 })}
                 <td className="py-2 text-right">{canManage && <button onClick={() => setEdit({ userId: s.userId, name: s.name, days: s.days.map((d) => ({ ...d, start: d.start || "09:00", end: d.end || "17:00" })) })} className="rounded-md px-2 py-0.5 hover:bg-slate-100">Edit</button>}</td>
               </tr>
@@ -189,7 +194,7 @@ export function WeeklySchedules({ canManage }) {
       </div>
 
       {edit && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setEdit(null)}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => { setEdit(null); setSaveErr(""); }}>
           <div className="max-h-[92vh] w-full max-w-lg overflow-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <p className="text-base font-semibold">{edit.name} — weekly schedule</p>
             <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
@@ -211,13 +216,15 @@ export function WeeklySchedules({ canManage }) {
                 );
               })}
             </div>
+            {saveErr && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">Could not save: {saveErr}</p>}
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setEdit(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Cancel</button>
+              <button onClick={() => { setEdit(null); setSaveErr(""); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Cancel</button>
               <button onClick={save} disabled={busy} className="rounded-lg bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{busy ? "Saving…" : "Save schedule"}</button>
             </div>
           </div>
         </div>
       )}
+      <ToastBanner text={toast} />
     </div>
   );
 }
@@ -232,16 +239,19 @@ export function AttendanceHistoryTab() {
   const [fix, setFix] = useState(null); // row being corrected
   const [fixForm, setFixForm] = useState({ checkIn: "", checkOut: "", reason: "" });
   const [fixBusy, setFixBusy] = useState(false);
+  const [fixErr, setFixErr] = useState("");
+  const [toast, showToast] = useToast();
 
   async function saveFix() {
     setFixBusy(true);
-    setErr("");
+    setFixErr("");
     try {
       await apiSend(`/api/staff/attendance-log/${fix.id}`, "PATCH", { ...(fixForm.checkIn ? { checkIn: fixForm.checkIn } : {}), ...(fixForm.checkOut ? { checkOut: fixForm.checkOut } : {}), reason: fixForm.reason });
       setFix(null);
+      showToast("Attendance corrected.");
       await load();
     } catch (e) {
-      setErr(e.message);
+      setFixErr(e.message);
     } finally {
       setFixBusy(false);
     }
@@ -301,7 +311,7 @@ export function AttendanceHistoryTab() {
         </table>
       </div>
       {fix && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setFix(null)}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => { setFix(null); setFixErr(""); }}>
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <p className="text-base font-semibold">Correct attendance — {fix.name}</p>
             <p className="text-xs text-slate-500">{fmtDDMMYY(fix.date)} · now in {clock(fix.checkIn)} / out {clock(fix.checkOut)}. Fill only what needs changing.</p>
@@ -311,8 +321,9 @@ export function AttendanceHistoryTab() {
             </div>
             <label className="mt-3 block text-xs font-medium text-slate-600">Reason (required)<input value={fixForm.reason} onChange={(e) => setFixForm({ ...fixForm, reason: e.target.value })} placeholder="Forgot to check out" className={`${inp} mt-1`} /></label>
             <p className="mt-1 text-[11px] text-slate-400">Saved in the person&apos;s Staff History with the old and new times.</p>
+            {fixErr && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">Could not save: {fixErr}</p>}
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setFix(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Cancel</button>
+              <button onClick={() => { setFix(null); setFixErr(""); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Cancel</button>
               <button onClick={saveFix} disabled={fixBusy || fixForm.reason.trim().length < 3 || (!fixForm.checkIn && !fixForm.checkOut)} className="rounded-lg bg-[var(--hms-btn-bg)] px-4 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{fixBusy ? "Saving…" : "Save correction"}</button>
             </div>
           </div>
@@ -320,10 +331,11 @@ export function AttendanceHistoryTab() {
       )}
       {zoom && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setZoom(null)}>
-          
+
           <img src={zoom} alt="Attendance photo" className="max-h-[85vh] rounded-2xl shadow-2xl" />
         </div>
       )}
+      <ToastBanner text={toast} />
     </div>
   );
 }
