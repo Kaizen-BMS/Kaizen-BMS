@@ -28,7 +28,11 @@ export default async function SlipPage({ params, searchParams }) {
   if (!visit) redirect("/dashboard");
   const tenant = await prisma.tenants.findUnique({ where: { id: tid }, select: { print_settings: true, name: true } });
   const settings = merge(tenant?.print_settings);
-  const b = await resolveBranding(session.tenantId, null);
+  // Same doctor the slip's own {doctor}/{expected} tokens already use —
+  // gets the assigned doctor's own signature when they've set one up,
+  // falling back to the facility's (matching the prescription print page's
+  // own resolveBranding(tenantId, doctorId) pattern).
+  const b = await resolveBranding(session.tenantId, visit.doctor_id);
 
   const bill = await prisma.bills.findFirst({ where: { visit_id: visit.id, tenant_id: tid, bill_type: "OPD" }, include: { payments: true } });
   const paid = bill ? bill.payments.reduce((s, p) => s + Number(p.amount), 0) : 0;
@@ -64,7 +68,7 @@ export default async function SlipPage({ params, searchParams }) {
         <PrintButton label="Print slip" />
         <p className="mb-3 text-xs text-slate-500">Paper: {paper.label}. Change the design in Settings › Printing.</p>
       </div>
-      <LayoutRender layout={layout} data={data} logo={b.header.logo_url} />
+      <LayoutRender layout={layout} data={data} logo={b.header.logo_url} signature={b.signature?.image || b.header.signature_image} />
       {auto === "1" && <AutoPrint />}
     </div>
   );

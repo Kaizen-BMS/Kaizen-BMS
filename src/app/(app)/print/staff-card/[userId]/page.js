@@ -55,7 +55,7 @@ export default async function StaffCardPage({ params }) {
     <div className="p-4 print:p-0">
       <style>{`@page { size: ${paper.page}; margin: 0; }`}</style>
       <div className="print:hidden"><PrintButton label="Print card" /></div>
-      <LayoutRender layout={layout} data={data} logo={branding.header.logo_url} photo={p.photo} />
+      <LayoutRender layout={layout} data={data} logo={branding.header.logo_url} photo={p.photo} signature={branding.header.signature_image} />
     </div>
   );
 }

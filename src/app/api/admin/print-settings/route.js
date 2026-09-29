@@ -16,7 +16,11 @@ export const GET = apiRoute("formtemplate:manage", async (request, { session }) 
     presets: Object.fromEntries(Object.entries(PRESETS).map(([k, g]) => [k, Object.entries(g).map(([key, p]) => ({ key, label: p.label }))])),
     tokens: TOKENS,
     papers: Object.entries(PAPERS).map(([key, p]) => ({ key, label: p.label })),
-    branding: { name: b.header.header_name || t?.name, logo: b.header.logo_url || null, address: b.header.address || null, phone: b.header.phone || null },
+    // Preview only — the real print pages resolve the actual doctor's own
+    // signature per document (see resolveBranding's doctorUserId param);
+    // this designer canvas always shows the tenant-level one (or a solo
+    // tenant's own, which lives in the same row) as a stand-in.
+    branding: { name: b.header.header_name || t?.name, logo: b.header.logo_url || null, signature: b.header.signature_image || null, address: b.header.address || null, phone: b.header.phone || null },
   });
 });
 

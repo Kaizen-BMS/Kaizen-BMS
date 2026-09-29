@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { apiGet, apiSend } from "./api";
 import LayoutRender from "./LayoutRender";
-import { PAPER_SIZE, presetLayout, rescaleLayout, T, LINE, LOGO, PHOTO } from "@/lib/printLayout";
+import { PAPER_SIZE, presetLayout, rescaleLayout, T, LINE, LOGO, PHOTO, SIGNATURE } from "@/lib/printLayout";
 import { SAMPLE_SLIP, SAMPLE_INVOICE, SAMPLE_STAFF, SAMPLE_ITEMS, SAMPLE_TOTALS } from "@/lib/printSample";
 
 const PX_PER_MM = 3.7795;
@@ -266,6 +266,7 @@ export default function PrintDesigner({ doc }) {
           <button onClick={() => add(T({ x: 10, y: 10, w: 50, h: 14, text: "Box", fontSize: 10, bg: "#e5e7eb", padding: 2 }))} className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">+ Box</button>
           <button onClick={() => add(LOGO({ x: 8, y: 8, w: 20, h: 20 }))} title="Facility logo, from Branding" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">+ Logo</button>
           {isCard && <button onClick={() => add(PHOTO({ x: 8, y: 8, w: 20, h: 24 }))} title="The staff member's own photo" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">+ Photo</button>}
+          <button onClick={() => add(SIGNATURE({ x: 10, y: 10, w: 35, h: 15 }))} title="Doctor's / facility's signature, from Branding" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">+ Signature</button>
         </div>
         <label className="text-xs"><span className="block text-slate-500">Zoom</span>
           <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className={input}>
@@ -296,7 +297,7 @@ export default function PrintDesigner({ doc }) {
         <div className="max-h-[75vh] overflow-auto rounded-lg border border-dashed border-slate-300 bg-slate-200 p-4" onPointerDown={() => setSel(null)}>
           <div style={{ width: size.w * PX_PER_MM * zoom, height: layout.h * PX_PER_MM * zoom, margin: "0 auto" }}>
             <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: `${size.w}mm`, boxShadow: "0 1px 6px rgba(0,0,0,.25)" }}>
-              <LayoutRender layout={layout} data={data} items={isInv ? SAMPLE_ITEMS : null} totals={SAMPLE_TOTALS} logo={d.branding.logo} selectedId={sel} onPointerDownEl={onDown} showGuides />
+              <LayoutRender layout={layout} data={data} items={isInv ? SAMPLE_ITEMS : null} totals={SAMPLE_TOTALS} logo={d.branding.logo} signature={d.branding.signature} selectedId={sel} onPointerDownEl={onDown} showGuides />
             </div>
           </div>
         </div>
@@ -352,6 +353,7 @@ export default function PrintDesigner({ doc }) {
               )}
               {el.type === "logo" && <div className="grid grid-cols-2 gap-2">{Num({ label: "Height (mm)", k: "h", min: 1 })}<p className="text-xs text-slate-500">Logo comes from Branding — upload/change it there.</p></div>}
               {el.type === "photo" && <div className="grid grid-cols-2 gap-2">{Num({ label: "Height (mm)", k: "h", min: 1 })}<p className="text-xs text-slate-500">Each person&apos;s own photo, from their staff profile.</p></div>}
+              {el.type === "signature" && <div className="grid grid-cols-2 gap-2">{Num({ label: "Height (mm)", k: "h", min: 1 })}<p className="text-xs text-slate-500">The doctor&apos;s (or facility&apos;s) signature — upload it in Branding.</p></div>}
               {el.type === "table" && (
                 <>
                   {Num({ label: "Font size (pt)", k: "fontSize", min: 5, max: 20 })}

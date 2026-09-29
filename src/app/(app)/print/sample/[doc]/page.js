@@ -28,7 +28,7 @@ export default async function SamplePage({ params }) {
     <div className="p-4 print:p-0">
       <style>{`@page { size: ${layout.paper.startsWith("THERMAL") ? `${p.width} ${layout.h}mm` : p.page}; margin: 0; }`}</style>
       <div className="print:hidden"><PrintButton label="Print test page" /></div>
-      <LayoutRender layout={layout} data={data} items={kind === "invoice" ? SAMPLE_ITEMS : null} totals={SAMPLE_TOTALS} logo={b.header.logo_url} />
+      <LayoutRender layout={layout} data={data} items={kind === "invoice" ? SAMPLE_ITEMS : null} totals={SAMPLE_TOTALS} logo={b.header.logo_url} signature={b.header.signature_image} />
     </div>
   );
 }

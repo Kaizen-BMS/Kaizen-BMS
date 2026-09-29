@@ -43,6 +43,9 @@ const LOGO = (o) => ({ id: id(), type: "logo", x: 0, y: 0, w: 30, h: 30, visible
 // distinct from "logo" (the facility's own logo, from Branding), since a
 // document can need both at once (e.g. facility logo AND the staff photo).
 const PHOTO = (o) => ({ id: id(), type: "photo", x: 0, y: 0, w: 25, h: 25, visible: true, ...o });
+// The doctor's (or, for a solo tenant / a document with no single doctor,
+// the facility's) signature image — see src/lib/branding.js's resolveBranding().
+const SIGNATURE = (o) => ({ id: id(), type: "signature", x: 0, y: 0, w: 35, h: 15, visible: true, ...o });
 const TABLE = (o) => ({
   id: id(), type: "table", x: 8, y: 100, w: 190, fontSize: 9, color: "#111111", headerBg: "", headerColor: "#111111",
   cols: { qty: true, unit: true, amount: true }, totals: true, visible: true, ...o,
@@ -68,6 +71,8 @@ const PRESETS = {
         T({ x: 8, y: 64, w: 132, text: "Complaint: {reason}", fontSize: 10 }),
         LINE({ x: 8, y: 72, w: 132 }),
         T({ x: 8, y: 75, w: 20, text: "℞", fontSize: 30, bold: true }),
+        SIGNATURE({ x: 95, y: 170, w: 40, h: 13 }),
+        T({ x: 95, y: 183, w: 40, text: "Signature", fontSize: 7, align: "center", color: "#777777" }),
         LINE({ x: 8, y: 186, w: 132 }),
         T({ x: 8, y: 189, w: 70, text: "Fee paid: ₹{fee}", fontSize: 10, bold: true }),
         T({ x: 8, y: 196, w: 132, text: "{footer}", fontSize: 8, align: "center", color: "#555555" }),
@@ -141,6 +146,8 @@ const PRESETS = {
         T({ x: 99, y: 90, w: 44, h: 15, text: "Status\n{status}", fontSize: 11, bg: "#a8aaa4", color: "#ffffff", padding: 3 }),
         T({ x: 144, y: 90, w: 59, h: 15, text: "Total due ({currency})\n{balance}", fontSize: 12, bg: "#3b3b3b", color: "#ffffff", padding: 3 }),
         TABLE({ x: 7, y: 114, w: 196, fontSize: 9 }),
+        SIGNATURE({ x: 156, y: 248, w: 45, h: 16 }),
+        T({ x: 156, y: 265, w: 45, text: "Authorized signatory", fontSize: 7, align: "center", color: "#777777" }),
         LINE({ x: 7, y: 272, w: 196, thickness: 0.5 }),
         T({ x: 7, y: 275, w: 100, text: "{facility}\n{address}", fontSize: 8 }),
         T({ x: 110, y: 275, w: 93, text: "{phone}\nGSTIN {gstin}", fontSize: 8, align: "right" }),
@@ -209,6 +216,7 @@ const PRESETS = {
         T({ x: 18, y: 4, w: 64, text: "{facility}", fontSize: 8, bold: true }),
         PHOTO({ x: 4, y: 18, w: 20, h: 24 }),
         T({ x: 27, y: 18, w: 55, text: "{name}\n{designation}\n{employeeId}", fontSize: 8 }),
+        SIGNATURE({ x: 60, y: 30, w: 22, h: 10 }),
         T({ x: 4, y: 44, w: 78, text: "Phone: {phone}   Blood: {bloodGroup}", fontSize: 7 }),
         T({ x: 4, y: 49, w: 78, text: "This card belongs to {facility} and must be returned on separation.", fontSize: 5.5, color: "#777777" }),
       ],
@@ -249,13 +257,13 @@ function sanitizeLayout(input) {
   const size = PAPER_SIZE[input.paper];
   const els = [];
   for (const e of input.elements.slice(0, 60)) {
-    if (!e || !["text", "line", "logo", "photo", "table"].includes(e.type)) continue;
+    if (!e || !["text", "line", "logo", "photo", "signature", "table"].includes(e.type)) continue;
     const base = { id: String(e.id || id()).slice(0, 24), type: e.type, x: clamp(e.x, -10, 400, 0), y: clamp(e.y, -10, 700, 0), w: clamp(e.w, 1, 400, 40), visible: e.visible !== false };
     if (e.type === "text") {
       els.push({ ...base, h: clamp(e.h, 0, 400, 0), text: String(e.text || "").slice(0, 600), fontSize: clamp(e.fontSize, 5, 72, 10), bold: !!e.bold, italic: !!e.italic, align: ["left", "center", "right"].includes(e.align) ? e.align : "left", color: color(e.color) || "#111111", bg: color(e.bg), padding: clamp(e.padding, 0, 20, 0), belowTable: !!e.belowTable });
     } else if (e.type === "line") {
       els.push({ ...base, h: 0, color: color(e.color) || "#111111", thickness: clamp(e.thickness, 0.1, 3, 0.4) });
-    } else if (e.type === "logo" || e.type === "photo") {
+    } else if (e.type === "logo" || e.type === "photo" || e.type === "signature") {
       els.push({ ...base, h: clamp(e.h, 1, 200, 30) });
     } else {
       els.push({ ...base, fontSize: clamp(e.fontSize, 5, 20, 9), color: color(e.color) || "#111111", headerBg: color(e.headerBg), headerColor: color(e.headerColor) || "#111111", cols: { qty: e.cols?.qty !== false, unit: e.cols?.unit !== false, amount: e.cols?.amount !== false }, totals: e.totals !== false });
@@ -264,4 +272,4 @@ function sanitizeLayout(input) {
   return { paper: input.paper, h: clamp(input.h, 40, 700, size.h), elements: els };
 }
 
-module.exports = { PAPER_SIZE, TOKENS, PRESETS, presetLayout, rescaleLayout, resolveText, sanitizeLayout, T, LINE, LOGO, PHOTO, TABLE };
+module.exports = { PAPER_SIZE, TOKENS, PRESETS, presetLayout, rescaleLayout, resolveText, sanitizeLayout, T, LINE, LOGO, PHOTO, SIGNATURE, TABLE };

@@ -98,7 +98,7 @@ export default async function ReceiptPrintPage({ params }) {
     <div className="p-4 print:p-0">
       <style>{`@page { size: ${pageSize}; margin: 0; }`}</style>
       <PrintButton />
-      <LayoutRender layout={layout} data={data} items={items} totals={totals} payments={payments} logo={branding.header.logo_url} />
+      <LayoutRender layout={layout} data={data} items={items} totals={totals} payments={payments} logo={branding.header.logo_url} signature={branding.header.signature_image} />
     </div>
   );
 }
