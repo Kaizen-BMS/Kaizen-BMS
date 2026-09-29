@@ -6,7 +6,7 @@ import Link from "next/link";
 import { apiGet, apiSend } from "@/components/hms/api";
 import AllergyBadge from "@/components/hms/AllergyBadge";
 import PatientHistory from "@/components/hms/PatientHistory";
-import { usePrintSettings, openSlip } from "@/components/hms/usePrintSettings";
+import { usePrintSettings, openSlip, openBlankPrintTab } from "@/components/hms/usePrintSettings";
 
 const fmt = (d) => fmtDDMMYYTime(d);
 
@@ -25,14 +25,20 @@ export default function PatientDetailClient({ id, canVisit, canBook }) {
   useEffect(load, [load]);
 
   async function newVisit() {
+    // Synchronous, before the first await — see usePrintSettings.js's
+    // openSlip() comment for why (the browser blocks a window.open() that
+    // doesn't happen as a direct result of this click).
+    const preOpenedTab = ps?.slip?.enabled !== false && ps?.slip?.autoPrint ? openBlankPrintTab() : null;
     setBusy(true);
     setNote("");
     try {
       const r = await apiSend("/api/registration/visits", "POST", { patientId: id });
       setNote(`New visit opened — token ${r.visit?.token_number ?? "—"}.`);
-      if (r.visit?.id && ps?.slip?.enabled !== false && ps?.slip?.autoPrint) openSlip(r.visit.id, true);
+      if (r.visit?.id && ps?.slip?.enabled !== false && ps?.slip?.autoPrint) openSlip(r.visit.id, true, preOpenedTab);
+      else preOpenedTab?.close();
       load();
     } catch (e) {
+      preOpenedTab?.close();
       setNote(`Could not open a visit (${e.message}).`);
     } finally {
       setBusy(false);

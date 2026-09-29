@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiSend } from "./api";
-import { usePrintSettings, openSlip } from "./usePrintSettings";
+import { usePrintSettings, openSlip, openBlankPrintTab } from "./usePrintSettings";
 import PhoneInput from "./PhoneInput";
 
 const EMPTY = { name: "", age: "", gender: "", phone: "", reason: "", fee: "", mode: "CASH" };
@@ -28,6 +28,13 @@ export default function QuickRegister({ canCollectFee, onClose }) {
 
   async function submit(e) {
     e.preventDefault();
+    // Must happen synchronously, before the first await below — by the time
+    // any await here resolves, the browser no longer treats a fresh
+    // window.open() as a direct result of this click and silently blocks
+    // it (see usePrintSettings.js's openSlip() comment). This form has TWO
+    // awaits before the print would fire (registration, then optionally
+    // the fee), making that window even easier to miss than usual.
+    const preOpenedTab = ps?.slip?.enabled !== false && ps?.slip?.autoPrint ? openBlankPrintTab() : null;
     setBusy(true);
     setError("");
     try {
@@ -49,8 +56,10 @@ export default function QuickRegister({ canCollectFee, onClose }) {
         }
       }
       setDone({ name: r.patient.name, token: r.visit?.token_number, feeNote, visitId: r.visit?.id });
-      if (r.visit?.id && ps?.slip?.enabled !== false && ps?.slip?.autoPrint) openSlip(r.visit.id, true);
+      if (r.visit?.id && ps?.slip?.enabled !== false && ps?.slip?.autoPrint) openSlip(r.visit.id, true, preOpenedTab);
+      else preOpenedTab?.close();
     } catch (err) {
+      preOpenedTab?.close();
       setError(err.message === "invalid_input" ? "Please check the details." : `Could not register (${err.message}).`);
     } finally {
       setBusy(false);

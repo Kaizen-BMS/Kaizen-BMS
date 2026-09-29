@@ -33,7 +33,7 @@ export default function PrintingSettings() {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
       <p className="text-sm font-semibold">Printing</p>
-      <p className="text-xs text-slate-500">Registration slip (parcha) and bill / invoice. Header, address and logo come from Branding.</p>
+      <p className="text-xs text-slate-500">Registration slip (parcha), bill / invoice, and the staff ID card. Header, address and logo come from Branding.</p>
       <div className="mt-3 space-y-4 text-sm">
         <div className="space-y-2">
           <label className="flex items-center gap-2"><input type="checkbox" checked={s.slip.enabled} onChange={(e) => setSlip("enabled", e.target.checked)} /> Print a slip when a patient is registered</label>
@@ -46,6 +46,7 @@ export default function PrintingSettings() {
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/dashboard/admin/print-designer?doc=slip" className={btn}>Design registration slip (parcha)</Link>
           <Link href="/dashboard/admin/print-designer?doc=invoice" className={btn}>Design bill / invoice</Link>
+          <Link href="/dashboard/admin/print-designer?doc=staffCard" className={btn}>Design staff card</Link>
           <span className="text-xs text-slate-500">Drag every text to place it, pick a ready-made style, print a test.</span>
         </div>
         <div className="flex items-center gap-3">

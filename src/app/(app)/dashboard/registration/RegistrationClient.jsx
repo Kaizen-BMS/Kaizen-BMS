@@ -2,7 +2,7 @@
 
 
 import PatientHistory from "@/components/hms/PatientHistory";
-import { usePrintSettings, openSlip } from "@/components/hms/usePrintSettings";
+import { usePrintSettings, openSlip, openBlankPrintTab } from "@/components/hms/usePrintSettings";
 import ReferralsPanel from "@/components/hms/ReferralsPanel";
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
@@ -36,11 +36,12 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
   const [historyFor, setHistoryFor] = useState(null);
   const printSettings = usePrintSettings();
   const [slip, setSlip] = useState(null); // { visitId, token }
-  function slipFrom(res) {
+  function slipFrom(res, preOpenedTab) {
     const v = res?.visit;
-    if (!v?.id || printSettings?.slip?.enabled === false) return setSlip(null);
+    if (!v?.id || printSettings?.slip?.enabled === false) { preOpenedTab?.close(); return setSlip(null); }
     setSlip({ visitId: v.id, token: v.token_number });
-    if (printSettings?.slip?.autoPrint) openSlip(v.id, true);
+    if (printSettings?.slip?.autoPrint) openSlip(v.id, true, preOpenedTab);
+    else preOpenedTab?.close();
   }
   const [editInsurance, setEditInsurance] = useState(DEFAULT_INSURANCE);
   const [insuranceBusy, setInsuranceBusy] = useState(false);
@@ -114,6 +115,10 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
 
   async function register(e) {
     e.preventDefault();
+    // Must happen synchronously, before the first await below, or the
+    // browser won't count it as a direct result of this click and will
+    // silently block it — see usePrintSettings.js's openSlip() comment.
+    const preOpenedTab = printSettings?.slip?.enabled !== false && printSettings?.slip?.autoPrint ? openBlankPrintTab() : null;
     setBusy(true);
     setMsg("");
     try {
@@ -144,9 +149,10 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
       setOverrideToken(false);
       setManualToken("");
       setOverrideReason("");
-      slipFrom(created);
+      slipFrom(created, preOpenedTab);
       setMsg("Patient registered and added to the queue.");
     } catch (err) {
+      preOpenedTab?.close();
       setMsg(err.message);
     } finally {
       setBusy(false);
@@ -168,6 +174,7 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
   }
 
   async function newVisit(patientId, override) {
+    const preOpenedTab = printSettings?.slip?.enabled !== false && printSettings?.slip?.autoPrint ? openBlankPrintTab() : null;
     setBusy(true);
     setMsg("");
     try {
@@ -181,9 +188,10 @@ export default function RegistrationClient({ canManageReferrals, canOverrideToke
       setVisitOverrideFor(null);
       setVisitManualToken("");
       setVisitOverrideReason("");
-      slipFrom(opened);
+      slipFrom(opened, preOpenedTab);
       setMsg("New visit opened.");
     } catch (err) {
+      preOpenedTab?.close();
       setMsg(err.message);
     } finally {
       setBusy(false);
