@@ -46,7 +46,7 @@ const CATEGORIES = [
   {
     key: "inventory", label: "Inventory", hint: "Medicines, stock, batches, expiry",
     tabs: [
-      ["medicines", "Medicine List"],
+      ["medicines", "Medicine Listing"],
       ["inventory", "Stock & Batches"],
       ["movement", "Stock Movement"],
       ["transfer", "Stock Transfer"],

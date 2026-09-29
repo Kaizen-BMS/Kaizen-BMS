@@ -89,7 +89,6 @@ function MedicineForm({ f, setF, onScan }) {
         <p className="text-base font-semibold">{preview || "Cap Betadine 500 mg"}</p>
       </div>
       <Field label="Generic / Salt" help="The active ingredient."><input placeholder="Povidone Iodine" value={f.genericName} onChange={(e) => setF({ ...f, genericName: e.target.value })} className={input} /></Field>
-      <Field label="Brand" help="Company brand name, if different."><input placeholder="Betadine" value={f.brandName} onChange={(e) => setF({ ...f, brandName: e.target.value })} className={input} /></Field>
       <Field label="Composition" help="Full composition, if you want it searchable."><input placeholder="Povidone Iodine 5% w/w" value={f.composition} onChange={(e) => setF({ ...f, composition: e.target.value })} className={input} /></Field>
       <Field label="Manufacturer" help="Who makes it."><input placeholder="ABC Pharma" value={f.manufacturer} onChange={(e) => setF({ ...f, manufacturer: e.target.value })} className={input} /></Field>
       <Field label="Category" help="E.g. Antiseptic, Analgesic."><input placeholder="Antiseptic" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} className={input} /></Field>
@@ -116,31 +115,6 @@ function MedicineForm({ f, setF, onScan }) {
       <Field label="GST Rate" help="Tax charged when this medicine is sold.">
         <select value={f.gstRate} onChange={(e) => setF({ ...f, gstRate: e.target.value })} className={input}>{[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}</select>
       </Field>
-      <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 sm:col-span-2 lg:col-span-3">
-        <p className="text-xs font-semibold text-slate-600">Packaging</p>
-        <p className="mt-0.5 text-[11px] text-slate-400">Suggested from the medicine type above — change anything that&apos;s different for this one.</p>
-        <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Sold / stocked as" help="The unit stock and billing count in."><input placeholder="Strip" value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} className={input} /></Field>
-          <Field label="Contains" help={`How many ${f.contentUnit || "pieces"} in one ${f.unit || "unit"}.`}>
-            <input type="number" min="1" placeholder="10" value={f.contentPerPack} onChange={(e) => setF({ ...f, contentPerPack: e.target.value })} className={input} />
-          </Field>
-          <Field label="Content unit" help="What each piece is called."><input placeholder="Tablet" value={f.contentUnit} onChange={(e) => setF({ ...f, contentUnit: e.target.value })} className={input} /></Field>
-          <Field label="Bought as" help="Bigger pack you buy from suppliers (optional)."><input placeholder="Box" value={f.purchaseUnit} onChange={(e) => setF({ ...f, purchaseUnit: e.target.value })} className={input} /></Field>
-        </div>
-        {f.purchaseUnit && (
-          <div className="mt-2">
-            <Field label={`${f.unit || "Units"} in one ${f.purchaseUnit}`} help="Used to convert purchases into stock.">
-              <input type="number" min="1" placeholder="10" value={f.unitsPerPurchase} onChange={(e) => setF({ ...f, unitsPerPurchase: e.target.value })} className={`${input} max-w-40`} />
-            </Field>
-          </div>
-        )}
-        {f.contentUnit && Number(f.contentPerPack) > 0 && (
-          <p className="mt-2 text-[11px] text-slate-500">
-            = {Number(f.contentPerPack)} {f.contentUnit.toLowerCase()}{Number(f.contentPerPack) === 1 ? "" : "s"} per {(f.unit || "unit").toLowerCase()}
-            {f.purchaseUnit && Number(f.unitsPerPurchase) > 1 ? `, ${Number(f.contentPerPack) * Number(f.unitsPerPurchase)} per ${f.purchaseUnit.toLowerCase()}` : ""}.
-          </p>
-        )}
-      </div>
       <Field label="Reorder Level" help="Alert the pharmacist when available stock reaches this level."><input type="number" min="0" placeholder="50" value={f.reorderLevel} onChange={(e) => setF({ ...f, reorderLevel: e.target.value })} className={input} /></Field>
       <Field label="Maximum Stock" help="Most you want to keep. Leave empty for no limit."><input type="number" min="0" placeholder="500" value={f.maxStock} onChange={(e) => setF({ ...f, maxStock: e.target.value })} className={input} /></Field>
       <Field label="Location" help="Where it is kept in the pharmacy."><input placeholder="Rack A - Shelf 3" value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} className={input} /></Field>
@@ -304,22 +278,23 @@ export function MedicinesTab({ canManage, onError }) {
         <table className="w-full min-w-[860px] text-sm">
           <thead className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-3 py-2.5">Medicine</th><th className="px-3 py-2.5">Generic / Salt</th><th className="px-3 py-2.5">Manufacturer</th>
-              <th className="px-3 py-2.5">Type · Strength</th><th className="px-3 py-2.5">Schedule</th><th className="px-3 py-2.5">Stock</th>
-              <th className="px-3 py-2.5">Reorder Level</th><th className="px-3 py-2.5">Status</th><th className="px-3 py-2.5" />
+              <th className="px-3 py-2.5">Type</th><th className="px-3 py-2.5">Medicine</th><th className="px-3 py-2.5">Strength</th>
+              <th className="px-3 py-2.5">Generic / Salt</th><th className="px-3 py-2.5">Manufacturer</th><th className="px-3 py-2.5">Schedule</th>
+              <th className="px-3 py-2.5">Stock</th><th className="px-3 py-2.5">Reorder Level</th><th className="px-3 py-2.5">Status</th><th className="px-3 py-2.5" />
             </tr>
           </thead>
           <tbody>
-            {meds === null && <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400">Loading medicines…</td></tr>}
-            {meds?.length === 0 && <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400">No medicines yet — add your first one above.</td></tr>}
+            {meds === null && <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-400">Loading medicines…</td></tr>}
+            {meds?.length === 0 && <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-400">No medicines yet — add your first one above.</td></tr>}
             {meds?.map((m) => {
               const [st, cls] = rowStatus(m);
               return (
                 <tr key={m.id} className={`border-b border-slate-100 last:border-0 hover:bg-slate-50/60 ${m.active ? "" : "opacity-60"}`}>
+                  <td className="px-3 py-2 text-slate-600">{m.medicineType}</td>
                   <td className="px-3 py-2 font-medium">{m.name}</td>
+                  <td className="px-3 py-2 text-slate-600">{m.strength || "—"}</td>
                   <td className="px-3 py-2 text-slate-600">{m.genericName || "—"}</td>
                   <td className="px-3 py-2 text-slate-600">{m.manufacturer || "—"}</td>
-                  <td className="px-3 py-2 text-slate-600">{m.medicineType}{m.strength ? ` · ${m.strength}` : ""}</td>
                   <td className="px-3 py-2">{m.schedule || "—"}</td>
                   <td className="px-3 py-2 font-semibold tabular-nums">{m.stock}</td>
                   <td className="px-3 py-2 tabular-nums">{m.reorderLevel}</td>

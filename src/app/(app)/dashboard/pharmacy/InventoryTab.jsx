@@ -181,7 +181,7 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
       await load();
     } catch (err) {
       onError(
-        err.message === "pick_a_medicine" ? "Pick the medicine from the suggestions (add it in Medicine List first if it isn't there)."
+        err.message === "pick_a_medicine" ? "Pick the medicine from the suggestions (add it in Medicine Listing first if it isn't there)."
         : err.message === "selling_price_above_mrp" ? "Selling price cannot be more than MRP."
         : err.message.startsWith("quantity_not_whole_") ? `That's not a whole number of ${form.unit || "units"} — check the ${form.contentUnit?.toLowerCase() || "unit"} count.`
         : err.message === "no_content_unit_set" ? "Set how many units this medicine's pack contains first (below), then save again."
