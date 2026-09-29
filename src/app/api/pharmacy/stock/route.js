@@ -58,8 +58,15 @@ export const POST = apiRoute("stock:create", async (request, { session }) => {
       medicineId = match?.id ?? null;
     }
 
-    // Tablet -> Strip: divide the count, multiply the rates, so stock and pricing only ever store
-    // the medicine's real stock unit — same conversion GRN already does one level up (Box -> Strip).
+    // Tablet -> Strip: divide the count, multiply cost/selling, so stock and
+    // pricing only ever store the medicine's real stock unit — same
+    // conversion GRN already does one level up (Box -> Strip). MRP is
+    // DELIBERATELY excluded from this scaling: it's a printed, regulated
+    // number the pharmacist always enters directly at the stock-unit level
+    // (see PriceFields.jsx's mrpUnitName/mrpPer) regardless of which unit
+    // quantity/cost are in — scaling it here too would silently turn a
+    // correctly-entered strip MRP into a wildly wrong one (a real bug,
+    // found live: ₹65 MRP became ₹650 for a strip of 10).
     if (body.inContentUnit) {
       if (!medicineId) throw new HttpError(400, "medicine_not_in_catalog");
       const medicine = await tx.medicines.findUnique({ where: { id: BigInt(medicineId) }, select: { content_per_pack: true, content_unit: true } });
@@ -71,7 +78,6 @@ export const POST = apiRoute("stock:create", async (request, { session }) => {
         ...body,
         quantity: body.quantity / f,
         ...(body.purchaseRate != null ? { purchaseRate: r2(body.purchaseRate) } : {}),
-        ...(body.mrp != null ? { mrp: r2(body.mrp) } : {}),
         ...(body.sellingRate != null ? { sellingRate: r2(body.sellingRate) } : {}),
       };
     }

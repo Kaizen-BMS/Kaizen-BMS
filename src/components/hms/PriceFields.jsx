@@ -10,10 +10,21 @@ export const EMPTY_PRICE = { totalPaid: "", purchaseRate: "", mrp: "", marginMod
 // Purchase Rate -> MRP -> Margin (₹ or %) -> Selling Price. Selling price is
 // worked out for you and can never go above MRP; type a selling price and the
 // margin is worked out instead.
-export default function PriceFields({ value, onChange, quantity, unitName = "unit", contentUnit, contentPerPack, levels, stockPer = 1, stockUnitName }) {
+//
+// MRP is a real, DPCO-regulated number printed on the pack — always at the
+// saleable pack level (a Strip, a Bottle, a Tube — never "per tablet", even
+// when the pharmacist is counting/costing this stock-in in content-units).
+// So unlike Cost/Selling (which DO follow `unitName`, since a supplier
+// invoice can genuinely be priced per-tablet or per-box), MRP has its own
+// fixed `mrpUnitName` label + `mrpPer` conversion factor (how many
+// `unitName` units make up one `mrpUnitName` unit) so the field the
+// pharmacist types into always matches what's actually printed on the
+// pack, regardless of what unit everything else on this form is in.
+export default function PriceFields({ value, onChange, quantity, unitName = "unit", mrpUnitName, mrpPer = 1, contentUnit, contentPerPack, levels, stockPer = 1, stockUnitName }) {
   const v = { ...EMPTY_PRICE, ...value };
   const qty = Number(quantity);
   const total = Number(v.totalPaid);
+  const mrpLabel = mrpUnitName || unitName;
   // "I paid ₹X for all of it" -> the per-unit purchase rate works itself out (and follows the quantity).
   const derivedRate = total > 0 && qty > 0 ? String(Math.round((total / qty) * 100) / 100) : null;
   useEffect(() => {
@@ -23,11 +34,17 @@ export default function PriceFields({ value, onChange, quantity, unitName = "uni
 
   function recompute(next, source) {
     const out = { ...v, ...next };
+    // Margin math needs cost and MRP in the SAME per-unit terms — MRP is
+    // stored/entered at its own `mrpLabel` level, so it's normalized down
+    // to `unitName` terms (÷ mrpPer) before comparing against cost, and
+    // any derived selling price is normalized back up (× mrpPer) since
+    // Selling follows `unitName`, same as Cost.
+    const mrpInUnitNameTerms = Number(out.mrp) > 0 ? Number(out.mrp) / mrpPer : "";
     if (source === "selling") {
       const m = marginFromSelling(out.purchaseRate, out.sellingRate);
       if (m) out.margin = String(out.marginMode === "percent" ? m.percent : m.amount);
     } else {
-      const r = sellingFromMargin(out.purchaseRate, out.mrp, out.marginMode, out.margin);
+      const r = sellingFromMargin(out.purchaseRate, mrpInUnitNameTerms, out.marginMode, out.margin);
       if (r) {
         out.sellingRate = String(r.selling);
         if (r.capped) {
@@ -39,7 +56,8 @@ export default function PriceFields({ value, onChange, quantity, unitName = "uni
     onChange(out);
   }
 
-  const cap = Number(v.mrp) > 0 && Number(v.sellingRate) > Number(v.mrp);
+  const mrpInUnitNameTerms = Number(v.mrp) > 0 ? Number(v.mrp) / mrpPer : 0;
+  const cap = mrpInUnitNameTerms > 0 && Number(v.sellingRate) > mrpInUnitNameTerms;
   const m = marginFromSelling(v.purchaseRate, v.sellingRate);
   const lab = "block text-[11px] font-medium text-slate-600";
   const cell = `${inp} mt-0.5 !py-1`;
@@ -64,7 +82,7 @@ export default function PriceFields({ value, onChange, quantity, unitName = "uni
         <label className={lab}>Cost per {unitName}
           <input type="number" min="0" step="0.01" placeholder="50" value={v.purchaseRate} onChange={(e) => recompute({ purchaseRate: e.target.value, totalPaid: "" })} className={`${cell} ${derivedRate != null ? "bg-slate-50" : ""}`} />
         </label>
-        <label className={lab}>MRP per {unitName}
+        <label className={lab}>MRP per {mrpLabel} <span className="font-normal normal-case text-slate-400">(as printed on the pack)</span>
           <input type="number" min="0" step="0.01" placeholder="80" value={v.mrp} onChange={(e) => recompute({ mrp: e.target.value })} className={cell} />
         </label>
         <div className={lab}>
@@ -97,7 +115,7 @@ export default function PriceFields({ value, onChange, quantity, unitName = "uni
                   <tr key={r.label} className="border-t border-slate-200">
                     <td className="py-0.5 text-left font-medium capitalize text-slate-600">{r.label}</td>
                     <td>{money(cost / r.per)}</td>
-                    <td>{money(mrp / r.per)}</td>
+                    <td>{money(mrpInUnitNameTerms / r.per)}</td>
                     <td className="font-semibold text-slate-700">{money(sell / r.per)}</td>
                     <td className={sell - cost >= 0 ? "text-emerald-700" : "text-red-600"}>{cost > 0 && sell > 0 ? money(Math.abs(sell - cost) / r.per) : "—"}</td>
                   </tr>

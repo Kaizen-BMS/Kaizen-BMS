@@ -61,7 +61,11 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
       for (const l of filled) {
         if (!l.medicineId) throw new Error("pick_medicine");
         if (!l.batchNumber || !l.quantity) throw new Error("incomplete_line");
-        if (l.mrp && l.sellingRate && Number(l.sellingRate) > Number(l.mrp)) throw new Error("selling_price_above_mrp");
+        // MRP is always per-Strip; Selling follows whatever unit Cost is in
+        // (per-Box when inPurchaseUnit) — normalize Selling down to
+        // per-Strip before comparing, same conversion the server applies.
+        const sellingPerStrip = l.inPurchaseUnit && l.unitsPerPurchase > 1 ? Number(l.sellingRate || 0) / l.unitsPerPurchase : Number(l.sellingRate || 0);
+        if (l.mrp && l.sellingRate && sellingPerStrip > Number(l.mrp)) throw new Error("selling_price_above_mrp");
       }
       if (!filled.length) throw new Error("no_items");
       for (const l of filled) {
@@ -187,6 +191,13 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                   onChange={(p) => setLine(i, p)}
                   quantity={l.quantity}
                   unitName={(l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.purchaseUnit : l.unit || "unit").toLowerCase()}
+                  // MRP is printed on the pack at the Strip level — never
+                  // per-Box — so it always asks for that, even while Cost is
+                  // being entered per-Box (a real supplier-invoice
+                  // convenience Cost keeps, that MRP never gets: see
+                  // InventoryTab.jsx's own comment on this same gotcha).
+                  mrpUnitName={(l.unit || "unit").toLowerCase()}
+                  mrpPer={l.inPurchaseUnit && l.unitsPerPurchase > 1 ? 1 / l.unitsPerPurchase : 1}
                   contentUnit={l.contentUnit}
                   contentPerPack={l.contentPerPack ? Number(l.contentPerPack) * (l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.unitsPerPurchase : 1) : null}
                   stockPer={l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.unitsPerPurchase : 1}

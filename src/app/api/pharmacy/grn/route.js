@@ -81,6 +81,12 @@ export const POST = apiRoute("grn:create", async (request, { session }) => {
       const medicine = await tx.medicines.findUnique({ where: { id: BigInt(it.medicineId) } });
       if (!medicine) throw new HttpError(400, `medicine_not_found:${it.medicineId}`);
       // Box -> strips: multiply counts, divide money, so stock/billing only ever see stock units.
+      // MRP is DELIBERATELY excluded from this — it's a printed, regulated
+      // number the pharmacist always enters directly at the Strip level
+      // (GrnTab.jsx's mrpUnitName/mrpPer), never per-Box, so it needs no
+      // conversion here — dividing it too would silently corrupt a
+      // correctly-entered strip MRP (see InventoryTab's own version of this
+      // same real bug, src/app/api/pharmacy/stock/route.js).
       if (it.inPurchaseUnit) {
         const f = medicine.units_per_purchase || 1;
         if (f > 1) {
@@ -89,7 +95,7 @@ export const POST = apiRoute("grn:create", async (request, { session }) => {
             ...it,
             receivedQuantity: it.receivedQuantity * f, freeQuantity: it.freeQuantity * f,
             damagedQuantity: it.damagedQuantity * f, rejectedQuantity: it.rejectedQuantity * f,
-            purchaseRate: r2(it.purchaseRate), mrp: r2(it.mrp), ...(it.sellingRate != null ? { sellingRate: r2(it.sellingRate) } : {}),
+            purchaseRate: r2(it.purchaseRate), ...(it.sellingRate != null ? { sellingRate: r2(it.sellingRate) } : {}),
           };
         }
       }

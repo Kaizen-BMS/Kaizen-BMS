@@ -95,7 +95,12 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
     setOk("");
     try {
       if (!form.medicineId) throw new Error("pick_a_medicine");
-      if (form.mrp && form.sellingRate && Number(form.sellingRate) > Number(form.mrp)) throw new Error("selling_price_above_mrp");
+      // MRP is always per-Strip; Selling follows whatever unit is currently
+      // active (per-content-unit when enterAsContent) — normalize Selling
+      // up to per-Strip before comparing, same conversion the server
+      // applies to it (never to MRP — see the stock route's own comment).
+      const sellingPerStrip = form.enterAsContent && Number(form.contentPerPack) > 1 ? Number(form.sellingRate || 0) * Number(form.contentPerPack) : Number(form.sellingRate || 0);
+      if (form.mrp && form.sellingRate && sellingPerStrip > Number(form.mrp)) throw new Error("selling_price_above_mrp");
       if (form.packagingUnset && form.unit && form.contentUnit && Number(form.contentPerPack) > 0) {
         await apiSend(`/api/pharmacy/medicines/${form.medicineId}`, "PATCH", { unit: form.unit, contentUnit: form.contentUnit, contentPerPack: Number(form.contentPerPack) });
       }
@@ -223,6 +228,14 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                 onChange={(p) => setForm((f) => ({ ...f, ...p }))}
                 quantity={form.quantity}
                 unitName={(form.enterAsContent ? form.contentUnit : form.unit || "unit").toLowerCase()}
+                // MRP is printed on the pack at the STOCK unit (a Strip, a
+                // Bottle, a Tube) — never per-tablet — so it always asks for
+                // that, regardless of which unit quantity/cost are being
+                // entered in right now (CLAUDE.md-worthy gotcha: entering
+                // MRP "per tablet" and letting the software scale it up
+                // silently produces a wildly wrong strip MRP).
+                mrpUnitName={(form.unit || "unit").toLowerCase()}
+                mrpPer={form.enterAsContent && Number(form.contentPerPack) > 1 ? Number(form.contentPerPack) : 1}
                 contentUnit={form.contentUnit}
                 contentPerPack={Number(form.contentPerPack) || null}
                 levels={form.enterAsContent && Number(form.contentPerPack) > 1 ? [
