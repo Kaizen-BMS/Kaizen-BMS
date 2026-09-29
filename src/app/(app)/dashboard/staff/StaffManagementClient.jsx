@@ -64,6 +64,7 @@ function DirectoryTab({ ownUserId }) {
   const [msg, setMsg] = useState("");
   const [editing, setEditing] = useState(null); // staff row being edited
   const [form, setForm] = useState(EMPTY_DETAILS);
+  const [saveErr, setSaveErr] = useState("");
   const [templates, setTemplates] = useState([]);
   const [busy, setBusy] = useState(false);
   const [zoom, setZoom] = useState(null);
@@ -91,6 +92,7 @@ function DirectoryTab({ ownUserId }) {
 
   function startEdit(s) {
     setEditing(s);
+    setSaveErr("");
     setForm({
       phone: s.phone || "", designation: s.designation || "", joinDate: s.joinDate ? s.joinDate.slice(0, 10) : "", address: s.address || "",
       nativePlace: s.nativePlace || "", emergencyContact: s.emergencyContact || "", bloodGroup: s.bloodGroup || "", medicalNotes: s.medicalNotes || "", aadhaarNo: s.aadhaarNo || "", photoDataUrl: "", photo: s.photo || "",
@@ -101,14 +103,14 @@ function DirectoryTab({ ownUserId }) {
 
   async function save() {
     setBusy(true);
-    setMsg("");
+    setSaveErr("");
     try {
       const { photo: _keep, ...rest } = form;
       await apiSend(`/api/staff/profiles/${editing.userId}`, "PATCH", rest.photoDataUrl === "" ? { ...rest, photoDataUrl: undefined } : rest);
       setEditing(null);
       await load();
     } catch (err) {
-      setMsg(err.message);
+      setSaveErr(err.message);
     } finally {
       setBusy(false);
     }
@@ -188,13 +190,14 @@ function DirectoryTab({ ownUserId }) {
       </div>
 
       {editing && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setEditing(null)}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => { setEditing(null); setSaveErr(""); }}>
           <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <p className="mb-3 text-sm font-semibold">{editing.name} — details</p>
             <PersonDetailsFields name={editing.name} value={form} onChange={setForm} showWork showMedical shiftTemplates={templates} />
+            {saveErr && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">Could not save: {saveErr}</p>}
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setEditing(null)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
-              <button onClick={save} disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Save</button>
+              <button onClick={() => { setEditing(null); setSaveErr(""); }} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
+              <button onClick={save} disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{busy ? "Saving…" : "Save"}</button>
             </div>
           </div>
         </div>
