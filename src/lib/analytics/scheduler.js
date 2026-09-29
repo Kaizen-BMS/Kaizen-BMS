@@ -2,17 +2,21 @@
 
 /**
  * Analytics rollup scheduler — mirrors src/lib/outboxProcessor.js's exact
- * singleton interval-loop shape (start()/stop()/globalThis guard), per
- * this task's own explicit instruction to reuse/extend that pattern rather
- * than introduce a new scheduling library. A completely different cadence
- * and job (recompute today's + yesterday's rollup for every active
- * tenant) than Outbox's claim-a-batch-of-events loop — same shape, not
- * shared code, because the two loops do genuinely different things.
+ * singleton self-scheduling-loop shape (start()/stop()/globalThis guard,
+ * backoff + pause-on-connection/auth-error via the shared
+ * dbErrorClassify.js), per this task's own explicit instruction to
+ * reuse/extend that pattern rather than introduce a new scheduling
+ * library. A completely different cadence and job (recompute today's +
+ * yesterday's rollup for every active tenant) than Outbox's
+ * claim-a-batch-of-events loop — same shape, not shared loop code, because
+ * the two loops do genuinely different things.
  */
 const { prisma } = require("../prismaClient");
 const { rollupAllTenants } = require("./rollup");
+const { isConnectionOrAuthError } = require("../dbErrorClassify");
 
-const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 min — "today" stays reasonably fresh without hammering the remote DB
+const MIN_DELAY_MS = 5 * 60 * 1000; // 5 min — "today" stays reasonably fresh without hammering the remote DB
+const MAX_DELAY_MS = 60 * 60 * 1000; // back off to at most once an hour on repeated transient failures
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
@@ -52,26 +56,70 @@ async function tick() {
   return results;
 }
 
-let intervalHandle = null;
+// Same self-scheduling setTimeout-chain shape as outboxProcessor.js, and
+// for the same reason — see that file's own top-of-file comment for the
+// real incident (Hostinger's abuse-protection auto-revoking DB access
+// after a fixed-interval loop kept hammering it during an outage). This
+// loop's normal cadence is already gentle (5 min), but "gentle at first,
+// then also pauses correctly" is what keeps it safe under a genuine
+// connection/auth failure, not just this loop's start-up speed.
+let timerHandle = null;
+let running = false;
+let paused = false;
+let currentDelay = MIN_DELAY_MS;
+
+function scheduleNext(delay) {
+  timerHandle = setTimeout(runLoop, delay);
+  if (timerHandle.unref) timerHandle.unref();
+}
+
+async function runLoop() {
+  if (running || paused) return;
+  running = true;
+  try {
+    await tick();
+    currentDelay = MIN_DELAY_MS;
+  } catch (err) {
+    if (isConnectionOrAuthError(err)) {
+      paused = true;
+      running = false;
+      console.error(
+        "[analytics] database connection/authorization failure — scheduler PAUSED until the app is restarted. " +
+          "Fix the underlying DB access issue first (do not just restart on a loop):",
+        err?.message || err,
+      );
+      return;
+    }
+    console.error("[analytics] rollup tick failed:", err);
+    currentDelay = Math.min(currentDelay * 2, MAX_DELAY_MS);
+  } finally {
+    running = false;
+  }
+  if (!paused) scheduleNext(currentDelay);
+}
 
 function start() {
   const g = globalThis;
   if (g.__kaizenAnalyticsSchedulerStarted) return;
   g.__kaizenAnalyticsSchedulerStarted = true;
+  paused = false;
+  currentDelay = MIN_DELAY_MS;
   // Run once shortly after startup too, not just on the first 5-minute mark.
-  tick().catch((err) => console.error("[analytics] initial rollup tick failed:", err));
-  intervalHandle = setInterval(() => {
-    tick().catch((err) => console.error("[analytics] rollup tick failed:", err));
-  }, POLL_INTERVAL_MS);
-  if (intervalHandle.unref) intervalHandle.unref();
+  scheduleNext(0);
 }
 
 function stop() {
-  if (intervalHandle) {
-    clearInterval(intervalHandle);
-    intervalHandle = null;
+  if (timerHandle) {
+    clearTimeout(timerHandle);
+    timerHandle = null;
   }
+  running = false;
+  paused = false;
   globalThis.__kaizenAnalyticsSchedulerStarted = false;
 }
 
-module.exports = { start, stop, tick };
+function isPaused() {
+  return paused;
+}
+
+module.exports = { start, stop, tick, isPaused };

@@ -41,7 +41,6 @@ const CATEGORIES = [
       ["sell", "Sales / Billing"],
       ["returns", "Returns"],
       ["history", "Purchase History"],
-      ["partner", "Partner Orders"],
     ],
   },
   {
@@ -145,7 +144,6 @@ export default function PharmacyClient({ permissions }) {
       {tab === "supplier-returns" && <ReturnsTab mode="supplier" onError={setMsg} />}
       {tab === "suppliers" && <SuppliersTab canManage={permissions.canManageSuppliers} onError={setMsg} />}
       {tab === "reports" && <PharmacyReportsTab />}
-      {tab === "partner" && <PartnerOrdersTab canDispense={permissions.canDispense} onError={setMsg} />}
     </div>
   );
 }
@@ -394,14 +392,25 @@ function QueueTab({ canDispense, onError }) {
           </div>
         </div>
       ))}
+
+      {/* Orders sent BY a connected hospital, dispensed from THIS pharmacy's
+          own stock — shown right alongside the hospital's own patients
+          (not a separate tab) so a pharmacist works one list, not two. Each
+          card carries a "From: <partner>" badge so it's still obvious which
+          ones aren't a walk-in/registered patient here. */}
+      <PartnerOrdersSection canDispense={canDispense} onError={onError} />
     </div>
   );
 }
 
-// ── Prescriptions sent by connected hospitals ───
-// They arrive here (not in the hospital's own queue), are dispensed from THIS
-// pharmacy's own stock, and the fulfilled quantity goes back to the sender.
-function PartnerOrdersTab({ canDispense, onError }) {
+// ── Orders sent BY a connected hospital ───
+// They arrive here (not created by this tenant's own doctors), are dispensed
+// from THIS pharmacy's own stock, and the fulfilled quantity goes back to
+// the sender. Rendered inline inside QueueTab, right alongside this
+// hospital's own patients — not a separate tab (CLAUDE.md/owner feedback:
+// a pharmacist should work one queue, not switch tabs to see who ordered
+// what).
+function PartnerOrdersSection({ canDispense, onError }) {
   const [orders, setOrders] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [amounts, setAmounts] = useState({});
@@ -430,49 +439,57 @@ function PartnerOrdersTab({ canDispense, onError }) {
     }
   }
 
-  if (!orders) return <p className="text-sm text-slate-400">Loading…</p>;
   return (
-    <div className="space-y-4">
-    <PartnerSend service="PHARMACY" />
-    {orders.length === 0 ? <p className="text-sm text-slate-400">No requests from partners yet.</p> : (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-sm">
-        <thead className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-3 py-2">From</th>
-            <th className="px-3 py-2">Patient</th>
-            <th className="px-3 py-2">Medicine</th>
-            <th className="px-3 py-2">Qty</th>
-            <th className="px-3 py-2">In my stock</th>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((o) => (
-            <tr key={o.id} className="border-b border-slate-100 last:border-0">
-              <td className="px-3 py-2">{o.from}</td>
-              <td className="px-3 py-2">{o.patientName || "—"}</td>
-              <td className="px-3 py-2">{o.medicineName}<p className="text-xs text-slate-400">{o.dosage}</p></td>
-              <td className="px-3 py-2">{o.quantity}</td>
-              <td className={`px-3 py-2 ${o.inStock >= (o.quantity || 0) ? "text-emerald-700" : "text-amber-700"}`}>{o.inStock}</td>
-              <td className="px-3 py-2">{o.status === "COMPLETED" ? `Dispensed${o.result?.quantityFulfilled != null ? ` (${o.result.quantityFulfilled})` : ""}${o.result?.amount != null ? ` · ₹${o.result.amount}` : ""}` : "Waiting"}</td>
-              <td className="px-3 py-2 text-right">
-                {o.status === "RECEIVED" && canDispense && o.connectionStatus === "ACTIVE" && (
-                  <span className="inline-flex items-center gap-1">
-                    <input type="number" min="0" placeholder="₹ amount" value={amounts[o.id] || ""} onChange={(e) => setAmounts({ ...amounts, [o.id]: e.target.value })} className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-xs" />
-                    <button onClick={() => dispense(o)} disabled={busyId === o.id || o.inStock <= 0} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
-                      Dispense
-                    </button>
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-    )}
+    <div className="space-y-3 border-t border-dashed border-slate-200 pt-4">
+      <PartnerSend service="PHARMACY" />
+      {orders === null ? (
+        <p className="text-sm text-slate-400">Loading partner orders…</p>
+      ) : orders.length === 0 ? null : (
+        orders.map((o) => (
+          <div key={o.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">
+                {o.patientName || "Patient not named"} <span className="text-xs font-normal text-slate-400">#{o.id}</span>
+              </p>
+              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
+                🔗 From: {o.from}
+              </span>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2 text-sm">
+              <div>
+                <p className="font-medium">
+                  {o.medicineName} {o.dosage && <span className="text-slate-500">· {o.dosage}</span>}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Required {o.quantity} · In my stock <span className={o.inStock >= (o.quantity || 0) ? "text-emerald-700" : "text-amber-700"}>{o.inStock}</span>
+                  {/* The order's own `status` field only flips to COMPLETED once the
+                      sending hospital's webhook confirms receipt — a separate step
+                      from the dispense itself, which can succeed (real stock
+                      deducted, see `result`) even when that follow-up report is
+                      still pending/failed. Showing "done" off `result` instead of
+                      `status` means this card reflects what actually happened here,
+                      not a cross-tenant reporting detail. */}
+                  {o.result?.dispensed != null && ` · Dispensed (${o.result.dispensed})`}
+                  {o.result?.quantityFulfilled != null && ` · Dispensed (${o.result.quantityFulfilled})`}
+                  {o.result?.amount != null && ` · ₹${o.result.amount}`}
+                </p>
+              </div>
+              {o.result == null && canDispense && o.connectionStatus === "ACTIVE" ? (
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <input type="number" min="0" placeholder="₹ amount" value={amounts[o.id] || ""} onChange={(e) => setAmounts({ ...amounts, [o.id]: e.target.value })} className="w-24 rounded-md border border-slate-300 px-1.5 py-1 text-xs" />
+                  <button onClick={() => dispense(o)} disabled={busyId === o.id || o.inStock <= 0} className="shrink-0 rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
+                    {busyId === o.id ? "Dispensing…" : "Dispense"}
+                  </button>
+                </div>
+              ) : o.result != null ? (
+                <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">done</span>
+              ) : o.connectionStatus !== "ACTIVE" ? (
+                <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">connection not active</span>
+              ) : null}
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }

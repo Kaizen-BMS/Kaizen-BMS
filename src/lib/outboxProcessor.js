@@ -2,9 +2,10 @@
 
 const { prisma } = require("./prismaClient");
 const { MAX_ATTEMPTS, backoffSeconds, toEnvelope } = require("./outbox");
+const { isConnectionOrAuthError } = require("./dbErrorClassify");
 
 /**
- * The Outbox processor — a small, in-process, interval-driven dispatcher.
+ * The Outbox processor — a small, in-process, self-scheduling dispatcher.
  * Deliberately NOT a new distributed system: this is a modular monolith,
  * one always-on Node process, and a database-backed claim query is the
  * smallest thing that's actually durable and safe under concurrency (see
@@ -15,10 +16,23 @@ const { MAX_ATTEMPTS, backoffSeconds, toEnvelope } = require("./outbox");
  * fire inline, in the same request cycle, completely independent of this
  * file. This processor runs on its own schedule, asynchronously, only for
  * durable cross-module consumers.
+ *
+ * A `setTimeout` chain (schedule-the-next-one-only-after-this-one-finishes),
+ * not `setInterval` — see runLoop()'s own comment for why: it can never
+ * overlap ticks, backs off on failure instead of retrying at a fixed rate,
+ * and PAUSES ENTIRELY (no further attempts at all, not even a slow trickle)
+ * on a connection/authorization failure specifically — a real incident
+ * (2026-09) had the previous fixed 2-second `setInterval` hammering the DB
+ * hard enough, during an outage, that Hostinger's own abuse-protection
+ * automatically revoked the MySQL user's permissions. Only fixing "wasn't
+ * pausing" back then would have kept retrying the exact broken credential
+ * forever at whatever cadence — pausing is the actual fix; the backoff is
+ * just for ordinary transient hiccups that aren't connection/auth-shaped.
  */
 
 const BATCH_SIZE = 20;
-const POLL_INTERVAL_MS = 2000;
+const MIN_DELAY_MS = 2000;
+const MAX_DELAY_MS = 60_000;
 
 // eventType -> [async (payload, envelope) => void, ...] — `envelope` is the
 // canonical camelCase shape from outbox.js's toEnvelope(), always
@@ -120,27 +134,73 @@ async function tick() {
   return batch.length;
 }
 
-let intervalHandle = null;
+let timerHandle = null;
+let running = false; // true only while a tick's DB work is actually in flight
+let paused = false; // true once a connection/auth failure has stopped the loop
+let currentDelay = MIN_DELAY_MS;
+
+function scheduleNext(delay) {
+  timerHandle = setTimeout(runLoop, delay);
+  if (timerHandle.unref) timerHandle.unref();
+}
+
+/**
+ * The self-scheduling loop: run one tick, THEN decide the next delay from
+ * how it went — never a fixed setInterval, so two ticks can never overlap
+ * (the next one is only scheduled after this one fully finishes) and a
+ * failing DB is polled progressively less often instead of at a constant
+ * hammering rate. `running` is an extra explicit guard (not load-bearing
+ * under normal operation, since this chain only ever has one timer live at
+ * a time) in case start() is ever accidentally called twice.
+ */
+async function runLoop() {
+  if (running || paused) return;
+  running = true;
+  try {
+    await tick();
+    currentDelay = MIN_DELAY_MS; // a clean tick means the DB is healthy again
+  } catch (err) {
+    if (isConnectionOrAuthError(err)) {
+      paused = true;
+      running = false;
+      console.error(
+        "[outbox] database connection/authorization failure — processor PAUSED until the app is restarted. " +
+          "Fix the underlying DB access issue first (do not just restart on a loop):",
+        err?.message || err,
+      );
+      return; // deliberately do not scheduleNext() — no further attempts at all
+    }
+    console.error("[outbox] processor tick failed:", err);
+    currentDelay = Math.min(currentDelay * 2, MAX_DELAY_MS);
+  } finally {
+    running = false;
+  }
+  if (!paused) scheduleNext(currentDelay);
+}
 
 /** Idempotent — safe to call more than once (guarded globally, same pattern as realtime.js's serverEvents singleton, in case this module is required from more than one place). */
 function start() {
   const g = globalThis;
   if (g.__kaizenOutboxProcessorStarted) return;
   g.__kaizenOutboxProcessorStarted = true;
-  intervalHandle = setInterval(() => {
-    tick().catch((err) => console.error("[outbox] processor tick failed:", err));
-  }, POLL_INTERVAL_MS);
-  // Doesn't keep the process alive on its own during a graceful shutdown
-  // wait — server.js calls stop() explicitly on SIGTERM/SIGINT anyway.
-  if (intervalHandle.unref) intervalHandle.unref();
+  paused = false;
+  currentDelay = MIN_DELAY_MS;
+  scheduleNext(currentDelay);
 }
 
 function stop() {
-  if (intervalHandle) {
-    clearInterval(intervalHandle);
-    intervalHandle = null;
+  if (timerHandle) {
+    clearTimeout(timerHandle);
+    timerHandle = null;
   }
+  running = false;
+  paused = false;
   globalThis.__kaizenOutboxProcessorStarted = false;
 }
 
-module.exports = { registerConsumer, start, stop, tick, BATCH_SIZE };
+/** True once the processor has stopped itself after a connection/auth failure — exported so a future health-check/alert can surface it; nothing polls this today. */
+function isPaused() {
+  return paused;
+}
+
+module.exports = { registerConsumer, start, stop, tick, isPaused, BATCH_SIZE };
