@@ -55,6 +55,27 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
   const [open, setOpen] = useState(null);
   const [adjustForm, setAdjustForm] = useState({ delta: "", reason: "", category: "OTHER" });
   const [priceForm, setPriceForm] = useState({ stockId: null, mrp: "", sellingRate: "", all: true });
+  const [editForm, setEditForm] = useState(null); // { stockId, batchNumber, manufacturingDate, expiryDate, purchaseRate, rack }
+  async function saveDetails() {
+    setBusy(true);
+    onError("");
+    try {
+      await apiSend(`/api/pharmacy/stock/${editForm.stockId}/details`, "PATCH", {
+        batchNumber: editForm.batchNumber,
+        manufacturingDate: editForm.manufacturingDate,
+        expiryDate: editForm.expiryDate,
+        ...(editForm.purchaseRate !== "" ? { purchaseRate: Number(editForm.purchaseRate) } : {}),
+        rack: editForm.rack,
+      });
+      setOk("Batch details updated.");
+      setEditForm(null);
+      await load();
+    } catch (err) {
+      onError(err.message === "batch_number_taken" ? "That batch number is already used for this medicine." : `Could not save (${err.message}).`);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function savePrice(r) {
     setBusy(true);
     onError("");
@@ -313,6 +334,36 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                             </label>
                           )}
                         </div>
+                        {canAdjust && (
+                          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-200 pt-3">
+                            <span className="w-full font-medium text-slate-500">Edit batch details</span>
+                            {editForm?.stockId === r.stockId ? (
+                              <>
+                                <label>Batch No.<input value={editForm.batchNumber} onChange={(e) => setEditForm((s) => ({ ...s, batchNumber: e.target.value }))} className="mt-1 block w-28 rounded-md border border-slate-300 px-2 py-1" /></label>
+                                <label>MFD<DateInput value={editForm.manufacturingDate} onChange={(v) => setEditForm((s) => ({ ...s, manufacturingDate: v }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+                                <label>Expiry<DateInput value={editForm.expiryDate} onChange={(v) => setEditForm((s) => ({ ...s, expiryDate: v }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+                                <label>Purchase rate (₹)<input type="number" min="0" step="0.01" value={editForm.purchaseRate} onChange={(e) => setEditForm((s) => ({ ...s, purchaseRate: e.target.value }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+                                <label>Location<input value={editForm.rack} onChange={(e) => setEditForm((s) => ({ ...s, rack: e.target.value }))} placeholder="Rack A - Shelf 3" className="mt-1 block w-36 rounded-md border border-slate-300 px-2 py-1" /></label>
+                                <button onClick={saveDetails} disabled={busy || !editForm.batchNumber} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">Save</button>
+                                <button onClick={() => setEditForm(null)} className="px-2 py-1.5 text-slate-500">Cancel</button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => setEditForm({
+                                  stockId: r.stockId,
+                                  batchNumber: r.batchNumber || "",
+                                  manufacturingDate: r.manufacturingDate ? String(r.manufacturingDate).slice(0, 10) : "",
+                                  expiryDate: r.expiryDate ? String(r.expiryDate).slice(0, 10) : "",
+                                  purchaseRate: r.purchaseRate != null ? String(r.purchaseRate) : "",
+                                  rack: r.rack || "",
+                                })}
+                                className="rounded-md border border-slate-300 px-3 py-1.5 font-medium hover:bg-white"
+                              >
+                                Batch {r.batchNumber || "—"} · Edit
+                              </button>
+                            )}
+                          </div>
+                        )}
                         {canAdjust && (
                           <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-200 pt-3">
                             <span className="w-full font-medium text-slate-500">Change price</span>
