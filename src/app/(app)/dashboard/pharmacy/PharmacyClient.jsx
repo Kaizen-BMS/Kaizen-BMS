@@ -13,6 +13,7 @@ import InventoryTab from "./InventoryTab";
 import { MedicinesTab, SuppliersTab, GrnTab, TransferTab, ReturnsTab, SellTab } from "./PharmacyExtras";
 import { PurchaseHistoryTab } from "./PurchaseHistoryTab";
 import { PurchaseOrdersTab, PharmacyReportsTab } from "./PharmacyExtras2";
+import { useToast, ToastBanner } from "@/components/hms/useToast";
 
 // Reads ?tab=&filter= once (from the Dashboard's alert cards / notification
 // bell deep-links) so the right tab + filter are open immediately —
@@ -72,6 +73,14 @@ export default function PharmacyClient({ permissions }) {
   const [initialFilter, setInitialFilter] = useState(null);
   const [receiveFor, setReceiveFor] = useState(null);
   const [msg, setMsg] = useState("");
+  const [toast, showToast] = useToast();
+  // A stale error from one tab must never keep showing once you've moved
+  // on to another — this banner is shared across every tab (rendered once,
+  // above all of them), so switching tabs is exactly when it needs to clear.
+  function switchTab(key) {
+    setTab(key);
+    setMsg("");
+  }
 
   const allowed = (key) => {
     if (key === "sell") return permissions.canSell;
@@ -88,7 +97,7 @@ export default function PharmacyClient({ permissions }) {
   return (
     <div className="space-y-5">
       <Suspense fallback={null}>
-        <TabParamsReader onReady={(t, f) => { if (t) setTab(t); if (f) setInitialFilter(f); }} />
+        <TabParamsReader onReady={(t, f) => { if (t) switchTab(t); if (f) setInitialFilter(f); }} />
       </Suspense>
       <div className="print:hidden">
         <h1 className="text-2xl font-semibold tracking-tight">Pharmacy</h1>
@@ -98,7 +107,7 @@ export default function PharmacyClient({ permissions }) {
         {visibleCategories.map((c) => (
           <button
             key={c.key}
-            onClick={() => setTab(c.tabs.find(([k]) => allowed(k))[0])}
+            onClick={() => switchTab(c.tabs.find(([k]) => allowed(k))[0])}
             className={`rounded-2xl border px-4 py-3 text-left shadow-sm transition ${
               category.key === c.key ? "border-transparent bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)] shadow-md" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow"
             }`}
@@ -113,7 +122,7 @@ export default function PharmacyClient({ permissions }) {
           {subTabs.map(([key, label]) => (
             <button
               key={key}
-              onClick={() => setTab(key)}
+              onClick={() => switchTab(key)}
               className={`rounded-lg px-3 py-1.5 transition ${tab === key ? "bg-white font-medium shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
             >
               {label}
@@ -123,20 +132,20 @@ export default function PharmacyClient({ permissions }) {
       )}
       {msg && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{msg}</p>}
       {tab === "queue" && <QueueTab canDispense={permissions.canDispense} onError={setMsg} />}
-      {tab === "sell" && <SellTab onError={setMsg} />}
+      {tab === "sell" && <SellTab onError={setMsg} onSuccess={showToast} />}
       {tab === "history" && <PurchaseHistoryTab />}
       {tab === "inventory" && (
-        <InventoryTab canStockIn={permissions.canStockIn} canAdjust={permissions.canAdjust} initialFilter={initialFilter} onError={setMsg} />
+        <InventoryTab canStockIn={permissions.canStockIn} canAdjust={permissions.canAdjust} initialFilter={initialFilter} onError={setMsg} onSuccess={showToast} />
       )}
-      {tab === "medicines" && <MedicinesTab canManage={permissions.canManageMedicines} onError={setMsg} />}
+      {tab === "medicines" && <MedicinesTab canManage={permissions.canManageMedicines} onError={setMsg} onSuccess={showToast} />}
       {tab === "movement" && <PharmacyReportsTab key="movement" only={["stock-movement"]} />}
       {tab === "adjustments" && (
         <div className="space-y-3">
-          <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">Every correction to a stock count is listed here with who did it and why. To adjust a count, open <button onClick={() => setTab("inventory")} className="font-medium underline">Stock &amp; Batches</button> → Details on the batch.</p>
+          <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">Every correction to a stock count is listed here with who did it and why. To adjust a count, open <button onClick={() => switchTab("inventory")} className="font-medium underline">Stock &amp; Batches</button> → Details on the batch.</p>
           <PharmacyReportsTab key="adjustments" only={["stock-adjustments"]} />
         </div>
       )}
-      {tab === "po" && <PurchaseOrdersTab canManage={permissions.canGrn} onError={setMsg} onReceive={(po) => { setReceiveFor(po); setTab("grn"); }} />}
+      {tab === "po" && <PurchaseOrdersTab canManage={permissions.canGrn} onError={setMsg} onReceive={(po) => { setReceiveFor(po); switchTab("grn"); }} />}
       {tab === "grn" && <GrnTab onError={setMsg} receiveFor={receiveFor} onConsumedReceiveFor={() => setReceiveFor(null)} />}
       {tab === "purchase-history" && <PharmacyReportsTab key="purchase-history" only={["purchases", "grns", "supplier-purchases"]} />}
       {tab === "transfer" && <TransferTab onError={setMsg} />}
@@ -144,6 +153,7 @@ export default function PharmacyClient({ permissions }) {
       {tab === "supplier-returns" && <ReturnsTab mode="supplier" onError={setMsg} />}
       {tab === "suppliers" && <SuppliersTab canManage={permissions.canManageSuppliers} onError={setMsg} />}
       {tab === "reports" && <PharmacyReportsTab />}
+      <ToastBanner text={toast} />
     </div>
   );
 }

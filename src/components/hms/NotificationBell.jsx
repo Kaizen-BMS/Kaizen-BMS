@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Icon from "./icons";
 import { apiGet, apiSend } from "./api";
 import { useRealtime } from "./useRealtime";
-import { fmtDDMMYY } from "@/lib/dateFormat";
+import { fmtMMYYYY } from "@/lib/dateFormat";
 import { NOTIFICATION_CATEGORIES } from "@/lib/notificationCategories";
 
 // Alerts & Notifications Center (the phase after Workflow Automation) —
@@ -219,7 +219,7 @@ export default function NotificationBell() {
                       <p className="flex items-center gap-2 text-sm">🟠 Expiry Soon</p>
                       <ul className="mt-1 space-y-0.5 pl-6 text-xs text-[var(--hms-ink-faint)]">
                         {categories.pharmacy.expiringSoon.map((b, i) => (
-                          <li key={i}>{b.medicineName} · Batch: {b.batch || "—"} · Expiry: {fmtDDMMYY(b.expiryDate)} · Days Remaining: {b.daysRemaining}</li>
+                          <li key={i}>{b.medicineName} · Batch: {b.batch || "—"} · Expiry: {fmtMMYYYY(b.expiryDate)} · Days Remaining: {b.daysRemaining}</li>
                         ))}
                         {categories.pharmacy.expiringSoonCount > categories.pharmacy.expiringSoon.length && <li>+{categories.pharmacy.expiringSoonCount - categories.pharmacy.expiringSoon.length} more</li>}
                       </ul>
@@ -231,7 +231,7 @@ export default function NotificationBell() {
                       <p className="flex items-center gap-2 text-sm">🔴 Expired Medicines</p>
                       <ul className="mt-1 space-y-0.5 pl-6 text-xs text-[var(--hms-ink-faint)]">
                         {categories.pharmacy.expired.map((b, i) => (
-                          <li key={i}>{b.medicineName} · Batch: {b.batch || "—"} · Expired: {fmtDDMMYY(b.expiredOn)} · Quantity: {b.quantity}</li>
+                          <li key={i}>{b.medicineName} · Batch: {b.batch || "—"} · Expired: {fmtMMYYYY(b.expiredOn)} · Quantity: {b.quantity}</li>
                         ))}
                         {categories.pharmacy.expiredCount > categories.pharmacy.expired.length && <li>+{categories.pharmacy.expiredCount - categories.pharmacy.expired.length} more</li>}
                       </ul>

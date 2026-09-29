@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
-import { fmtDDMMYY } from "@/lib/dateFormat";
+import { fmtDDMMYY, fmtMMYYYY } from "@/lib/dateFormat";
 import { PharmacyPayBox } from "./PharmacyExtras";
 import DateInput from "@/components/hms/DateInput";
 import PrintButton from "@/components/hms/PrintButton";
@@ -192,7 +192,7 @@ function ReportBody({ sub, data, onChanged }) {
       </div>
     );
   }
-  if (sub === "expiry") return <SimpleTable rows={data.rows} cols={[["medicineName", "Medicine"], ["batchNumber", "Batch"], ["expiryDate", "Expiry", fmtDDMMYY], ["quantity", "Qty"], ["daysRemaining", "Days remaining", (v) => (v < 0 ? `Expired ${-v}d ago` : v)]]} />;
+  if (sub === "expiry") return <SimpleTable rows={data.rows} cols={[["medicineName", "Medicine"], ["batchNumber", "Batch"], ["expiryDate", "Expiry", fmtMMYYYY], ["quantity", "Qty"], ["daysRemaining", "Days remaining", (v) => (v < 0 ? `Expired ${-v}d ago` : v)]]} />;
   if (sub === "low-stock") return <SimpleTable rows={data} cols={[["medicineName", "Medicine"], ["totalQuantity", "Stock"], ["threshold", "Reorder level"]]} />;
   if (sub === "purchases") return <SimpleTable rows={data} cols={[["medicineName", "Medicine"], ["quantity", "Qty"], ["value", "Value", rupee], ["grnCount", "GRNs"]]} />;
   if (sub === "grns") return <SimpleTable rows={data} cols={[["grnNumber", "GRN #"], ["grnDate", "Date", fmtDDMMYY], ["supplierName", "Supplier"], ["lineCount", "Lines"], ["acceptedQuantity", "Accepted qty"], ["value", "Value", rupee]]} />;

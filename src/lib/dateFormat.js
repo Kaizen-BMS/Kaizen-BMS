@@ -21,6 +21,15 @@ export function fmtDDMMYYYY(value) {
   return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
+/** MM/YYYY — for a manufacturing/expiry date, which a pack only ever prints to the month, never a day. */
+export function fmtMMYYYY(value) {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${mm}/${d.getFullYear()}`;
+}
+
 /** DD/MM/YY HH:MM (24h) — same real Date underneath, just a plain, consistent display. */
 export function fmtDDMMYYTime(value) {
   if (!value) return "—";

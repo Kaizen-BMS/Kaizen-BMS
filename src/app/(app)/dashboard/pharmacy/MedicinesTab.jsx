@@ -124,7 +124,7 @@ function MedicineForm({ f, setF, onScan }) {
 
 const rowStatus = (m) => (!m.active ? ["Switched off", "bg-slate-200 text-slate-600"] : m.stock <= 0 ? ["Out of Stock", "bg-red-100 text-red-700"] : m.stock <= m.reorderLevel ? ["🟡 Low Stock", "bg-yellow-100 text-yellow-800"] : ["In Stock", "bg-emerald-100 text-emerald-700"]);
 
-export function MedicinesTab({ canManage, onError }) {
+export function MedicinesTab({ canManage, onError, onSuccess }) {
   const [meds, setMeds] = useState(null);
   const [f, setF] = useState(BLANK);
   const [edit, setEdit] = useState(null); // { id, form }
@@ -165,6 +165,7 @@ export function MedicinesTab({ canManage, onError }) {
     try {
       const { medicine } = await apiSend("/api/pharmacy/medicines", "POST", toPayload(f, false));
       setOk(`Added ${medicine.name}.`);
+      onSuccess?.(`${medicine.name} added.`);
       setF(BLANK);
       await load();
     } catch (err) {
@@ -178,6 +179,7 @@ export function MedicinesTab({ canManage, onError }) {
     setBusy(true);
     try {
       await apiSend(`/api/pharmacy/medicines/${edit.id}`, "PATCH", toPayload(edit.form, true, edit.orig));
+      onSuccess?.(`${edit.name} updated.`);
       setEdit(null);
       await load();
     } catch (err) {
@@ -189,6 +191,7 @@ export function MedicinesTab({ canManage, onError }) {
   async function toggle(m) {
     try {
       await apiSend(`/api/pharmacy/medicines/${m.id}`, "PATCH", { active: !m.active });
+      onSuccess?.(`${m.name} switched ${m.active ? "off" : "on"}.`);
       await load();
     } catch (err) {
       onError(err.message);
@@ -208,6 +211,7 @@ export function MedicinesTab({ canManage, onError }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setImportResult(data);
+      onSuccess?.(`Imported ${data.createdCount} medicine${data.createdCount === 1 ? "" : "s"}.`);
       await load();
     } catch (err) {
       setMsg(`Could not import the file (${err.message}).`);

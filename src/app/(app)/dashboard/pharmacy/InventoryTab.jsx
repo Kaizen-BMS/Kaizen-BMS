@@ -3,13 +3,14 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import { useRealtime } from "@/components/hms/useRealtime";
-import { fmtDDMMYY } from "@/lib/dateFormat";
+import { fmtMMYYYY } from "@/lib/dateFormat";
 import { MEDICINE_TYPES } from "@/lib/medicineTypes";
 import { marginFromSelling } from "@/lib/pharmacyPricing";
 import { TYPE_DEFAULTS } from "@/lib/medicineTypes";
 import MedicineInput from "@/components/hms/MedicineInput";
-import DateInput from "@/components/hms/DateInput";
+import MonthYearInput from "@/components/hms/MonthYearInput";
 import PriceFields, { EMPTY_PRICE } from "@/components/hms/PriceFields";
+import { useToast, ToastBanner } from "@/components/hms/useToast";
 
 const STATUS_BADGE = {
   EXPIRED: "bg-red-100 text-red-700",
@@ -43,7 +44,7 @@ const BLANK = { medicineText: "", medicineId: "", batchNumber: "", manufacturing
 
 // One line per batch: Qty · Medicine · Batch · MFD · Expiry · Purchase Rate · MRP · Margin · Selling Price · Status.
 // Everything else (type, salt, location, reorder level, adjust) opens under "Details".
-export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onError }) {
+export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onError, onSuccess }) {
   const [rows, setRows] = useState(null);
   const [q, setQ] = useState("");
   const [type, setType] = useState("");
@@ -116,6 +117,7 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
       }
 
       setOk(notes.length ? `Updated: ${notes.join(", ")}.` : "Nothing changed.");
+      if (notes.length) onSuccess?.(`Batch ${original.batchNumber || ""} — updated: ${notes.join(", ")}.`);
       setEditForm(null);
       await load();
     } catch (err) {
@@ -177,6 +179,7 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
         ...(form.enterAsContent ? { inContentUnit: true } : {}),
       });
       setOk(`Added ${form.quantity} × ${form.medicineText} (batch ${form.batchNumber}).`);
+      onSuccess?.(`Added ${form.quantity} × ${form.medicineText} (batch ${form.batchNumber}).`);
       setForm(BLANK);
       await load();
     } catch (err) {
@@ -206,28 +209,12 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
       {canStockIn && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <button onClick={() => setShowAdd((v) => !v)} className="flex w-full items-center justify-between text-left text-sm font-semibold">
-            <span>Add stock to a batch</span>
+            <span>Create Stock and Batches</span>
             <span className="text-slate-400">{showAdd ? "−" : "+"}</span>
           </button>
           {ok && <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700">{ok}</p>}
           {showAdd && (
             <form onSubmit={submitStockIn} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className={label}>Quantity
-                <div className="mt-1 flex gap-1">
-                  <input type="number" min="1" required placeholder="100" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className={input} />
-                  {form.contentUnit && Number(form.contentPerPack) > 1 && (
-                    <select aria-label="Counted in" value={form.enterAsContent ? "C" : "U"} onChange={(e) => setForm((f) => ({ ...f, enterAsContent: e.target.value === "C" }))} className="shrink-0 rounded-lg border border-slate-300 bg-white px-1.5 text-sm">
-                      <option value="U">{form.unit || "unit"}</option>
-                      <option value="C">{form.contentUnit}</option>
-                    </select>
-                  )}
-                </div>
-                <span className={help}>
-                  {form.enterAsContent && Number(form.contentPerPack) > 1 && Number(form.quantity) > 0
-                    ? `= ${(Number(form.quantity) / Number(form.contentPerPack)).toFixed(2)} ${form.unit || "unit"} into stock (must be a whole number).`
-                    : `How many ${form.enterAsContent ? (form.contentUnit || "").toLowerCase() : (form.unit || "unit").toLowerCase()}${form.quantity === "1" ? "" : "s"} you are adding.`}
-                </span>
-              </div>
               <div className={label}>
                 Medicine
                 <div className="mt-1">
@@ -247,17 +234,33 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                 </div>
                 <span className={help}>Start typing — pick from the list.</span>
               </div>
+              <div className={label}>Quantity
+                <div className="mt-1 flex gap-1">
+                  <input type="number" min="1" required placeholder="100" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className={input} />
+                  {form.contentUnit && Number(form.contentPerPack) > 1 && (
+                    <select aria-label="Counted in" value={form.enterAsContent ? "C" : "U"} onChange={(e) => setForm((f) => ({ ...f, enterAsContent: e.target.value === "C" }))} className="shrink-0 rounded-lg border border-slate-300 bg-white px-1.5 text-sm">
+                      <option value="U">{form.unit || "unit"}</option>
+                      <option value="C">{form.contentUnit}</option>
+                    </select>
+                  )}
+                </div>
+                <span className={help}>
+                  {form.enterAsContent && Number(form.contentPerPack) > 1 && Number(form.quantity) > 0
+                    ? `= ${(Number(form.quantity) / Number(form.contentPerPack)).toFixed(2)} ${form.unit || "unit"} into stock (must be a whole number).`
+                    : `How many ${form.enterAsContent ? (form.contentUnit || "").toLowerCase() : (form.unit || "unit").toLowerCase()}${form.quantity === "1" ? "" : "s"} you are adding.`}
+                </span>
+              </div>
               <label className={label}>Batch No.
                 <input required placeholder="BTD001" value={form.batchNumber} onChange={(e) => setForm({ ...form, batchNumber: e.target.value })} className={`${input} mt-1`} />
                 <span className={help}>Batch number printed on the pack.</span>
               </label>
               <div className={label}>MFD
-                <DateInput value={form.manufacturingDate} onChange={(v) => setForm((f) => ({ ...f, manufacturingDate: v }))} className={`${input} mt-1`} />
-                <span className={help}>Manufacturing date, DD/MM/YY.</span>
+                <MonthYearInput mode="start" value={form.manufacturingDate} onChange={(v) => setForm((f) => ({ ...f, manufacturingDate: v }))} className={`${input} mt-1`} />
+                <span className={help}>Manufacturing month/year, as printed on the pack.</span>
               </div>
               <div className={label}>Expiry
-                <DateInput value={form.expiryDate} onChange={(v) => setForm((f) => ({ ...f, expiryDate: v }))} className={`${input} mt-1`} />
-                <span className={help}>Expiry date printed on the pack.</span>
+                <MonthYearInput mode="end" value={form.expiryDate} onChange={(v) => setForm((f) => ({ ...f, expiryDate: v }))} className={`${input} mt-1`} />
+                <span className={help}>Expiry month/year, as printed on the pack.</span>
               </div>
               {form.medicineId && (
                 <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2.5 sm:col-span-2 lg:col-span-4">
@@ -336,8 +339,8 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                       {r.purchaseUnit && r.unitsPerPurchase > 1 && r.quantity >= r.unitsPerPurchase && <span className="block text-[11px] font-normal text-slate-400">= {Math.floor(r.quantity / r.unitsPerPurchase)} {r.purchaseUnit}{r.quantity % r.unitsPerPurchase ? ` + ${r.quantity % r.unitsPerPurchase} ${r.unit || ""}` : ""}</span>}</td>
                     <td className="px-3 py-2 font-medium">{r.medicineName}</td>
                     <td className="px-3 py-2">{r.batchNumber || "—"}</td>
-                    <td className="px-3 py-2 tabular-nums">{fmtDDMMYY(r.manufacturingDate)}</td>
-                    <td className="px-3 py-2 tabular-nums">{fmtDDMMYY(r.expiryDate)}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmtMMYYYY(r.manufacturingDate)}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmtMMYYYY(r.expiryDate)}</td>
                     <td className="px-3 py-2 tabular-nums">{rupee(r.purchaseRate)}</td>
                     <td className="px-3 py-2 tabular-nums">{rupee(r.mrp)}</td>
                     <td className="px-3 py-2 tabular-nums">{m ? `${rupee(m.amount)} / ${m.percent}%` : "—"}</td>
@@ -377,8 +380,8 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                           <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
                             <div className="flex flex-wrap items-end gap-2">
                               <label>Batch No.<input value={editForm.batchNumber} onChange={(e) => setEditForm((s) => ({ ...s, batchNumber: e.target.value }))} className="mt-1 block w-28 rounded-md border border-slate-300 px-2 py-1" /></label>
-                              <label>MFD<DateInput value={editForm.manufacturingDate} onChange={(v) => setEditForm((s) => ({ ...s, manufacturingDate: v }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
-                              <label>Expiry<DateInput value={editForm.expiryDate} onChange={(v) => setEditForm((s) => ({ ...s, expiryDate: v }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+                              <label>MFD<MonthYearInput mode="start" value={editForm.manufacturingDate} onChange={(v) => setEditForm((s) => ({ ...s, manufacturingDate: v }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+                              <label>Expiry<MonthYearInput mode="end" value={editForm.expiryDate} onChange={(v) => setEditForm((s) => ({ ...s, expiryDate: v }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
                               <label>Purchase rate (₹)<input type="number" min="0" step="0.01" value={editForm.purchaseRate} onChange={(e) => setEditForm((s) => ({ ...s, purchaseRate: e.target.value }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
                               <label>Location<input value={editForm.rack} onChange={(e) => setEditForm((s) => ({ ...s, rack: e.target.value }))} placeholder="Rack A - Shelf 3" className="mt-1 block w-36 rounded-md border border-slate-300 px-2 py-1" /></label>
                             </div>

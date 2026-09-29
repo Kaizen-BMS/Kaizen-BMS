@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
-import { fmtDDMMYY, fmtDDMMYYTime } from "@/lib/dateFormat";
+import { fmtMMYYYY, fmtDDMMYYTime } from "@/lib/dateFormat";
 import BarcodeScanner from "@/components/hms/BarcodeScanner";
 import PhoneInput from "@/components/hms/PhoneInput";
 import MedicineInput from "@/components/hms/MedicineInput";
@@ -106,7 +106,7 @@ export function PharmacyBillDetail({ billId, onClose, onChanged }) {
                   <span>Selling: {it.unit_price != null ? rupee(it.unit_price) : "—"}</span>
                   {margin != null && <span>Margin: {rupee(margin)}</span>}
                   {it.tax_amount != null && Number(it.tax_amount) > 0 && <span>Tax: {rupee(it.tax_amount)}</span>}
-                  {it.expiry_date && <span>Expiry: {fmtDDMMYY(it.expiry_date)}</span>}
+                  {it.expiry_date && <span>Expiry: {fmtMMYYYY(it.expiry_date)}</span>}
                 </div>
               )}
             </div>
@@ -204,7 +204,7 @@ function AddMedicineInline({ billId, onDone, onCancel }) {
 // Supports a running/combined bill: typing a phone already used earlier today offers "continue
 // that bill" instead of always starting a fresh one — one bill accumulates every visit to the
 // counter until the customer actually pays (CLAUDE.md pharmacy §9).
-export function SellTab({ onError }) {
+export function SellTab({ onError, onSuccess }) {
   const [meds, setMeds] = useState(null);
   const [q, setQ] = useState("");
   const [cart, setCart] = useState([]); // [{medicineId, name, quantity}]
@@ -277,6 +277,7 @@ export function SellTab({ onError }) {
         });
         setDoneBillId(r.billId);
       }
+      onSuccess?.(`Sale saved${customer.name ? ` for ${customer.name}` : ""}.`);
       setCart([]);
       setCustomer({ name: "", phone: "" });
       setContinuingId(null);

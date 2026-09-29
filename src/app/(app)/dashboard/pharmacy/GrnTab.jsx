@@ -5,6 +5,7 @@ import { apiGet, apiSend } from "@/components/hms/api";
 import { fmtDDMMYY } from "@/lib/dateFormat";
 import MedicineInput from "@/components/hms/MedicineInput";
 import DateInput from "@/components/hms/DateInput";
+import MonthYearInput from "@/components/hms/MonthYearInput";
 import PriceFields, { EMPTY_PRICE } from "@/components/hms/PriceFields";
 import { TYPE_DEFAULTS } from "@/lib/medicineTypes";
 
@@ -169,12 +170,12 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                   <span className={help}>Printed on the pack.</span>
                 </label>
                 <div className={lab}>MFD
-                  <DateInput value={l.manufacturingDate} onChange={(v) => setLine(i, { manufacturingDate: v })} className={`${input} mt-1`} />
-                  <span className={help}>DD/MM/YY</span>
+                  <MonthYearInput mode="start" value={l.manufacturingDate} onChange={(v) => setLine(i, { manufacturingDate: v })} className={`${input} mt-1`} />
+                  <span className={help}>MM/YYYY</span>
                 </div>
                 <div className={lab}>Expiry
-                  <DateInput value={l.expiryDate} onChange={(v) => setLine(i, { expiryDate: v })} className={`${input} mt-1`} />
-                  <span className={help}>Expiry date on the pack.</span>
+                  <MonthYearInput mode="end" value={l.expiryDate} onChange={(v) => setLine(i, { expiryDate: v })} className={`${input} mt-1`} />
+                  <span className={help}>Expiry month/year on the pack.</span>
                 </div>
                 {l.medicineId && (
                   <div className="rounded-lg border border-slate-200 bg-white p-2 sm:col-span-2 lg:col-span-4">
