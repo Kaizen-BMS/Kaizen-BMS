@@ -12,9 +12,17 @@ import { perContentUnitRate } from "@/lib/pharmacyPricing";
  * span several batches — each batch contributes its own bill_item with its own MRP/purchase rate/
  * batch number, so a sale that draws from two batches always shows two priced lines, never one
  * line silently averaged across two different costs.
+ *
+ * Partial fulfillment, same as prescription dispensing: a cart of 2 medicines where only 1 is fully
+ * in stock still bills and dispenses that 1 — it never aborts the whole sale over one short line.
+ * Returns `{ lines, shortfalls }`; a line short by any amount is never silently dropped, it's
+ * reported back so the counter can tell the customer and the pharmacist can decide what to do
+ * (give a substitute, or leave the rest for later). `no_price_set`/`medicine_unavailable` stay hard
+ * failures — those are data problems to fix in Inventory, not a stock shortfall to work around.
  */
 export async function sellItems(tx, { tenantId, instanceId, billId, items, performedBy }) {
   const lines = [];
+  const shortfalls = [];
   for (const line of items) {
     const medicine = await tx.medicines.findUnique({ where: { id: BigInt(line.medicineId) } });
     if (!medicine || !medicine.active) throw new HttpError(400, `medicine_unavailable:${line.medicineId}`);
@@ -61,7 +69,9 @@ export async function sellItems(tx, { tenantId, instanceId, billId, items, perfo
       lines.push(item);
       remaining -= take;
     }
-    if (remaining > 0) throw new HttpError(400, `insufficient_stock:${medicine.name}`);
+    if (remaining > 0) {
+      shortfalls.push({ medicineId: Number(medicine.id), medicineName: medicine.name, requested: line.quantity, sold: line.quantity - remaining, short: remaining });
+    }
   }
-  return lines;
+  return { lines, shortfalls };
 }

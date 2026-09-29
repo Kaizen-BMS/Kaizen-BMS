@@ -167,22 +167,35 @@ export function ReturnsTab({ onError, mode = "customer" }) {
   const [rows, setRows] = useState([]);
   const [supForm, setSupForm] = useState({ stockId: "", quantity: "", reason: "EXPIRED", notes: "" });
   const [ok, setOk] = useState("");
+  const [sales, setSales] = useState(null);
 
   useEffect(() => {
     if (mode === "supplier") apiGet("/api/pharmacy/inventory").then((d) => setRows(d.rows.filter((r) => r.quantity > 0))).catch(() => {});
+    else apiGet("/api/pharmacy/sales").then((d) => setSales(d.sales)).catch(() => setSales([]));
   }, [mode]);
 
-  async function lookupBill(e) {
-    e.preventDefault();
+  // billId doubles as a free-text search — a bill number matches exactly,
+  // anything else matches by customer name or phone (find them either way).
+  const matches = billId.trim().length < 2 ? [] : (sales || []).filter(
+    (s) => String(s.id) === billId.trim() || (s.customerName || "").toLowerCase().includes(billId.trim().toLowerCase()) || (s.phone || "").includes(billId.trim()),
+  ).slice(0, 8);
+
+  async function openBill(id) {
     setOk("");
     onError("");
     setBill(null);
     try {
-      const d = await apiGet(`/api/pharmacy/sales/${billId}`);
+      const d = await apiGet(`/api/pharmacy/sales/${id}`);
       setBill(d.bill);
+      setBillId(String(id));
     } catch (err) {
       onError(`Could not find that bill (${err.message}).`);
     }
+  }
+  async function lookupBill(e) {
+    e.preventDefault();
+    if (matches.length === 1) return openBill(matches[0].id);
+    if (String(Number(billId)) === billId.trim()) return openBill(billId.trim());
   }
   async function submitCustomerReturn(e) {
     e.preventDefault();
@@ -217,8 +230,21 @@ export function ReturnsTab({ onError, mode = "customer" }) {
       {ok && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{ok}</p>}
       {mode === "customer" ? (
         <>
-          <form onSubmit={lookupBill} className={`${card} flex items-end gap-2`}>
-            <label className={`${lab} flex-1`}>Bill number<input required placeholder="e.g. 57" value={billId} onChange={(e) => setBillId(e.target.value)} className={`${input} mt-1`} /><span className={help}>Printed on the customer&apos;s bill.</span></label>
+          <form onSubmit={lookupBill} className={`${card} space-y-2`}>
+            <label className={lab}>Bill number, customer name or phone
+              <input required placeholder="e.g. 57, or the customer's name" value={billId} onChange={(e) => { setBillId(e.target.value); setBill(null); }} className={`${input} mt-1`} />
+              <span className={help}>Find the bill either way — printed number, or who it was for.</span>
+            </label>
+            {matches.length > 1 && (
+              <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
+                {matches.map((s) => (
+                  <button key={s.id} type="button" onClick={() => openBill(s.id)} className="flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs hover:bg-slate-50">
+                    <span>#{s.id} · {s.customerName || "—"}{s.phone && s.phone !== "walk-in" ? ` · ${s.phone}` : ""}</span>
+                    <span className="text-slate-400">₹{s.total}{s.due > 0 ? ` · due ₹${s.due}` : ""}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Find bill</button>
           </form>
           {bill && (

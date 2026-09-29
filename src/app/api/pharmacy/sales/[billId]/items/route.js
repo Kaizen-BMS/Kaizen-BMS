@@ -32,13 +32,17 @@ export const POST = apiRoute("pharmacy:sell", async (request, ctx) => {
   if (bill.finalized_at) throw new HttpError(409, "bill_finalized");
 
   const instance = await resolveInstance(tenantDb, tid, "PHARMACY", body.moduleInstanceId);
-  await tenantDb.$transaction(async (tx) => {
-    await sellItems(tx, { tenantId: tid, instanceId: instance.id, billId: bill.id, items: body.items, performedBy: uid });
+  const shortfalls = await tenantDb.$transaction(async (tx) => {
+    // Partial fulfillment allowed (see sellItems' own doc comment) — one
+    // short line never blocks the others already added to this bill.
+    const { lines, shortfalls: sf } = await sellItems(tx, { tenantId: tid, instanceId: instance.id, billId: bill.id, items: body.items, performedBy: uid });
+    if (lines.length === 0) throw new HttpError(400, `nothing_available:${sf[0]?.medicineName || ""}`);
     await recomputeBillStatus(tx, bill.id);
+    return sf;
   });
 
   const result = (await billInfo([bill.id])).get(String(bill.id));
   emitToModule(ctx.session.tenantId, "BILLING", "bill:updated", { bill: result });
   emitToModule(ctx.session.tenantId, "PHARMACY", "stock:updated", { billId: Number(bill.id) });
-  return json({ bill: result }, 201);
+  return json({ bill: result, shortfalls }, 201);
 });

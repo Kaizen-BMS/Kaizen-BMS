@@ -53,6 +53,84 @@ export function PharmacyPayBox({ billId, bill, onPaid }) {
   );
 }
 
+// Return an item right from the bill that's already open — no need to leave
+// this screen and re-look the bill up in the Returns tab. Posts to the same
+// POST /api/pharmacy/returns/customer the Returns tab itself uses.
+function ReturnFromBill({ bill, onDone, onCancel }) {
+  const pharmacyItems = (bill.bill_items || []).filter((i) => i.stock_id);
+  const [f, setF] = useState({ billItemId: "", quantity: "", reason: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      await apiSend("/api/pharmacy/returns/customer", "POST", { billItemId: Number(f.billItemId), quantity: Number(f.quantity), reason: f.reason });
+      onDone();
+    } catch (e2) {
+      setErr(e2.message === "return_quantity_exceeds_sold" ? "That's more than was sold on this line." : e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (pharmacyItems.length === 0) return <p className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs text-slate-400">No pharmacy items on this bill to return.</p>;
+  return (
+    <form onSubmit={submit} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <select required value={f.billItemId} onChange={(e) => setF({ ...f, billItemId: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm">
+        <option value="">— which item is being returned —</option>
+        {pharmacyItems.map((it) => <option key={it.id} value={it.id}>{it.quantity} × {it.description} · {rupee(it.amount)}</option>)}
+      </select>
+      <div className="flex gap-2">
+        <input required type="number" min="1" placeholder="Quantity returned" value={f.quantity} onChange={(e) => setF({ ...f, quantity: e.target.value })} className="w-32 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
+        <input required placeholder="Reason" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} className="flex-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
+      </div>
+      <div className="flex items-center gap-2">
+        <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{busy ? "Saving…" : "Return & refund"}</button>
+        <button type="button" onClick={onCancel} className="text-xs text-slate-400">Cancel</button>
+        {err && <span className="text-xs text-red-600">{err}</span>}
+      </div>
+    </form>
+  );
+}
+
+// A discount on a pharmacy sale — never anonymous (CLAUDE.md Billing
+// module: always a reason + the recording user as approver). Pharmacy's
+// own gated route, since a PHARMACIST doesn't carry the general bill:update
+// action the tenant-wide Billing screen's discount route requires.
+function DiscountInline({ billId, onDone, onCancel }) {
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      await apiSend(`/api/pharmacy/sales/${billId}/discount`, "POST", { amount: Number(amount), reason, idempotencyKey: newKey(billId) });
+      onDone();
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+      <input required type="number" min="0.01" step="0.01" placeholder="Discount amount ₹" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-36 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
+      <input required placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} className="flex-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
+      <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{busy ? "Saving…" : "Apply discount"}</button>
+      <button type="button" onClick={onCancel} className="text-xs text-slate-400">Cancel</button>
+      {err && <span className="w-full text-xs text-red-600">{err}</span>}
+    </form>
+  );
+}
+
 // Full bill — every priced line (with its own batch/MRP/purchase-rate/margin under "Price
 // details"), the whole payment history (never just the latest payment), and the two actions that
 // keep a running/combined bill alive: Add medicine (more lines, same bill) and Take payment
@@ -62,6 +140,8 @@ export function PharmacyBillDetail({ billId, onClose, onChanged }) {
   const [err, setErr] = useState("");
   const [showBreakdown, setShowBreakdown] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [returning, setReturning] = useState(false);
+  const [discounting, setDiscounting] = useState(false);
 
   const load = () => apiGet(`/api/pharmacy/sales/${billId}`).then((d) => setBill(d.bill)).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, [billId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -86,11 +166,16 @@ export function PharmacyBillDetail({ billId, onClose, onChanged }) {
           <p className="font-semibold">Bill #{bill.id} · {bill.patient_name}{bill.patient_phone && bill.patient_phone !== "walk-in" ? ` · ${bill.patient_phone}` : ""}</p>
           <p className="text-[11px] text-slate-400">Created {fmtDDMMYYTime(bill.created_at)}{bill.bill_items.length ? ` · last item added ${fmtDDMMYYTime(bill.bill_items[bill.bill_items.length - 1].created_at)}` : ""}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setReturning((v) => !v)} className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50">↩ Return</button>
+          <button onClick={() => setDiscounting((v) => !v)} className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50">Discount</button>
           <a href={`/print/receipt/${bill.id}`} target="_blank" rel="noreferrer" className="rounded-md border border-slate-300 px-2.5 py-1 text-xs">Print</a>
           {onClose && <button onClick={onClose} className="text-xs text-slate-400">Close</button>}
         </div>
       </div>
+
+      {returning && <ReturnFromBill bill={bill} onDone={() => { setReturning(false); load(); onChanged?.(); }} onCancel={() => setReturning(false)} />}
+      {discounting && <DiscountInline billId={bill.id} onDone={() => { setDiscounting(false); load(); onChanged?.(); }} onCancel={() => setDiscounting(false)} />}
 
       <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
         {bill.bill_items.map((it) => {
@@ -148,54 +233,52 @@ export function PharmacyBillDetail({ billId, onClose, onChanged }) {
 
 // A compact medicine picker used inline inside an already-open bill, so adding a 2 PM purchase to
 // a 10 AM bill doesn't leave the counter screen. Posts to the same running bill, never a new one.
+// One search box only (the typeahead already shows stock + price as you type) — no second,
+// space-hungry grid duplicating the same list.
 function AddMedicineInline({ billId, onDone, onCancel }) {
-  const [meds, setMeds] = useState(null);
   const [q, setQ] = useState("");
   const [cart, setCart] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [short, setShort] = useState([]);
 
-  useEffect(() => { apiGet("/api/pharmacy/medicines?active=true").then((d) => setMeds(d.medicines)).catch((e) => setErr(e.message)); }, []);
-  const shown = (meds || []).filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase())).slice(0, 12);
+  function addToCart(it) {
+    setCart((c) => (c.some((x) => x.medicineId === it.id) ? c.map((x) => (x.medicineId === it.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: it.id, name: it.name, contentUnit: it.contentUnit, sellingRate: it.sellingRate, quantity: 1 }]));
+  }
 
   async function submit() {
     if (cart.length === 0) return;
     setBusy(true);
     setErr("");
+    setShort([]);
     try {
-      await apiSend(`/api/pharmacy/sales/${billId}/items`, "POST", { items: cart.map((c) => ({ medicineId: c.medicineId, quantity: c.quantity })) });
+      const r = await apiSend(`/api/pharmacy/sales/${billId}/items`, "POST", { items: cart.map((c) => ({ medicineId: c.medicineId, quantity: c.quantity })) });
+      if (r.shortfalls?.length) setShort(r.shortfalls);
       onDone();
     } catch (e) {
-      setErr(e.message.startsWith("insufficient_stock:") ? `Not enough stock: ${e.message.split(":")[1]}.` : e.message.startsWith("no_price_set:") ? `No selling price set for ${e.message.split(":")[1]}.` : e.message);
+      setErr(e.message.startsWith("nothing_available:") ? `Nothing available for ${e.message.split(":")[1]} — 0 in stock.` : e.message.startsWith("no_price_set:") ? `No selling price set for ${e.message.split(":")[1]}.` : e.message);
     } finally {
       setBusy(false);
     }
   }
 
+  const total = cart.reduce((s, c) => s + (c.sellingRate != null ? c.sellingRate * c.quantity : 0), 0);
+
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-      <MedicineInput value={q} onChange={setQ} onPick={(it) => { setCart((c) => (c.some((x) => x.medicineId === it.id) ? c.map((x) => (x.medicineId === it.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: it.id, name: it.name, contentUnit: it.contentUnit, quantity: 1 }])); setQ(""); }} placeholder="Type medicine name…" className={`${input} w-full bg-white`} />
-      <div className="grid max-h-40 gap-1 overflow-auto sm:grid-cols-2">
-        {shown.map((m) => (
-          <button key={m.id} type="button" onClick={() => setCart((c) => (c.some((x) => x.medicineId === m.id) ? c.map((x) => (x.medicineId === m.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: m.id, name: m.name, contentUnit: m.contentUnit, quantity: 1 }]))} className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2 py-1 text-left text-xs hover:border-slate-400">
-            <span>{m.name}</span>
-            <span className="text-right text-slate-400">
-              {m.sellingRate != null && <span className="mr-1 font-medium text-slate-600">{rupee(m.sellingRate)}{m.contentUnit ? `/${m.contentUnit}` : ""}</span>}
-              {m.stock}{m.contentUnit ? ` ${m.contentUnit}` : ""}
-            </span>
-          </button>
-        ))}
-      </div>
+      <MedicineInput value={q} onChange={setQ} onPick={(it) => { addToCart(it); setQ(""); }} placeholder="Type medicine name…" className={`${input} w-full bg-white`} />
       {cart.length > 0 && (
         <div className="space-y-1">
           {cart.map((c) => (
             <div key={c.medicineId} className="flex items-center justify-between gap-1.5 text-xs">
-              <span className="flex-1 truncate">{c.name}</span>
-              <input type="number" min="1" value={c.quantity} onChange={(e) => setCart((xs) => xs.map((x) => (x.medicineId === c.medicineId ? { ...x, quantity: Math.max(1, Number(e.target.value)) } : x)))} className="w-14 rounded border border-slate-300 px-1 py-0.5" />
-              <span className="text-slate-400">{c.contentUnit || "unit"}(s)</span>
-              <button onClick={() => setCart((xs) => xs.filter((x) => x.medicineId !== c.medicineId))} className="text-red-500">✕</button>
+              <span className="min-w-0 flex-1 truncate">{c.name}</span>
+              <input type="number" min="1" value={c.quantity} onChange={(e) => setCart((xs) => xs.map((x) => (x.medicineId === c.medicineId ? { ...x, quantity: Math.max(1, Number(e.target.value)) } : x)))} className="w-14 shrink-0 rounded border border-slate-300 px-1 py-0.5" />
+              <span className="shrink-0 text-slate-400">{c.contentUnit || "unit"}(s)</span>
+              {c.sellingRate != null && <span className="w-16 shrink-0 text-right font-medium text-slate-600">{rupee(c.sellingRate * c.quantity)}</span>}
+              <button onClick={() => setCart((xs) => xs.filter((x) => x.medicineId !== c.medicineId))} className="shrink-0 text-red-500">✕</button>
             </div>
           ))}
+          {total > 0 && <p className="text-right text-xs font-semibold text-slate-600">Total {rupee(total)}</p>}
         </div>
       )}
       <div className="flex items-center gap-2">
@@ -203,6 +286,11 @@ function AddMedicineInline({ billId, onDone, onCancel }) {
         <button onClick={onCancel} className="text-xs text-slate-400">Cancel</button>
         {err && <span className="text-xs text-red-600">{err}</span>}
       </div>
+      {short.length > 0 && (
+        <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+          {short.map((s) => `Only ${s.sold} of ${s.requested} ${s.medicineName} available (${s.short} short)`).join(" · ")} — added what was in stock; the rest wasn&rsquo;t billed.
+        </p>
+      )}
       <p className="text-[11px] text-slate-400">Quantity is in the medicine&rsquo;s smallest unit (e.g. Tablet) — price is per that unit, taken automatically from stock.</p>
     </div>
   );
@@ -213,15 +301,16 @@ function AddMedicineInline({ billId, onDone, onCancel }) {
 // that bill" instead of always starting a fresh one — one bill accumulates every visit to the
 // counter until the customer actually pays (CLAUDE.md pharmacy §9).
 export function SellTab({ onError, onSuccess }) {
-  const [meds, setMeds] = useState(null);
+  const [meds, setMeds] = useState(null); // still loaded once, for barcode-scan lookup only
   const [q, setQ] = useState("");
-  const [cart, setCart] = useState([]); // [{medicineId, name, quantity}]
+  const [cart, setCart] = useState([]); // [{medicineId, name, contentUnit, sellingRate, quantity}]
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [openBills, setOpenBills] = useState([]);
   const [continuingId, setContinuingId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [doneBillId, setDoneBillId] = useState(null);
   const [msg, setMsg] = useState("");
+  const [short, setShort] = useState([]);
   const [scanning, setScanning] = useState(false);
 
   const loadMeds = () => apiGet("/api/pharmacy/medicines?active=true").then((d) => setMeds(d.medicines)).catch((e) => setMsg(e.message));
@@ -229,7 +318,6 @@ export function SellTab({ onError, onSuccess }) {
   // A sale/return/stock-in anywhere (even from another counter/tab) must
   // update prices and out-of-stock here instantly — never require a manual
   // browser refresh, which would also wipe the cart/customer being typed.
-  // Only the medicine list is refetched; cart/customer state is untouched.
   useRealtime({ "stock:updated": loadMeds }, loadMeds);
 
   // Ctrl+Enter completes the sale from anywhere on this screen — a
@@ -262,10 +350,8 @@ export function SellTab({ onError, onSuccess }) {
     return () => { cancelled = true; };
   }, [customer.phone]);
 
-  const shown = (meds || []).filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase()) || (m.barcode || "").toLowerCase() === q.toLowerCase());
-
   function addToCart(m) {
-    setCart((c) => (c.some((x) => x.medicineId === m.id) ? c.map((x) => (x.medicineId === m.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: m.id, name: m.name, contentUnit: m.contentUnit, quantity: 1 }]));
+    setCart((c) => (c.some((x) => x.medicineId === m.id) ? c.map((x) => (x.medicineId === m.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: m.id, name: m.name, contentUnit: m.contentUnit, sellingRate: m.sellingRate, quantity: 1 }]));
   }
   function setQty(id, qty) {
     setCart((c) => c.map((x) => (x.medicineId === id ? { ...x, quantity: Math.max(1, qty) } : x)));
@@ -274,19 +360,27 @@ export function SellTab({ onError, onSuccess }) {
     setCart((c) => c.filter((x) => x.medicineId !== id));
   }
 
+  // Phone is optional here (a walk-in customer needn't give one), but a
+  // half-typed or invalid one must never be silently saved — this is the
+  // one gate; the server (phoneField()) re-checks it too.
+  const phoneOk = phoneDigitsInfo(customer.phone).digits.length === 0 || phoneDigitsInfo(customer.phone).valid;
+
   async function submit() {
-    if (cart.length === 0 || (!continuingId && !customer.name.trim())) return;
+    if (cart.length === 0 || (!continuingId && !customer.name.trim()) || !phoneOk) return;
     setBusy(true);
     setMsg("");
+    setShort([]);
     try {
       if (continuingId) {
-        await apiSend(`/api/pharmacy/sales/${continuingId}/items`, "POST", { items: cart.map((c) => ({ medicineId: c.medicineId, quantity: c.quantity })) });
+        const r = await apiSend(`/api/pharmacy/sales/${continuingId}/items`, "POST", { items: cart.map((c) => ({ medicineId: c.medicineId, quantity: c.quantity })) });
+        if (r.shortfalls?.length) setShort(r.shortfalls);
         setDoneBillId(continuingId);
       } else {
         const r = await apiSend("/api/pharmacy/walk-in-sale", "POST", {
           customerName: customer.name, phone: customer.phone,
           items: cart.map((c) => ({ medicineId: c.medicineId, quantity: c.quantity })),
         });
+        if (r.shortfalls?.length) setShort(r.shortfalls);
         setDoneBillId(r.billId);
       }
       onSuccess?.(`Sale saved${customer.name ? ` for ${customer.name}` : ""}.`);
@@ -295,7 +389,7 @@ export function SellTab({ onError, onSuccess }) {
       setContinuingId(null);
       setOpenBills([]);
     } catch (err) {
-      const m = err.message.startsWith("insufficient_stock:") ? `Not enough stock: ${err.message.split(":")[1]}.`
+      const m = err.message.startsWith("nothing_available:") ? `Nothing available for ${err.message.split(":")[1]} — 0 in stock.`
         : err.message.startsWith("no_price_set:") ? `No selling price set yet for ${err.message.split(":")[1]} — set it in Inventory.`
         : `Could not complete the sale (${err.message}).`;
       setMsg(m);
@@ -313,12 +407,18 @@ export function SellTab({ onError, onSuccess }) {
     return (
       <div className="max-w-xl space-y-3">
         <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">Saved to bill #{doneBillId}.</p>
+        {short.length > 0 && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {short.map((s) => `Only ${s.sold} of ${s.requested} ${s.medicineName} available (${s.short} short)`).join(" · ")} — billed what was in stock; the rest wasn&rsquo;t added. Use &ldquo;+ Add medicine&rdquo; below once more arrives, or give the customer a substitute.
+          </p>
+        )}
         <PharmacyBillDetail billId={doneBillId} />
-        <button onClick={() => setDoneBillId(null)} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs text-[var(--hms-btn-fg)]">New sale</button>
+        <button onClick={() => { setDoneBillId(null); setShort([]); }} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs text-[var(--hms-btn-fg)]">New sale</button>
       </div>
     );
   }
-  if (!meds) return <p className="text-sm text-slate-400">{msg || "Loading…"}</p>;
+
+  const total = cart.reduce((s, c) => s + (c.sellingRate != null ? c.sellingRate * c.quantity : 0), 0);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
@@ -347,7 +447,7 @@ export function SellTab({ onError, onSuccess }) {
         <p className="pt-2 text-sm font-semibold">Medicines</p>
         <div className="flex gap-1">
           <div className="flex-1">
-            <MedicineInput value={q} onChange={setQ} onPick={(it) => { addToCart({ id: it.id, name: it.name, contentUnit: it.contentUnit }); setQ(""); }} placeholder="Type medicine name, salt or barcode…" className={`${input} w-full`} />
+            <MedicineInput value={q} onChange={setQ} onPick={(it) => { addToCart(it); setQ(""); }} placeholder="Type medicine name, salt or barcode…" className={`${input} w-full`} />
           </div>
           <button type="button" onClick={() => setScanning(true)} className="rounded-lg border border-slate-300 px-3 text-xs">📷 Scan</button>
         </div>
@@ -363,34 +463,23 @@ export function SellTab({ onError, onSuccess }) {
             }}
           />
         )}
-        <div className="grid max-h-72 gap-1 overflow-auto sm:grid-cols-2">
-          {shown.map((m) => (
-            <button key={m.id} type="button" onClick={() => addToCart(m)} title={m.mrp != null ? `MRP ₹${m.mrp}${m.purchaseRate != null ? ` · Purchase ₹${m.purchaseRate}` : ""}${m.batchCount > 1 ? ` · ${m.batchCount} batches (price shown is the next one to be used)` : ""}` : undefined} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 px-2.5 py-1.5 text-left text-sm hover:border-slate-400">
-              <span>
-                <span className="font-medium">{m.name}</span>
-                <span className="block text-xs text-slate-400">
-                  {m.sellingRate != null ? <span className="font-semibold text-slate-600">{rupee(m.sellingRate)}{m.contentUnit ? ` / ${m.contentUnit}` : ""}</span> : "No price set"}
-                  {m.mrp != null && m.mrp !== m.sellingRate && <span className="ml-1.5 line-through">{rupee(m.mrp)}</span>}
-                </span>
-              </span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${m.stock > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{m.stock > 0 ? `Stock: ${m.stock}${m.contentUnit ? ` ${m.contentUnit}` : ""}` : "Out of stock"}</span>
-            </button>
-          ))}
-          {shown.length === 0 && <p className="text-xs text-slate-400">No medicines match.</p>}
-        </div>
+        <p className="text-[11px] text-slate-400">Search by name, salt or barcode above — stock and price show right in the suggestion list.</p>
       </div>
       <aside className="h-fit space-y-2 rounded-2xl border border-slate-200 bg-white shadow-sm p-4 text-sm">
         <p className="font-semibold">Cart</p>
         {cart.length === 0 && <p className="text-xs text-slate-400">No items yet.</p>}
         {cart.map((c) => (
           <div key={c.medicineId} className="flex items-center justify-between gap-1.5 text-xs">
-            <span className="flex-1 truncate">{c.name}</span>
-            <input type="number" min="1" value={c.quantity} onChange={(e) => setQty(c.medicineId, Number(e.target.value))} className="w-14 rounded border border-slate-300 px-1 py-0.5" />
-            <span className="text-slate-400">{c.contentUnit || "unit"}(s)</span>
-            <button onClick={() => removeItem(c.medicineId)} className="text-red-500">✕</button>
+            <span className="min-w-0 flex-1 truncate">{c.name}</span>
+            <input type="number" min="1" value={c.quantity} onChange={(e) => setQty(c.medicineId, Number(e.target.value))} className="w-14 shrink-0 rounded border border-slate-300 px-1 py-0.5" />
+            <span className="shrink-0 text-slate-400">{c.contentUnit || "unit"}(s)</span>
+            {c.sellingRate != null && <span className="w-16 shrink-0 text-right font-medium text-slate-600">{rupee(c.sellingRate * c.quantity)}</span>}
+            <button onClick={() => removeItem(c.medicineId)} className="shrink-0 text-red-500">✕</button>
           </div>
         ))}
-        <button onClick={submit} disabled={busy || cart.length === 0 || (!continuingId && !customer.name.trim())} className="w-full rounded-lg bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
+        {total > 0 && <p className="text-right text-sm font-semibold text-slate-700">Total {rupee(total)}</p>}
+        {!phoneOk && <p className="text-xs text-red-600">That phone number isn&rsquo;t a valid 10-digit mobile number.</p>}
+        <button onClick={submit} disabled={busy || cart.length === 0 || (!continuingId && !customer.name.trim()) || !phoneOk} className="w-full rounded-lg bg-[var(--hms-btn-bg)] px-3 py-2 text-sm font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
           {busy ? "Saving…" : continuingId ? `Add to bill #${continuingId}` : "Complete sale"}
           {!busy && cart.length > 0 && <span className="ml-1.5 font-normal opacity-70">(Ctrl+Enter)</span>}
         </button>

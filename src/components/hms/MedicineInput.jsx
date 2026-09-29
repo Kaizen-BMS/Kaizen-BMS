@@ -42,6 +42,10 @@ export default function MedicineInput({ value, onChange, onPick, endpoint = "/ap
   function pick(it) {
     onChange(it.name);
     onPick?.(it);
+    // Clear stale results so refocusing the (now-empty) box for a second
+    // medicine never flashes the previous pick's dropdown before the next
+    // keystroke's own search comes back.
+    setItems([]);
     setOpen(false);
   }
 
@@ -78,12 +82,15 @@ export default function MedicineInput({ value, onChange, onPick, endpoint = "/ap
                 onMouseEnter={() => setHi(i)}
                 className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-1.5 text-left text-sm ${i === hi ? "bg-slate-100" : ""}`}
               >
-                <span>
-                  <span className="block font-medium">{it.name}</span>
-                  <span className="block text-xs text-slate-400">{[it.type, it.strength, it.generic].filter(Boolean).join(" · ")}</span>
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">{it.name}</span>
+                  <span className="block truncate text-xs text-slate-400">{[it.type, it.strength, it.generic].filter(Boolean).join(" · ")}</span>
                 </span>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${it.stock > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                  {it.stock > 0 ? `Stock: ${it.stock}` : "Out of stock"}
+                <span className="flex shrink-0 flex-col items-end gap-0.5">
+                  {it.sellingRate != null && <span className="text-xs font-medium text-slate-600">₹{it.sellingRate}{it.contentUnit ? `/${it.contentUnit}` : ""}</span>}
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${it.stock > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                    {it.stock > 0 ? `${it.stock}${it.contentUnit ? ` ${it.contentUnit}` : ""}` : "Out of stock"}
+                  </span>
                 </span>
               </button>
             </li>
