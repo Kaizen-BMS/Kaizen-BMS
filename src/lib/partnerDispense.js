@@ -10,6 +10,8 @@
 const { prisma } = require("./prismaClient");
 const { HttpError } = require("./apiRoute");
 const { priceLine } = require("./pricing");
+const { recomputeBillStatus } = require("./billing");
+const { emitToModule } = require("./realtime");
 const partners = require("./partners");
 
 const toId = (v) => (typeof v === "bigint" ? v : BigInt(v));
@@ -103,6 +105,22 @@ async function dispensePartnerOrder(session, id, origin, requestedQty) {
           ? Number((await tx.medicines.findUnique({ where: { id: medicineId }, select: { gst_rate: true } }))?.gst_rate || 0)
           : 0;
 
+        // This IS a real sale — this pharmacy's own stock is genuinely
+        // leaving the building for another hospital's patient — so it gets
+        // a real bill, the same way an ordinary walk-in counter sale does
+        // (src/app/api/pharmacy/walk-in-sale/route.js), not just a number
+        // shown on the order card. There's no local patient record for
+        // someone who belongs to a different tenant, so a lightweight one
+        // is found-or-created exactly like walk-in-sale already does for
+        // an unregistered customer, tagged so repeat orders for the same
+        // named patient from the same partner share one record instead of
+        // creating a new "customer" every time.
+        const billPhone = `partner:${Number(conn.requester_tenant_id)}`;
+        const patientName = payload.patientName || `${from} patient`;
+        let billPatient = await tx.patients.findFirst({ where: { name: patientName, phone: billPhone, tenant_id: tenantId } });
+        if (!billPatient) billPatient = await tx.patients.create({ data: { name: patientName, age: 0, phone: billPhone, tenants: { connect: { id: tenantId } } } });
+        const bill = await tx.bills.create({ data: { bill_type: "OPD", patients: { connect: { id: billPatient.id } }, tenants: { connect: { id: tenantId } }, ...(session.userId ? { users: { connect: { id: toId(session.userId) } } } : {}) } });
+
         let remaining = wanted;
         const used = [];
         let amountTotal = 0;
@@ -111,23 +129,63 @@ async function dispensePartnerOrder(session, id, origin, requestedQty) {
           const take = Math.min(Number(b.quantity), remaining);
           if (take <= 0) continue;
           await tx.pharmacy_stock.update({ where: { id: b.id }, data: { quantity: { decrement: take } } });
-          await tx.pharmacy_stock_movements.create({
-            data: { tenant_id: tenantId, stock_id: b.id, type: "DISPENSE", quantity_delta: -take, reason: `Partner order ${order.external_order_ref} from ${from}`, performed_by: toId(session.userId) },
+          const movement = await tx.pharmacy_stock_movements.create({
+            data: {
+              type: "DISPENSE",
+              quantity_delta: -take,
+              reason: `Partner order ${order.external_order_ref} from ${from}`,
+              tenants: { connect: { id: tenantId } },
+              pharmacy_stock: { connect: { id: b.id } },
+              ...(session.userId ? { users: { connect: { id: toId(session.userId) } } } : {}),
+            },
           });
           const rate = b.selling_rate ?? b.mrp;
+          let lineAmount = 0;
+          let priced = null;
           if (rate != null) {
-            const priced = priceLine({ price: Number(rate), tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, take);
-            amountTotal += Number(priced.amount);
+            priced = priceLine({ price: Number(rate), tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, take);
+            lineAmount = Number(priced.amount);
+            amountTotal += lineAmount;
           }
+          await tx.bill_items.create({
+            data: {
+              bill_id: bill.id,
+              source: "PHARMACY",
+              description: `${payload.medicineName}${b.batch_number ? ` (Batch ${b.batch_number})` : ""} × ${take} — partner order from ${from}`,
+              amount: lineAmount,
+              reference_type: "pharmacy_stock_movement",
+              reference_id: movement.id,
+              stock_id: b.id,
+              medicine_id: b.medicine_id ?? null,
+              batch_number: b.batch_number,
+              expiry_date: b.expiry_date,
+              mrp: b.mrp,
+              purchase_rate: b.purchase_rate,
+              ...(priced
+                ? {
+                    quantity: priced.quantity,
+                    unit_price: priced.unit_price,
+                    taxable_amount: priced.taxable_amount,
+                    tax_rate: priced.tax_rate,
+                    cgst_amount: priced.cgst_amount,
+                    sgst_amount: priced.sgst_amount,
+                    igst_amount: priced.igst_amount,
+                    tax_amount: priced.tax_amount,
+                  }
+                : {}),
+            },
+          });
           used.push({ batch: b.batch_number, quantity: take });
           remaining -= take;
         }
-        const result = { dispensed: wanted - remaining, batches: used, amount: Math.round(amountTotal * 100) / 100, at: new Date().toISOString() };
+        await recomputeBillStatus(tx, bill.id);
+        const result = { dispensed: wanted - remaining, batches: used, amount: Math.round(amountTotal * 100) / 100, billId: Number(bill.id), at: new Date().toISOString() };
         await tx.peer_inbound_orders.update({ where: { id: order.id }, data: { result_payload: JSON.stringify(result) } });
         return result;
       },
       { maxWait: 10000, timeout: 30000 },
     );
+    emitToModule(session.tenantId, "BILLING", "bill:created", { bill: { id: done.billId } });
   }
   if (done.dispensed <= 0) throw new HttpError(409, "out_of_stock");
   // The medicine has ALREADY been physically dispensed at this point (real

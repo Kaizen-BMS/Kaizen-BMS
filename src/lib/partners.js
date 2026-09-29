@@ -495,15 +495,19 @@ async function completeInbound(session, id, { findings, quantityFulfilled, amoun
   const requesterTenant = Number(conn.requester_tenant_id);
 
   // A "direct" order (facility-to-facility request, no internal record on the
-  // sender's side to update) is just marked done with its result.
+  // sender's side to update) is just marked done with its result. Merged
+  // into whatever result_payload already exists — see the same-reasoning
+  // comment on the webhook branch below (dispensePartnerOrder() may have
+  // already written a billId/batches here first).
   if (String(order.external_order_ref).startsWith("DIR-")) {
-    const result =
+    const existingDirResult = parseJson(order.result_payload, {}) || {};
+    const patch =
       conn.service_type === "REFERRAL"
         ? { ...referral }
         : conn.service_type === "LAB"
           ? { findings: String(findings || "Result reported.").slice(0, 2000), ...money }
           : { quantityFulfilled: quantityFulfilled != null ? Number(quantityFulfilled) : parseJson(order.payload, {}).quantity ?? null, ...money };
-    await prisma.peer_inbound_orders.update({ where: { id: order.id }, data: { status: "COMPLETED", completed_at: new Date(), result_payload: JSON.stringify(result) } });
+    await prisma.peer_inbound_orders.update({ where: { id: order.id }, data: { status: "COMPLETED", completed_at: new Date(), result_payload: JSON.stringify({ ...existingDirResult, ...patch }) } });
     emitToTenant(requesterTenant, "partner:updated", { id: Number(conn.id), status: conn.status });
     return { ok: true };
   }
@@ -539,9 +543,18 @@ async function completeInbound(session, id, { findings, quantityFulfilled, amoun
   }
   if (!res.ok) throw new HttpError(502, "result_delivery_failed");
 
+  // Merge into whatever result_payload already exists rather than replacing
+  // it — for a Pharmacy order, dispensePartnerOrder() already wrote a
+  // richer record here first (billId, batches, dispensed quantity) before
+  // this webhook step even ran; overwriting it would silently lose that
+  // billId the moment the webhook happens to succeed (a real bug: the
+  // "View bill" link worked for a still-RECEIVED order but disappeared
+  // the instant status flipped to COMPLETED).
+  const existingResult = parseJson(order.result_payload, {}) || {};
+  const patch = conn.service_type === "LAB" ? { findings: body.findings, ...money } : { quantityFulfilled: body.quantityFulfilled, ...money };
   await prisma.peer_inbound_orders.update({
     where: { id: order.id },
-    data: { status: "COMPLETED", completed_at: new Date(), result_payload: JSON.stringify(conn.service_type === "LAB" ? { findings: body.findings, ...money } : { quantityFulfilled: body.quantityFulfilled, ...money }) },
+    data: { status: "COMPLETED", completed_at: new Date(), result_payload: JSON.stringify({ ...existingResult, ...patch }) },
   });
   emitToTenant(requesterTenant, "partner:updated", { id: Number(conn.id), status: conn.status });
   return { ok: true };

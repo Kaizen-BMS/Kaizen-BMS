@@ -19,6 +19,18 @@ function VisitIdParamReader({ onReady }) {
   return null;
 }
 
+// A partner-order dispense already creates a real bill directly (no visit
+// to prefill a create-form with) — links here as /dashboard/billing?open=N
+// to open that already-existing bill immediately.
+function OpenBillParamReader({ onReady }) {
+  const params = useSearchParams();
+  useEffect(() => {
+    onReady(params.get("open"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
 const STATUS_STYLE = {
   OPEN: "bg-slate-100 text-slate-600",
   PARTIALLY_PAID: "bg-amber-100 text-amber-700",
@@ -191,6 +203,9 @@ export default function BillingClient({ permissions }) {
             }
           }}
         />
+      </Suspense>
+      <Suspense fallback={null}>
+        <OpenBillParamReader onReady={(billId) => { if (billId) openBill(Number(billId)); }} />
       </Suspense>
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Billing</h1>

@@ -489,7 +489,14 @@ function PartnerOrdersSection({ canDispense, onError }) {
                   </button>
                 </div>
               ) : o.result != null ? (
-                <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">done</span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">done</span>
+                  {o.result.billId ? (
+                    <a href={`/dashboard/billing?open=${o.result.billId}`} className="rounded-lg bg-[var(--hms-btn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--hms-btn-fg)]">
+                      View bill →
+                    </a>
+                  ) : null}
+                </div>
               ) : o.connectionStatus !== "ACTIVE" ? (
                 <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">connection not active</span>
               ) : null}
