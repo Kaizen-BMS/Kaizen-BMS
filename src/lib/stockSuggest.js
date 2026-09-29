@@ -8,15 +8,18 @@
  */
 const { prisma } = require("./prismaClient");
 
-async function matches(tenantId, q) {
+// `limit` defaults to 8 (a typeahead dropdown, several callers rely on that
+// exact size); a caller that wants the whole browsable list (an empty `q`)
+// passes a much larger one explicitly.
+async function matches(tenantId, q, limit = 8) {
   const rows = await prisma.$queryRawUnsafe(
     `SELECT medicine_name AS name,
             SUM(CASE WHEN expiry_date >= CURDATE() THEN quantity ELSE 0 END) AS qty
        FROM pharmacy_stock
       WHERE tenant_id = ? AND medicine_name LIKE ?
-      GROUP BY medicine_name ORDER BY medicine_name LIMIT 8`,
+      GROUP BY medicine_name ORDER BY medicine_name LIMIT ${Number(limit) | 0}`,
     tenantId,
-    `%${q.replace(/[%_]/g, "")}%`,
+    `%${String(q || "").replace(/[%_]/g, "")}%`,
   );
   return rows.map((r) => ({ name: r.name, available: Number(r.qty) > 0 }));
 }

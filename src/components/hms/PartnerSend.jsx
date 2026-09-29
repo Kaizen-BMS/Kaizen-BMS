@@ -102,6 +102,87 @@ function PartnerMedicineField({ connectionId, value, onChange, className }) {
   );
 }
 
+// The actual "see their whole stock" view — PartnerMedicineField above only
+// ever shows results once you've typed something, which isn't the same as
+// being able to just look at what a partner has. This fetches the FULL
+// list (no query = browse mode on the same endpoint, see partners.js's
+// partnerStock()) behind one clearly-labelled button, with a plain
+// client-side filter box once it's loaded rather than a fresh request per
+// keystroke.
+function PartnerStockBrowser({ connectionId, partnerName, onPick }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState(null); // null = not fetched yet
+  const [filter, setFilter] = useState("");
+  const [err, setErr] = useState("");
+  const [lastConnId, setLastConnId] = useState(connectionId);
+
+  if (connectionId !== lastConnId) {
+    setLastConnId(connectionId);
+    setOpen(false);
+    setItems(null);
+    setFilter("");
+    setErr("");
+  }
+
+  async function load() {
+    setErr("");
+    try {
+      const d = await apiGet(`/api/partners/connections/${connectionId}/stock`);
+      setItems(d.items || []);
+    } catch (e) {
+      setErr(e.message === "stock_not_shared" ? `${partnerName} hasn't turned on stock sharing yet.` : `Could not load their stock (${e.message}).`);
+      setItems([]);
+    }
+  }
+
+  function toggle() {
+    if (!open && items === null) load();
+    setOpen((v) => !v);
+  }
+
+  if (!connectionId) return null;
+  const filtered = filter.trim() ? (items || []).filter((it) => it.name.toLowerCase().includes(filter.trim().toLowerCase())) : items || [];
+
+  return (
+    <div className="w-full">
+      <button type="button" onClick={toggle} className="text-xs font-medium text-slate-600 underline hover:text-slate-900">
+        {open ? "Hide" : "Browse"} {partnerName}&apos;s full stock
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          {items === null && !err && <p className="text-xs text-slate-400">Loading…</p>}
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          {items !== null && !err && (
+            <>
+              <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={`Filter ${items.length} medicines…`} className="mb-2 w-full max-w-xs rounded-md border border-slate-300 px-2 py-1 text-xs" />
+              <div className="max-h-60 max-w-md overflow-auto">
+                {items.length === 0 && <p className="text-xs text-slate-400">Nothing in their stock right now.</p>}
+                {items.length > 0 && filtered.length === 0 && <p className="text-xs text-slate-400">No match.</p>}
+                <ul className="space-y-0.5">
+                  {filtered.map((it) => (
+                    <li key={it.name}>
+                      <button
+                        type="button"
+                        onClick={() => { onPick(it.name); setOpen(false); }}
+                        className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-white"
+                      >
+                        <span>{it.name}</span>
+                        <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-medium ${it.available ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                          {it.available ? "Available" : "Not in stock"}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function outcome(service, o) {
   if (o.status !== "COMPLETED") return "Waiting";
   if (service === "PHARMACY") return `Fulfilled ${o.result?.quantityFulfilled ?? ""}${money(o.result?.amount)}`;
@@ -172,6 +253,13 @@ export default function PartnerSend({ service }) {
             </label>
           )}
           {targets.length === 1 && <p className="pb-2 text-sm text-slate-600">To: {targets[0].name}</p>}
+          {isPh && connectionId && (
+            <PartnerStockBrowser
+              connectionId={connectionId}
+              partnerName={targets.find((t) => String(t.connectionId) === connectionId)?.name || "their"}
+              onPick={(name) => setF((x) => ({ ...x, name }))}
+            />
+          )}
           {isRef ? (
             <>
               <label className="text-xs"><span className="block text-slate-500">Patient name</span><input required value={f.patientName} onChange={set("patientName")} className={input} /></label>

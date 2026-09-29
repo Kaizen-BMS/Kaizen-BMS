@@ -592,8 +592,10 @@ async function sendDirect(session, connectionId, input) {
  * name-and-yes/no shape stockSuggest.js already gives a doctor while
  * prescribing (never quantities, batches or prices — see that file's own
  * comment), just scoped to ONE chosen connection instead of aggregated
- * across every partner, so it can back a typeahead while requesting a
- * medicine from a specific partner rather than a generic hint. Only the
+ * across every partner. Two modes, same endpoint: a real `q` (2+ chars)
+ * narrows to a typeahead-sized list (8); no `q` at all browses the WHOLE
+ * shared list (capped at 300, alphabetical) — "where can I see their full
+ * stock" needs an actual browse, not just search-as-you-type. Only the
  * REQUESTER side may browse (the same restriction sendDirect already
  * enforces), and only once that partner has opted in via share_stock —
  * the same consent flag, not a second one, since sharing "is this in
@@ -607,8 +609,8 @@ async function partnerStock(session, connectionId, q) {
   if (conn.status !== "ACTIVE") throw new HttpError(409, "connection_not_active");
   if (!conn.share_stock) throw new HttpError(403, "stock_not_shared");
   const text = String(q || "").trim();
-  if (text.length < 2) return { items: [] };
-  return { items: await stockSuggest.matches(conn.receiver_tenant_id, text) };
+  if (text && text.length < 2) return { items: [] };
+  return { items: await stockSuggest.matches(conn.receiver_tenant_id, text, text ? 8 : 300) };
 }
 
 /** Requests THIS facility sent to partners, with their status/result. */
