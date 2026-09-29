@@ -413,7 +413,7 @@ function QueueTab({ canDispense, onError }) {
 function PartnerOrdersSection({ canDispense, onError }) {
   const [orders, setOrders] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [amounts, setAmounts] = useState({});
+  const [qtys, setQtys] = useState({}); // per-order "dispense this many now" (blank = everything requested)
 
   async function load() {
     const d = await apiGet("/api/pharmacy/partner-orders");
@@ -426,11 +426,12 @@ function PartnerOrdersSection({ canDispense, onError }) {
   }, []);
   useRealtime({ "partner:inbound": load, "partner:updated": load, "stock:updated": load }, load);
 
-  async function dispense(o) {
+  async function dispense(o, outstanding) {
     setBusyId(o.id);
     onError("");
     try {
-      await apiSend(`/api/pharmacy/partner-orders/${o.id}/dispense`, "POST", amounts[o.id] ? { amount: Number(amounts[o.id]) } : {});
+      const qty = Math.min(outstanding, Number(qtys[o.id]) || 0) || undefined;
+      await apiSend(`/api/pharmacy/partner-orders/${o.id}/dispense`, "POST", qty ? { quantity: qty } : {});
       await load();
     } catch (e) {
       onError(e.message === "out_of_stock" ? "This medicine is out of stock." : e.message === "connection_not_active" ? "The connection with this hospital is not active." : `Could not dispense (${e.message}).`);
@@ -476,9 +477,15 @@ function PartnerOrdersSection({ canDispense, onError }) {
               </div>
               {o.result == null && canDispense && o.connectionStatus === "ACTIVE" ? (
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <input type="number" min="0" placeholder="₹ amount" value={amounts[o.id] || ""} onChange={(e) => setAmounts({ ...amounts, [o.id]: e.target.value })} className="w-24 rounded-md border border-slate-300 px-1.5 py-1 text-xs" />
-                  <button onClick={() => dispense(o)} disabled={busyId === o.id || o.inStock <= 0} className="shrink-0 rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
-                    {busyId === o.id ? "Dispensing…" : "Dispense"}
+                  <input
+                    type="number" min="1" max={o.quantity} placeholder={String(o.quantity)}
+                    value={qtys[o.id] || ""}
+                    onChange={(e) => setQtys((q) => ({ ...q, [o.id]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); dispense(o, o.quantity); } }}
+                    aria-label="Quantity to dispense now" className="w-16 rounded-md border border-slate-300 px-1.5 py-1 text-xs"
+                  />
+                  <button onClick={() => dispense(o, o.quantity)} disabled={busyId === o.id || o.inStock <= 0} className="shrink-0 rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">
+                    {busyId === o.id ? "Dispensing…" : qtys[o.id] ? `Dispense ${Math.min(o.quantity, Number(qtys[o.id]))}` : `Dispense ${o.quantity}`}
                   </button>
                 </div>
               ) : o.result != null ? (

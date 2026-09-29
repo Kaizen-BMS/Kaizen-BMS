@@ -9,6 +9,7 @@
  */
 const { prisma } = require("./prismaClient");
 const { HttpError } = require("./apiRoute");
+const { priceLine } = require("./pricing");
 const partners = require("./partners");
 
 const toId = (v) => (typeof v === "bigint" ? v : BigInt(v));
@@ -57,8 +58,19 @@ async function listPartnerOrders(session) {
   );
 }
 
-/** Dispense (FEFO) from this pharmacy's stock, record it, then report back. Safe to retry: stock is deducted once. */
-async function dispensePartnerOrder(session, id, origin, amount) {
+/**
+ * Dispense (FEFO) from this pharmacy's stock, record it, then report back.
+ * Safe to retry: stock is deducted once. `requestedQty` lets the pharmacist
+ * give less than the order asked for in this one pass (e.g. only some of
+ * it is in stock right now) — capped at what the order actually asked for,
+ * same "never more than was ordered" rule the amount used to have no way
+ * to enforce on its own. `amount` is no longer taken from the caller — it's
+ * computed here from the real batch(es) actually consumed, the exact same
+ * rate × GST formula src/lib/pharmacySale.js's sellItems() already uses for
+ * every other real stock-backed sale in this codebase, never a manually
+ * typed guess.
+ */
+async function dispensePartnerOrder(session, id, origin, requestedQty) {
   const tenantId = toId(session.tenantId);
   const order = await prisma.peer_inbound_orders.findFirst({ where: { id: toId(id), tenant_id: tenantId } });
   if (!order || order.order_type !== "PHARMACY_PRESCRIPTION") throw new HttpError(404, "order_not_found");
@@ -73,6 +85,7 @@ async function dispensePartnerOrder(session, id, origin, amount) {
 
   if (!done || done.dispensed == null) {
     const from = (await prisma.tenants.findUnique({ where: { id: conn.requester_tenant_id }, select: { name: true } }))?.name || "partner";
+    const wanted = Math.min(Number(payload.quantity), requestedQty ? Number(requestedQty) : Number(payload.quantity));
     done = await prisma.$transaction(
       async (tx) => {
         const batches = await tx.$queryRawUnsafe(
@@ -81,8 +94,18 @@ async function dispensePartnerOrder(session, id, origin, amount) {
             ORDER BY (expiry_date IS NULL) ASC, expiry_date ASC, id ASC FOR UPDATE`,
           tenantId, instanceId, payload.medicineName,
         );
-        let remaining = Number(payload.quantity);
+        // One medicine's batches always share the same medicine_id/GST rate
+        // — looked up once, from whichever batch is actually linked to the
+        // catalog (a legacy unlinked batch just prices at 0 tax, same as
+        // everywhere else in this codebase that has no rate to work from).
+        const medicineId = batches.find((b) => b.medicine_id != null)?.medicine_id;
+        const gst = medicineId
+          ? Number((await tx.medicines.findUnique({ where: { id: medicineId }, select: { gst_rate: true } }))?.gst_rate || 0)
+          : 0;
+
+        let remaining = wanted;
         const used = [];
+        let amountTotal = 0;
         for (const b of batches) {
           if (remaining <= 0) break;
           const take = Math.min(Number(b.quantity), remaining);
@@ -91,10 +114,15 @@ async function dispensePartnerOrder(session, id, origin, amount) {
           await tx.pharmacy_stock_movements.create({
             data: { tenant_id: tenantId, stock_id: b.id, type: "DISPENSE", quantity_delta: -take, reason: `Partner order ${order.external_order_ref} from ${from}`, performed_by: toId(session.userId) },
           });
+          const rate = b.selling_rate ?? b.mrp;
+          if (rate != null) {
+            const priced = priceLine({ price: Number(rate), tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, take);
+            amountTotal += Number(priced.amount);
+          }
           used.push({ batch: b.batch_number, quantity: take });
           remaining -= take;
         }
-        const result = { dispensed: Number(payload.quantity) - remaining, batches: used, at: new Date().toISOString() };
+        const result = { dispensed: wanted - remaining, batches: used, amount: Math.round(amountTotal * 100) / 100, at: new Date().toISOString() };
         await tx.peer_inbound_orders.update({ where: { id: order.id }, data: { result_payload: JSON.stringify(result) } });
         return result;
       },
@@ -102,7 +130,7 @@ async function dispensePartnerOrder(session, id, origin, amount) {
     );
   }
   if (done.dispensed <= 0) throw new HttpError(409, "out_of_stock");
-  await partners.completeInbound(session, id, { quantityFulfilled: done.dispensed, amount }, origin);
+  await partners.completeInbound(session, id, { quantityFulfilled: done.dispensed, amount: done.amount }, origin);
   return done;
 }
 
