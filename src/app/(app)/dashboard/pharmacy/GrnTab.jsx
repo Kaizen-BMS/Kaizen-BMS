@@ -13,9 +13,14 @@ const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 
 const lab = "block text-xs font-medium text-slate-600";
 const help = "mt-0.5 block text-[11px] leading-tight text-slate-400";
 
+// Quantities are always stored in the medicine's smallest CONTENT unit
+// (Tablet) — `quantityUnit` says which unit the pharmacist actually
+// counted THIS line in: "content" (Tablet, the default — already native),
+// "pack" (Strip), or "purchase" (Box). Rates (Purchase/MRP/Selling)
+// always stay at the pack unit regardless of which one this is set to.
 const emptyLine = () => ({
   quantity: "", medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "",
-  freeQuantity: "0", damagedQuantity: "0", rejectedQuantity: "0", gstRate: "0", unit: "", contentUnit: "", contentPerPack: "", packagingUnset: false, purchaseUnit: "", unitsPerPurchase: 1, inPurchaseUnit: false, ...EMPTY_PRICE,
+  freeQuantity: "0", damagedQuantity: "0", rejectedQuantity: "0", gstRate: "0", unit: "", contentUnit: "", contentPerPack: "", packagingUnset: false, purchaseUnit: "", unitsPerPurchase: 1, quantityUnit: "content", ...EMPTY_PRICE,
 });
 
 // Goods Received: what physically arrived. Each line reads
@@ -62,11 +67,8 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
       for (const l of filled) {
         if (!l.medicineId) throw new Error("pick_medicine");
         if (!l.batchNumber || !l.quantity) throw new Error("incomplete_line");
-        // MRP is always per-Strip; Selling follows whatever unit Cost is in
-        // (per-Box when inPurchaseUnit) — normalize Selling down to
-        // per-Strip before comparing, same conversion the server applies.
-        const sellingPerStrip = l.inPurchaseUnit && l.unitsPerPurchase > 1 ? Number(l.sellingRate || 0) / l.unitsPerPurchase : Number(l.sellingRate || 0);
-        if (l.mrp && l.sellingRate && sellingPerStrip > Number(l.mrp)) throw new Error("selling_price_above_mrp");
+        // MRP and Selling are both always per-pack (Strip) now — a plain compare, no conversion.
+        if (l.mrp && l.sellingRate && Number(l.sellingRate) > Number(l.mrp)) throw new Error("selling_price_above_mrp");
       }
       if (!filled.length) throw new Error("no_items");
       for (const l of filled) {
@@ -79,7 +81,7 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
         receivedQuantity: Number(l.quantity), freeQuantity: Number(l.freeQuantity || 0), damagedQuantity: Number(l.damagedQuantity || 0),
         rejectedQuantity: Number(l.rejectedQuantity || 0), purchaseRate: Number(l.purchaseRate || 0), mrp: Number(l.mrp || 0),
         ...(l.sellingRate ? { sellingRate: Number(l.sellingRate) } : {}), gstRate: Number(l.gstRate || 0),
-        inPurchaseUnit: !!l.inPurchaseUnit && l.unitsPerPurchase > 1,
+        quantityUnit: l.quantityUnit || "content",
       }));
       // Empty optional pickers must be left out, not sent as "".
       const { supplierId, poId, supplierInvoiceDate, ...rest } = head;
@@ -140,13 +142,19 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                 <div className={lab}>Qty
                   <div className="mt-1 flex gap-1">
                     <input type="number" min="0" placeholder="10" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} className={input} />
-                    {l.unitsPerPurchase > 1 && (
-                      <select aria-label="Unit" value={l.inPurchaseUnit ? "P" : "S"} onChange={(e) => setLine(i, { inPurchaseUnit: e.target.value === "P" })} className="rounded-lg border border-slate-300 bg-white px-1.5 text-sm">
-                        <option value="P">{l.purchaseUnit}</option><option value="S">{l.unit || "Unit"}</option>
+                    {(l.contentPerPack > 1 || l.unitsPerPurchase > 1) && (
+                      <select aria-label="Counted in" value={l.quantityUnit} onChange={(e) => setLine(i, { quantityUnit: e.target.value })} className="rounded-lg border border-slate-300 bg-white px-1.5 text-sm">
+                        <option value="content">{l.contentUnit || "unit"}</option>
+                        <option value="pack">{l.unit || "unit"}</option>
+                        {l.unitsPerPurchase > 1 && <option value="purchase">{l.purchaseUnit}</option>}
                       </select>
                     )}
                   </div>
-                  <span className={help}>{l.unitsPerPurchase > 1 && l.inPurchaseUnit && Number(l.quantity) > 0 ? `= ${Number(l.quantity) * l.unitsPerPurchase} ${l.unit || "units"} into stock. Enter rates per ${l.purchaseUnit} too.` : "Units received."}</span>
+                  <span className={help}>
+                    {Number(l.quantity) > 0 && l.contentPerPack > 1 && l.quantityUnit !== "content"
+                      ? `= ${Number(l.quantity) * (l.quantityUnit === "purchase" ? (l.unitsPerPurchase || 1) : 1) * l.contentPerPack} ${(l.contentUnit || "unit").toLowerCase()}s into stock.`
+                      : `Received, in ${(l.contentUnit || "the smallest unit").toLowerCase()}s.`}
+                  </span>
                 </div>
                 <div className={lab}>Medicine
                   <div className="mt-1">
@@ -159,7 +167,7 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                         medicineId: String(it.id), medicineText: it.name,
                         unit: has ? it.unit : d.unit, contentUnit: has ? it.contentUnit : d.contentUnit,
                         contentPerPack: has ? it.contentPerPack : (d.contentPerPack || ""), packagingUnset: !has,
-                        purchaseUnit: it.purchaseUnit || "", unitsPerPurchase: it.unitsPerPurchase || 1, inPurchaseUnit: (it.unitsPerPurchase || 1) > 1,
+                        purchaseUnit: it.purchaseUnit || "", unitsPerPurchase: it.unitsPerPurchase || 1,
                       });
                     }} placeholder="Cap Betadine 500 mg" className={input} />
                   </div>
@@ -190,24 +198,24 @@ export function GrnTab({ onError, receiveFor, onConsumedReceiveFor }) {
                 <PriceFields
                   value={l}
                   onChange={(p) => setLine(i, p)}
-                  quantity={l.quantity}
-                  unitName={(l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.purchaseUnit : l.unit || "unit").toLowerCase()}
-                  // MRP is printed on the pack at the Strip level — never
-                  // per-Box — so it always asks for that, even while Cost is
-                  // being entered per-Box (a real supplier-invoice
-                  // convenience Cost keeps, that MRP never gets: see
-                  // InventoryTab.jsx's own comment on this same gotcha).
+                  // Cost/Selling/MRP are always entered per PACK unit
+                  // (Strip) — the calc panel needs the pack-equivalent
+                  // quantity, converted from whichever unit was actually
+                  // typed into the Qty field above.
+                  quantity={
+                    l.quantityUnit === "purchase" ? (Number(l.quantity) || 0) * (l.unitsPerPurchase || 1)
+                    : l.quantityUnit === "pack" ? Number(l.quantity) || 0
+                    : (Number(l.quantity) || 0) / (Number(l.contentPerPack) || 1)
+                  }
+                  unitName={(l.unit || "unit").toLowerCase()}
                   mrpUnitName={(l.unit || "unit").toLowerCase()}
-                  mrpPer={l.inPurchaseUnit && l.unitsPerPurchase > 1 ? 1 / l.unitsPerPurchase : 1}
                   contentUnit={l.contentUnit}
-                  contentPerPack={l.contentPerPack ? Number(l.contentPerPack) * (l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.unitsPerPurchase : 1) : null}
-                  stockPer={l.inPurchaseUnit && l.unitsPerPurchase > 1 ? l.unitsPerPurchase : 1}
-                  stockUnitName={(l.unit || "unit").toLowerCase()}
-                  levels={l.inPurchaseUnit && l.unitsPerPurchase > 1 ? [
-                    { label: l.purchaseUnit.toLowerCase(), per: 1 },
-                    { label: (l.unit || "unit").toLowerCase(), per: l.unitsPerPurchase },
-                    ...(l.contentUnit && l.contentPerPack ? [{ label: l.contentUnit.toLowerCase(), per: l.unitsPerPurchase * Number(l.contentPerPack) }] : []),
-                  ] : undefined}
+                  contentPerPack={Number(l.contentPerPack) || null}
+                  // "Adds X to stock" always means content-unit (Tablet) —
+                  // one pack always equals contentPerPack content units,
+                  // regardless of which unit was entered above.
+                  stockPer={Number(l.contentPerPack) > 1 ? Number(l.contentPerPack) : 1}
+                  stockUnitName={(l.contentUnit || "unit").toLowerCase()}
                 />
               </div>
               <details className="mt-3 text-xs text-slate-500">

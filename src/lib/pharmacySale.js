@@ -1,5 +1,6 @@
 import { HttpError } from "@/lib/apiRoute";
 import { priceLine } from "@/lib/pricing";
+import { perContentUnitRate } from "@/lib/pharmacyPricing";
 
 /**
  * Add priced, stock-deducting lines to a pharmacy bill — the one place a counter sale (a new bill)
@@ -34,11 +35,15 @@ export async function sellItems(tx, { tenantId, instanceId, billId, items, perfo
       if (remaining <= 0) break;
       const take = Math.min(batch.quantity, remaining);
       if (take <= 0) continue;
-      const rate = batch.selling_rate ?? batch.mrp;
+      // batch.selling_rate/mrp are per PACK (Strip); `take` is a count of
+      // the medicine's smallest CONTENT unit (Tablet) — see
+      // pharmacyPricing.js's perContentUnitRate() for why this division
+      // has to happen here, at the point of sale, every time.
+      const rate = perContentUnitRate(batch.selling_rate ?? batch.mrp, medicine.content_per_pack);
       if (rate == null) throw new HttpError(400, `no_price_set:${medicine.name}`);
 
       const gst = Number(medicine.gst_rate || 0);
-      const priced = priceLine({ price: Number(rate), tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, take);
+      const priced = priceLine({ price: rate, tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, take);
 
       await tx.pharmacy_stock.update({ where: { id: batch.id }, data: { quantity: { decrement: take } } });
       const movement = await tx.pharmacy_stock_movements.create({

@@ -2,20 +2,25 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { apiGet } from "@/components/hms/api";
+import { useRealtime } from "@/components/hms/useRealtime";
 import { fmtDDMMYY } from "@/lib/dateFormat";
 
 const rupee = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+const STATUS_FILTERS = ["All", "Paid", "Due"];
 
 // Everything a customer has bought, newest first — find them by name, phone or bill number.
 export function PurchaseHistoryTab() {
   const [sales, setSales] = useState(null);
   const [q, setQ] = useState("");
+  const [status, setStatus] = useState("All");
   const [open, setOpen] = useState(null);
   const [detail, setDetail] = useState({});
 
-  useEffect(() => {
-    apiGet("/api/pharmacy/sales").then((d) => setSales(d.sales)).catch(() => setSales([]));
-  }, []);
+  const load = () => apiGet("/api/pharmacy/sales").then((d) => setSales(d.sales)).catch(() => setSales([]));
+  useEffect(() => { load(); }, []);
+  // A sale, payment or return anywhere must show up here without a manual
+  // page refresh — which would also lose whatever search/filter was set.
+  useRealtime({ "bill:created": load, "bill:updated": load, "bill:paid": load }, load);
 
   async function toggle(id) {
     setOpen(open === id ? null : id);
@@ -29,18 +34,25 @@ export function PurchaseHistoryTab() {
     }
   }
 
-  const shown = (sales || []).filter(
-    (s) => !q || (s.customerName || "").toLowerCase().includes(q.toLowerCase()) || (s.phone || "").includes(q) || String(s.id) === q.trim(),
-  );
+  const shown = (sales || [])
+    .filter((s) => !q || (s.customerName || "").toLowerCase().includes(q.toLowerCase()) || (s.phone || "").includes(q) || String(s.id) === q.trim())
+    .filter((s) => status === "All" || (status === "Due" ? s.due > 0 : s.due <= 0));
 
   return (
     <div className="space-y-3">
-      <input
-        placeholder="Find a customer by name, phone or bill number…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="w-full max-w-md rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          placeholder="Find a customer by name, phone or bill number…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="w-full max-w-md rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none"
+        />
+        <div className="flex overflow-hidden rounded-lg border border-slate-300 text-xs">
+          {STATUS_FILTERS.map((s) => (
+            <button key={s} type="button" onClick={() => setStatus(s)} className={`px-3 py-1.5 font-medium ${status === s ? "bg-[var(--hms-btn-bg)] text-[var(--hms-btn-fg)]" : "bg-white text-slate-500 hover:bg-slate-50"}`}>{s}</button>
+          ))}
+        </div>
+      </div>
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">

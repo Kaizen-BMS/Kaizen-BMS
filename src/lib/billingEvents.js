@@ -16,6 +16,7 @@ const { runWithContext } = require("./requestContext");
 const { tenantDb } = require("./prismaClient");
 const { resolveAndPriceService, resolvePatientCategory, priceLine, money2 } = require("./pricing");
 const { recomputeBillStatus } = require("./billing");
+const { perContentUnitRate } = require("./pharmacyPricing");
 
 /** The tenant's single OPEN, not-yet-finalized IPD bill for this visit, or null. */
 async function findOpenIpdBill(visitId) {
@@ -164,12 +165,15 @@ serverEvents.on("dispense:created", ({ tenantId, payload }) => {
     for (const c of consumed) {
       if (!c.movementId) continue;
       const batch = batchById.get(String(c.batchId));
-      const rate = batch ? batch.selling_rate ?? batch.mrp : null;
       const medicine = batch?.medicine_id ? medById.get(String(batch.medicine_id)) : null;
+      // batch.selling_rate/mrp are per PACK (Strip); c.quantity (from the
+      // dispense route's own FEFO consumption) is a count of the smallest
+      // CONTENT unit (Tablet) — see pharmacyPricing.js's perContentUnitRate().
+      const rate = batch ? perContentUnitRate(batch.selling_rate ?? batch.mrp, medicine?.content_per_pack) : null;
       const gst = Number(medicine?.gst_rate || 0);
       const priced =
         rate != null
-          ? priceLine({ price: Number(rate), tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, c.quantity)
+          ? priceLine({ price: rate, tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, c.quantity)
           : null;
       await appendItemOnce(bill.id, tenantId, {
         source: "PHARMACY",

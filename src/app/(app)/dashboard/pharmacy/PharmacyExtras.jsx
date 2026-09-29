@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
+import { useRealtime } from "@/components/hms/useRealtime";
 import { fmtMMYYYY, fmtDDMMYYTime } from "@/lib/dateFormat";
 import BarcodeScanner from "@/components/hms/BarcodeScanner";
 import PhoneInput from "@/components/hms/PhoneInput";
@@ -64,6 +65,11 @@ export function PharmacyBillDetail({ billId, onClose, onChanged }) {
 
   const load = () => apiGet(`/api/pharmacy/sales/${billId}`).then((d) => setBill(d.bill)).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, [billId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A return, a payment, or another item added to this same bill from
+  // elsewhere (e.g. Returns tab) must reflect here instantly — never wait
+  // for a manual page refresh, which would also wipe whatever the
+  // pharmacist was mid-typing elsewhere on the screen.
+  useRealtime({ "bill:updated": load, "bill:paid": load, "stock:updated": load }, load);
 
   if (err) return <p className="text-sm text-red-600">{err}</p>;
   if (!bill) return <p className="text-sm text-slate-400">Loading bill…</p>;
@@ -168,14 +174,14 @@ function AddMedicineInline({ billId, onDone, onCancel }) {
 
   return (
     <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-      <MedicineInput value={q} onChange={setQ} onPick={(it) => { setCart((c) => (c.some((x) => x.medicineId === it.id) ? c.map((x) => (x.medicineId === it.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: it.id, name: it.name, quantity: 1 }])); setQ(""); }} placeholder="Type medicine name…" className={`${input} w-full bg-white`} />
+      <MedicineInput value={q} onChange={setQ} onPick={(it) => { setCart((c) => (c.some((x) => x.medicineId === it.id) ? c.map((x) => (x.medicineId === it.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: it.id, name: it.name, contentUnit: it.contentUnit, quantity: 1 }])); setQ(""); }} placeholder="Type medicine name…" className={`${input} w-full bg-white`} />
       <div className="grid max-h-40 gap-1 overflow-auto sm:grid-cols-2">
         {shown.map((m) => (
-          <button key={m.id} type="button" onClick={() => setCart((c) => (c.some((x) => x.medicineId === m.id) ? c.map((x) => (x.medicineId === m.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: m.id, name: m.name, quantity: 1 }]))} className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2 py-1 text-left text-xs hover:border-slate-400">
+          <button key={m.id} type="button" onClick={() => setCart((c) => (c.some((x) => x.medicineId === m.id) ? c.map((x) => (x.medicineId === m.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: m.id, name: m.name, contentUnit: m.contentUnit, quantity: 1 }]))} className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2 py-1 text-left text-xs hover:border-slate-400">
             <span>{m.name}</span>
             <span className="text-right text-slate-400">
-              {m.sellingRate != null && <span className="mr-1 font-medium text-slate-600">{rupee(m.sellingRate)}</span>}
-              {m.stock}{m.unit ? ` ${m.unit}` : ""}
+              {m.sellingRate != null && <span className="mr-1 font-medium text-slate-600">{rupee(m.sellingRate)}{m.contentUnit ? `/${m.contentUnit}` : ""}</span>}
+              {m.stock}{m.contentUnit ? ` ${m.contentUnit}` : ""}
             </span>
           </button>
         ))}
@@ -186,6 +192,7 @@ function AddMedicineInline({ billId, onDone, onCancel }) {
             <div key={c.medicineId} className="flex items-center justify-between gap-1.5 text-xs">
               <span className="flex-1 truncate">{c.name}</span>
               <input type="number" min="1" value={c.quantity} onChange={(e) => setCart((xs) => xs.map((x) => (x.medicineId === c.medicineId ? { ...x, quantity: Math.max(1, Number(e.target.value)) } : x)))} className="w-14 rounded border border-slate-300 px-1 py-0.5" />
+              <span className="text-slate-400">{c.contentUnit || "unit"}(s)</span>
               <button onClick={() => setCart((xs) => xs.filter((x) => x.medicineId !== c.medicineId))} className="text-red-500">✕</button>
             </div>
           ))}
@@ -196,6 +203,7 @@ function AddMedicineInline({ billId, onDone, onCancel }) {
         <button onClick={onCancel} className="text-xs text-slate-400">Cancel</button>
         {err && <span className="text-xs text-red-600">{err}</span>}
       </div>
+      <p className="text-[11px] text-slate-400">Quantity is in the medicine&rsquo;s smallest unit (e.g. Tablet) — price is per that unit, taken automatically from stock.</p>
     </div>
   );
 }
@@ -216,9 +224,13 @@ export function SellTab({ onError, onSuccess }) {
   const [msg, setMsg] = useState("");
   const [scanning, setScanning] = useState(false);
 
-  useEffect(() => {
-    apiGet("/api/pharmacy/medicines?active=true").then((d) => setMeds(d.medicines)).catch((e) => setMsg(e.message));
-  }, []);
+  const loadMeds = () => apiGet("/api/pharmacy/medicines?active=true").then((d) => setMeds(d.medicines)).catch((e) => setMsg(e.message));
+  useEffect(() => { loadMeds(); }, []);
+  // A sale/return/stock-in anywhere (even from another counter/tab) must
+  // update prices and out-of-stock here instantly — never require a manual
+  // browser refresh, which would also wipe the cart/customer being typed.
+  // Only the medicine list is refetched; cart/customer state is untouched.
+  useRealtime({ "stock:updated": loadMeds }, loadMeds);
 
   // Ctrl+Enter completes the sale from anywhere on this screen — a
   // pharmacist keying in a fast queue of customers shouldn't need to reach
@@ -253,7 +265,7 @@ export function SellTab({ onError, onSuccess }) {
   const shown = (meds || []).filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase()) || (m.barcode || "").toLowerCase() === q.toLowerCase());
 
   function addToCart(m) {
-    setCart((c) => (c.some((x) => x.medicineId === m.id) ? c.map((x) => (x.medicineId === m.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: m.id, name: m.name, quantity: 1 }]));
+    setCart((c) => (c.some((x) => x.medicineId === m.id) ? c.map((x) => (x.medicineId === m.id ? { ...x, quantity: x.quantity + 1 } : x)) : [...c, { medicineId: m.id, name: m.name, contentUnit: m.contentUnit, quantity: 1 }]));
   }
   function setQty(id, qty) {
     setCart((c) => c.map((x) => (x.medicineId === id ? { ...x, quantity: Math.max(1, qty) } : x)));
@@ -335,7 +347,7 @@ export function SellTab({ onError, onSuccess }) {
         <p className="pt-2 text-sm font-semibold">Medicines</p>
         <div className="flex gap-1">
           <div className="flex-1">
-            <MedicineInput value={q} onChange={setQ} onPick={(it) => { addToCart({ id: it.id, name: it.name }); setQ(""); }} placeholder="Type medicine name, salt or barcode…" className={`${input} w-full`} />
+            <MedicineInput value={q} onChange={setQ} onPick={(it) => { addToCart({ id: it.id, name: it.name, contentUnit: it.contentUnit }); setQ(""); }} placeholder="Type medicine name, salt or barcode…" className={`${input} w-full`} />
           </div>
           <button type="button" onClick={() => setScanning(true)} className="rounded-lg border border-slate-300 px-3 text-xs">📷 Scan</button>
         </div>
@@ -357,11 +369,11 @@ export function SellTab({ onError, onSuccess }) {
               <span>
                 <span className="font-medium">{m.name}</span>
                 <span className="block text-xs text-slate-400">
-                  {m.sellingRate != null ? <span className="font-semibold text-slate-600">{rupee(m.sellingRate)}{m.unit ? ` / ${m.unit}` : ""}</span> : "No price set"}
+                  {m.sellingRate != null ? <span className="font-semibold text-slate-600">{rupee(m.sellingRate)}{m.contentUnit ? ` / ${m.contentUnit}` : ""}</span> : "No price set"}
                   {m.mrp != null && m.mrp !== m.sellingRate && <span className="ml-1.5 line-through">{rupee(m.mrp)}</span>}
                 </span>
               </span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${m.stock > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{m.stock > 0 ? `Stock: ${m.stock}${m.unit ? ` ${m.unit}` : ""}` : "Out of stock"}</span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${m.stock > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{m.stock > 0 ? `Stock: ${m.stock}${m.contentUnit ? ` ${m.contentUnit}` : ""}` : "Out of stock"}</span>
             </button>
           ))}
           {shown.length === 0 && <p className="text-xs text-slate-400">No medicines match.</p>}
@@ -374,6 +386,7 @@ export function SellTab({ onError, onSuccess }) {
           <div key={c.medicineId} className="flex items-center justify-between gap-1.5 text-xs">
             <span className="flex-1 truncate">{c.name}</span>
             <input type="number" min="1" value={c.quantity} onChange={(e) => setQty(c.medicineId, Number(e.target.value))} className="w-14 rounded border border-slate-300 px-1 py-0.5" />
+            <span className="text-slate-400">{c.contentUnit || "unit"}(s)</span>
             <button onClick={() => removeItem(c.medicineId)} className="text-red-500">✕</button>
           </div>
         ))}
@@ -381,7 +394,7 @@ export function SellTab({ onError, onSuccess }) {
           {busy ? "Saving…" : continuingId ? `Add to bill #${continuingId}` : "Complete sale"}
           {!busy && cart.length > 0 && <span className="ml-1.5 font-normal opacity-70">(Ctrl+Enter)</span>}
         </button>
-        <p className="text-[11px] text-slate-400">Price + GST are taken from stock&rsquo;s selling rate / MRP and the medicine&rsquo;s GST rate.</p>
+        <p className="text-[11px] text-slate-400">Quantity is in the medicine&rsquo;s smallest unit (e.g. Tablet). Price + GST are taken automatically from stock&rsquo;s selling rate / MRP and the medicine&rsquo;s GST rate.</p>
         {msg && <p className="text-xs text-red-600">{msg}</p>}
       </aside>
     </div>

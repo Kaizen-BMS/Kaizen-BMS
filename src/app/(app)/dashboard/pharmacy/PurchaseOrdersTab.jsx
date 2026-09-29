@@ -113,7 +113,8 @@ export function PurchaseOrdersTab({ canManage, onError, onReceive }) {
                 </label>
               </div>
               <div className="space-y-2">
-                <div className="grid grid-cols-[6rem_1fr] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400"><span>Qty</span><span>Medicine</span></div>
+                <div className="grid grid-cols-[6rem_1fr] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400"><span>Qty (units)</span><span>Medicine</span></div>
+                <p className="px-1 text-[11px] text-slate-400">In the medicine&apos;s smallest unit (e.g. Tablets) — Goods Received lets you enter what actually arrives in Strips or Boxes instead.</p>
                 {lines.map((l, i) => (
                   <div key={i} className="grid grid-cols-[6rem_1fr] gap-2">
                     <input type="number" min="1" placeholder="100" aria-label="Quantity" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} className={input} />

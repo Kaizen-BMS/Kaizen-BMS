@@ -40,7 +40,12 @@ const label = "block text-xs font-medium text-slate-600";
 const help = "mt-0.5 block text-[11px] leading-tight text-slate-400";
 const rupee = (n) => (n != null ? `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—");
 
-const BLANK = { medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "", quantity: "", location: "", unit: "", contentUnit: "", contentPerPack: "", packagingUnset: false, enterAsContent: false, ...EMPTY_PRICE };
+// Quantity is always entered/stored in the medicine's smallest CONTENT unit
+// (Tablet, ml…) — `qtyInPackUnit` is only true when the pharmacist counted
+// in the PACK unit instead (Strip) and needs it converted up. Rates
+// (Purchase/MRP/Selling) always stay at the pack unit, so there's no
+// matching toggle for them anymore — see stock/route.js's own comment.
+const BLANK = { medicineText: "", medicineId: "", batchNumber: "", manufacturingDate: "", expiryDate: "", quantity: "", location: "", unit: "", contentUnit: "", contentPerPack: "", packagingUnset: false, qtyInPackUnit: false, ...EMPTY_PRICE };
 
 // One line per batch: Qty · Medicine · Batch · MFD · Expiry · Purchase Rate · MRP · Margin · Selling Price · Status.
 // Everything else (type, salt, location, reorder level, adjust) opens under "Details".
@@ -156,12 +161,8 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
     setOk("");
     try {
       if (!form.medicineId) throw new Error("pick_a_medicine");
-      // MRP is always per-Strip; Selling follows whatever unit is currently
-      // active (per-content-unit when enterAsContent) — normalize Selling
-      // up to per-Strip before comparing, same conversion the server
-      // applies to it (never to MRP — see the stock route's own comment).
-      const sellingPerStrip = form.enterAsContent && Number(form.contentPerPack) > 1 ? Number(form.sellingRate || 0) * Number(form.contentPerPack) : Number(form.sellingRate || 0);
-      if (form.mrp && form.sellingRate && sellingPerStrip > Number(form.mrp)) throw new Error("selling_price_above_mrp");
+      // MRP and Selling are both always per-pack (Strip) now — a plain compare, no conversion.
+      if (form.mrp && form.sellingRate && Number(form.sellingRate) > Number(form.mrp)) throw new Error("selling_price_above_mrp");
       if (form.packagingUnset && form.unit && form.contentUnit && Number(form.contentPerPack) > 0) {
         await apiSend(`/api/pharmacy/medicines/${form.medicineId}`, "PATCH", { unit: form.unit, contentUnit: form.contentUnit, contentPerPack: Number(form.contentPerPack) });
       }
@@ -176,17 +177,17 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
         ...(form.mrp ? { mrp: Number(form.mrp) } : {}),
         ...(form.sellingRate ? { sellingRate: Number(form.sellingRate) } : {}),
         ...(form.location ? { rack: form.location } : {}),
-        ...(form.enterAsContent ? { inContentUnit: true } : {}),
+        ...(form.qtyInPackUnit ? { quantityInPackUnit: true } : {}),
       });
-      setOk(`Added ${form.quantity} × ${form.medicineText} (batch ${form.batchNumber}).`);
-      onSuccess?.(`Added ${form.quantity} × ${form.medicineText} (batch ${form.batchNumber}).`);
+      const qtyLabel = `${form.quantity} ${(form.qtyInPackUnit ? form.unit : form.contentUnit) || "unit"}${form.quantity === "1" ? "" : "s"}`;
+      setOk(`Added ${qtyLabel} × ${form.medicineText} (batch ${form.batchNumber}).`);
+      onSuccess?.(`Added ${qtyLabel} × ${form.medicineText} (batch ${form.batchNumber}).`);
       setForm(BLANK);
       await load();
     } catch (err) {
       onError(
         err.message === "pick_a_medicine" ? "Pick the medicine from the suggestions (add it in Medicine Listing first if it isn't there)."
         : err.message === "selling_price_above_mrp" ? "Selling price cannot be more than MRP."
-        : err.message.startsWith("quantity_not_whole_") ? `That's not a whole number of ${form.unit || "units"} — check the ${form.contentUnit?.toLowerCase() || "unit"} count.`
         : err.message === "no_content_unit_set" ? "Set how many units this medicine's pack contains first (below), then save again."
         : err.message,
       );
@@ -238,16 +239,16 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                 <div className="mt-1 flex gap-1">
                   <input type="number" min="1" required placeholder="100" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className={input} />
                   {form.contentUnit && Number(form.contentPerPack) > 1 && (
-                    <select aria-label="Counted in" value={form.enterAsContent ? "C" : "U"} onChange={(e) => setForm((f) => ({ ...f, enterAsContent: e.target.value === "C" }))} className="shrink-0 rounded-lg border border-slate-300 bg-white px-1.5 text-sm">
-                      <option value="U">{form.unit || "unit"}</option>
+                    <select aria-label="Counted in" value={form.qtyInPackUnit ? "P" : "C"} onChange={(e) => setForm((f) => ({ ...f, qtyInPackUnit: e.target.value === "P" }))} className="shrink-0 rounded-lg border border-slate-300 bg-white px-1.5 text-sm">
                       <option value="C">{form.contentUnit}</option>
+                      <option value="P">{form.unit || "unit"}</option>
                     </select>
                   )}
                 </div>
                 <span className={help}>
-                  {form.enterAsContent && Number(form.contentPerPack) > 1 && Number(form.quantity) > 0
-                    ? `= ${(Number(form.quantity) / Number(form.contentPerPack)).toFixed(2)} ${form.unit || "unit"} into stock (must be a whole number).`
-                    : `How many ${form.enterAsContent ? (form.contentUnit || "").toLowerCase() : (form.unit || "unit").toLowerCase()}${form.quantity === "1" ? "" : "s"} you are adding.`}
+                  {form.qtyInPackUnit && Number(form.contentPerPack) > 1 && Number(form.quantity) > 0
+                    ? `= ${Number(form.quantity) * Number(form.contentPerPack)} ${(form.contentUnit || "unit").toLowerCase()}s into stock.`
+                    : `How many ${(form.qtyInPackUnit ? form.unit : form.contentUnit || "unit").toLowerCase()}${form.quantity === "1" ? "" : "s"} you are adding — stock is always tracked in ${(form.contentUnit || "the smallest unit").toLowerCase()}s.`}
                 </span>
               </div>
               <label className={label}>Batch No.
@@ -275,22 +276,19 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
               <PriceFields
                 value={form}
                 onChange={(p) => setForm((f) => ({ ...f, ...p }))}
-                quantity={form.quantity}
-                unitName={(form.enterAsContent ? form.contentUnit : form.unit || "unit").toLowerCase()}
-                // MRP is printed on the pack at the STOCK unit (a Strip, a
-                // Bottle, a Tube) — never per-tablet — so it always asks for
-                // that, regardless of which unit quantity/cost are being
-                // entered in right now (CLAUDE.md-worthy gotcha: entering
-                // MRP "per tablet" and letting the software scale it up
-                // silently produces a wildly wrong strip MRP).
+                // Cost/Selling/MRP are always entered per PACK unit (Strip) —
+                // never per-tablet — so the cost-total panel below needs the
+                // pack-equivalent quantity, not the raw (always content-unit)
+                // form.quantity, regardless of which unit was actually typed into it.
+                quantity={
+                  Number(form.contentPerPack) > 1
+                    ? (form.qtyInPackUnit ? Number(form.quantity) || 0 : (Number(form.quantity) || 0) / Number(form.contentPerPack))
+                    : form.quantity
+                }
+                unitName={(form.unit || "unit").toLowerCase()}
                 mrpUnitName={(form.unit || "unit").toLowerCase()}
-                mrpPer={form.enterAsContent && Number(form.contentPerPack) > 1 ? Number(form.contentPerPack) : 1}
                 contentUnit={form.contentUnit}
                 contentPerPack={Number(form.contentPerPack) || null}
-                levels={form.enterAsContent && Number(form.contentPerPack) > 1 ? [
-                  { label: (form.contentUnit || "unit").toLowerCase(), per: 1 },
-                  { label: (form.unit || "unit").toLowerCase(), per: 1 / Number(form.contentPerPack) },
-                ] : undefined}
               />
               <label className={label}>Location
                 <input placeholder="Rack A - Shelf 3" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={`${input} mt-1`} />
@@ -335,8 +333,8 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
               return (
                 <Fragment key={r.stockId}>
                   <tr className="border-b border-slate-100 transition hover:bg-slate-50/60">
-                    <td className="px-3 py-2 font-semibold tabular-nums">{r.quantity}{r.unit ? <span className="ml-1 text-[11px] font-normal text-slate-400">{r.unit}</span> : null}
-                      {r.purchaseUnit && r.unitsPerPurchase > 1 && r.quantity >= r.unitsPerPurchase && <span className="block text-[11px] font-normal text-slate-400">= {Math.floor(r.quantity / r.unitsPerPurchase)} {r.purchaseUnit}{r.quantity % r.unitsPerPurchase ? ` + ${r.quantity % r.unitsPerPurchase} ${r.unit || ""}` : ""}</span>}</td>
+                    <td className="px-3 py-2 font-semibold tabular-nums">{r.quantity}{r.contentUnit ? <span className="ml-1 text-[11px] font-normal text-slate-400">{r.contentUnit}</span> : (r.unit ? <span className="ml-1 text-[11px] font-normal text-slate-400">{r.unit}</span> : null)}
+                      {r.contentPerPack > 1 && r.quantity >= r.contentPerPack && <span className="block text-[11px] font-normal text-slate-400">= {Math.floor(r.quantity / r.contentPerPack)} {r.unit || "pack"}{r.quantity % r.contentPerPack ? ` + ${r.quantity % r.contentPerPack} ${r.contentUnit || ""}` : ""}</span>}</td>
                     <td className="px-3 py-2 font-medium">{r.medicineName}</td>
                     <td className="px-3 py-2">{r.batchNumber || "—"}</td>
                     <td className="px-3 py-2 tabular-nums">{fmtMMYYYY(r.manufacturingDate)}</td>
@@ -392,7 +390,7 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                               {editForm.purchaseRate !== "" && Number(editForm.sellingRate) > 0 && <span className="pb-1.5 text-slate-400">Margin {rupee(Number(editForm.sellingRate) - Number(editForm.purchaseRate))} on purchase {rupee(editForm.purchaseRate)}</span>}
                             </div>
                             <div className="flex flex-wrap items-end gap-2 border-t border-slate-200 pt-3">
-                              <label>± Quantity<input type="number" value={editForm.qtyDelta} onChange={(e) => setEditForm((s) => ({ ...s, qtyDelta: e.target.value }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+                              <label>± Quantity{r.contentUnit ? ` (${r.contentUnit}s)` : ""}<input type="number" value={editForm.qtyDelta} onChange={(e) => setEditForm((s) => ({ ...s, qtyDelta: e.target.value }))} className="mt-1 block w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
                               <label>Category
                                 <select value={editForm.qtyCategory} onChange={(e) => setEditForm((s) => ({ ...s, qtyCategory: e.target.value }))} className="mt-1 block rounded-md border border-slate-300 px-2 py-1">
                                   <option value="DAMAGED">Damaged</option><option value="EXPIRED_WRITEOFF">Expired write-off</option>

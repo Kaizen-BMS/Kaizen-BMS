@@ -5,6 +5,7 @@ import { tenantDb } from "@/lib/prismaClient";
 import { medicineInputSchema, serializeMedicine, toRow } from "@/lib/medicineCatalog";
 import { MEDICINE_TYPES, SCHEDULES } from "@/lib/medicineTypes";
 import { requireTenantId } from "@/lib/requestContext";
+import { perContentUnitRate } from "@/lib/pharmacyPricing";
 
 export const dynamic = "force-dynamic";
 
@@ -59,14 +60,19 @@ export const GET = apiRoute("medicine:read", async (request) => {
   return json({
     medicines: rows.map((m) => {
       const s = stockById.get(String(m.id));
+      const packPrice = priceById.get(String(m.id)) || { sellingRate: null, mrp: null, purchaseRate: null };
+      // Stock (and every real sale) is tracked in the CONTENT unit (Tablet,
+      // ml…) — sellingRate/mrp/purchaseRate here are converted down to that
+      // same unit so a screen showing "stock" next to "price" is always
+      // quoting one consistent unit, never a pack price beside a
+      // content-unit count. See perContentUnitRate()'s own doc comment.
       return {
         ...serializeMedicine(m),
         stock: s?.stock || 0,
         batchCount: s?.batches || 0,
-        // Price of the next batch that would actually be dispensed — null when there's no usable
-        // stock to price from yet. Multiple batches can each carry a different rate; this is
-        // always the one FEFO would use next, never an average or a guess.
-        ...(priceById.get(String(m.id)) || { sellingRate: null, mrp: null, purchaseRate: null }),
+        sellingRate: perContentUnitRate(packPrice.sellingRate, m.content_per_pack),
+        mrp: perContentUnitRate(packPrice.mrp, m.content_per_pack),
+        purchaseRate: perContentUnitRate(packPrice.purchaseRate, m.content_per_pack),
       };
     }),
     types: MEDICINE_TYPES,

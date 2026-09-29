@@ -18,7 +18,14 @@ const createSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
     .optional()
     .or(z.literal("")),
-  quantity: z.coerce.number().int().min(1).max(1_000_000),
+  // Always in the medicine's smallest CONTENT unit (e.g. Tablet) — stock is
+  // tracked at that granularity, never the pack/stock unit, so billing can
+  // always sell exactly how many were asked for (see CLAUDE.md).
+  quantity: z.coerce.number().int().min(1).max(10_000_000),
+  // Rates stay anchored to the medicine's PACK unit (e.g. Strip) — always,
+  // regardless of which unit `quantity` above happens to be entered in —
+  // since that's the real, printed/invoiced number a pharmacist actually
+  // has in hand (a supplier bills per strip/box, MRP is printed per strip).
   purchaseRate: z.coerce.number().min(0).max(10_000_000).optional(),
   mrp: z.coerce.number().min(0).max(10_000_000).optional(),
   sellingRate: z.coerce.number().min(0).max(10_000_000).optional(),
@@ -30,10 +37,13 @@ const createSchema = z.object({
   // the tenant's default Pharmacy instance, so this is fully backward
   // compatible. See CLAUDE.md "Platform rebuild — Phase 2".
   moduleInstanceId: z.coerce.number().int().positive().optional(),
-  // Quantity/rates below were entered in the medicine's own content unit (e.g. Tablet) rather than
-  // its stock unit (e.g. Strip) — a pharmacist who counted "200 tablets received" rather than "20
-  // strips received" shouldn't have to do that division and rate multiplication by hand.
-  inContentUnit: z.boolean().optional().default(false),
+  // The pharmacist counted what physically arrived in the PACK unit (e.g.
+  // "12 Strips") rather than the content unit stock is actually stored in
+  // — the count needs multiplying up by the medicine's content_per_pack
+  // before it's a real content-unit quantity. Omitted/false (the common
+  // case) means quantity above is already content-unit-native, no
+  // conversion needed.
+  quantityInPackUnit: z.boolean().optional().default(false),
 });
 
 // Stock-IN — receive new stock into a batch. Adding to an existing
@@ -58,28 +68,21 @@ export const POST = apiRoute("stock:create", async (request, { session }) => {
       medicineId = match?.id ?? null;
     }
 
-    // Tablet -> Strip: divide the count, multiply cost/selling, so stock and
-    // pricing only ever store the medicine's real stock unit — same
-    // conversion GRN already does one level up (Box -> Strip). MRP is
-    // DELIBERATELY excluded from this scaling: it's a printed, regulated
-    // number the pharmacist always enters directly at the stock-unit level
-    // (see PriceFields.jsx's mrpUnitName/mrpPer) regardless of which unit
-    // quantity/cost are in — scaling it here too would silently turn a
-    // correctly-entered strip MRP into a wildly wrong one (a real bug,
-    // found live: ₹65 MRP became ₹650 for a strip of 10).
-    if (body.inContentUnit) {
+    // Strip -> Tablet: multiply the count so stock always lands in the
+    // medicine's real content unit, no matter which unit the pharmacist
+    // counted in. Rates (Purchase/MRP/Selling) are NEVER touched here —
+    // they always stay at the pack unit, the real printed/invoiced number
+    // (see the schema comment above and PriceFields.jsx's mrpUnitName) —
+    // scaling them by content_per_pack would silently turn a correctly-
+    // entered strip price into a wildly wrong one (the exact real bug this
+    // project already hit once for MRP: ₹65 became ₹650 for a strip of 10;
+    // the fix here is to never scale ANY rate at stock-in, only quantity).
+    if (body.quantityInPackUnit) {
       if (!medicineId) throw new HttpError(400, "medicine_not_in_catalog");
-      const medicine = await tx.medicines.findUnique({ where: { id: BigInt(medicineId) }, select: { content_per_pack: true, content_unit: true } });
+      const medicine = await tx.medicines.findUnique({ where: { id: BigInt(medicineId) }, select: { content_per_pack: true } });
       const f = medicine?.content_per_pack || 1;
       if (f <= 1) throw new HttpError(400, "no_content_unit_set");
-      if (body.quantity % f !== 0) throw new HttpError(400, `quantity_not_whole_${medicine.content_unit || "units"}`);
-      const r2 = (n) => Math.round(n * f * 100) / 100;
-      body = {
-        ...body,
-        quantity: body.quantity / f,
-        ...(body.purchaseRate != null ? { purchaseRate: r2(body.purchaseRate) } : {}),
-        ...(body.sellingRate != null ? { sellingRate: r2(body.sellingRate) } : {}),
-      };
+      body = { ...body, quantity: body.quantity * f };
     }
 
     const existing = await tx.pharmacy_stock.findFirst({

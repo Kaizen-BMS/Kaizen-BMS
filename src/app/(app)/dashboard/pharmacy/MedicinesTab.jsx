@@ -24,7 +24,7 @@ const BLANK = {
   category: "", schedule: "", prescriptionRequired: false, barcode: "", hsnCode: "", gstRate: "0",
   unit: TYPE_DEFAULTS.Tablet.unit, contentUnit: TYPE_DEFAULTS.Tablet.contentUnit, contentPerPack: String(TYPE_DEFAULTS.Tablet.contentPerPack),
   purchaseUnit: "", unitsPerPurchase: "1",
-  reorderLevel: "10", maxStock: "", location: "",
+  reorderLevel: "10", maxStock: "",
 };
 
 function toForm(m) {
@@ -34,7 +34,7 @@ function toForm(m) {
     schedule: m.schedule || "", prescriptionRequired: !!m.prescriptionRequired, barcode: m.barcode || "", hsnCode: m.hsnCode || "",
     gstRate: String(m.gstRate ?? 0), unit: m.unit || "", contentUnit: m.contentUnit || "", contentPerPack: m.contentPerPack != null ? String(m.contentPerPack) : "",
     purchaseUnit: m.purchaseUnit || "", unitsPerPurchase: String(m.unitsPerPurchase ?? 1), reorderLevel: String(m.reorderLevel ?? 10),
-    maxStock: m.maxStock != null ? String(m.maxStock) : "", location: [m.rack, m.shelf, m.bin].filter(Boolean).join(" - "),
+    maxStock: m.maxStock != null ? String(m.maxStock) : "",
   };
 }
 
@@ -49,8 +49,6 @@ function toPayload(f, editing, orig) {
     unit: f.unit, contentUnit: f.contentUnit, ...(f.contentUnit ? { contentPerPack: Number(f.contentPerPack || 0) || 1 } : {}),
     purchaseUnit: f.purchaseUnit, unitsPerPurchase: Number(f.unitsPerPurchase || 1), reorderLevel: Number(f.reorderLevel || 10),
     ...(f.maxStock ? { maxStock: Number(f.maxStock) } : {}),
-    // One free-text Location ("Rack A - Shelf 3"); the separate shelf/bin boxes are retired from the UI.
-    rack: f.location, ...(editing ? { shelf: "", bin: "" } : {}),
   };
 }
 
@@ -117,7 +115,6 @@ function MedicineForm({ f, setF, onScan }) {
       </Field>
       <Field label="Reorder Level" help="Alert the pharmacist when available stock reaches this level."><input type="number" min="0" placeholder="50" value={f.reorderLevel} onChange={(e) => setF({ ...f, reorderLevel: e.target.value })} className={input} /></Field>
       <Field label="Maximum Stock" help="Most you want to keep. Leave empty for no limit."><input type="number" min="0" placeholder="500" value={f.maxStock} onChange={(e) => setF({ ...f, maxStock: e.target.value })} className={input} /></Field>
-      <Field label="Location" help="Where it is kept in the pharmacy."><input placeholder="Rack A - Shelf 3" value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} className={input} /></Field>
     </div>
   );
 }

@@ -29,7 +29,6 @@ const COLUMNS = [
   ["Units Per Purchase", "unitsPerPurchase", "10"],
   ["Reorder Level", "reorderLevel", "10"],
   ["Max Stock", "maxStock", ""],
-  ["Location", "rack", "Rack A - Shelf 3"],
 ];
 
 async function buildTemplateWorkbook() {
@@ -81,7 +80,6 @@ function rowToInput(cells) {
     unitsPerPurchase: num(get("unitsPerPurchase")) ?? 1,
     reorderLevel: num(get("reorderLevel")) ?? 10,
     maxStock: num(get("maxStock")),
-    rack: get("rack"),
   };
 }
 

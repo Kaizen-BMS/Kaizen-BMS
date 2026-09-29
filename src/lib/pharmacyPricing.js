@@ -20,3 +20,21 @@ export function marginFromSelling(purchase, selling) {
   const amount = r2(s - p);
   return { amount, percent: r2((amount / p) * 100) };
 }
+
+/**
+ * A batch's selling_rate/mrp are always entered and stored per the
+ * medicine's PACK unit (a Strip, a Bottle, a Tube — never per-tablet, see
+ * CLAUDE.md), while pharmacy_stock.quantity (and everything sold/dispensed
+ * against it) is tracked in the medicine's smallest CONTENT unit (a
+ * Tablet, an ml). Every real sale — the counter (sellItems), a
+ * prescription dispense (billingEvents' listener), a cross-hospital
+ * partner order (partnerDispense) — needs the CONTENT-unit price, so this
+ * is the one place that division happens, never duplicated per caller.
+ * `contentPerPack` missing/0/1 means the pack IS the content unit (no
+ * conversion needed) — the common case for anything sold as single units.
+ */
+export function perContentUnitRate(rate, contentPerPack) {
+  if (rate == null) return null;
+  const f = Number(contentPerPack) > 1 ? Number(contentPerPack) : 1;
+  return Number(rate) / f;
+}

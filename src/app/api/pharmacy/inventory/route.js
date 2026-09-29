@@ -67,6 +67,8 @@ export const GET = apiRoute("stock:read", async (request, { session }) => {
       barcode: master?.barcode || null,
       hsnCode: master?.hsn_code || null,
       unit: master?.unit || null,
+      contentUnit: master?.content_unit || null,
+      contentPerPack: master?.content_per_pack || null,
       purchaseUnit: master?.purchase_unit || null,
       unitsPerPurchase: master?.units_per_purchase || 1,
       batchNumber: b.batch_number,

@@ -14,18 +14,26 @@ const itemSchema = z.object({
   batchNumber: z.string().trim().min(1).max(80),
   manufacturingDate: dateStr.optional().or(z.literal("")),
   expiryDate: dateStr.optional().or(z.literal("")),
-  receivedQuantity: z.coerce.number().int().min(0).max(1_000_000),
-  freeQuantity: z.coerce.number().int().min(0).max(1_000_000).optional().default(0),
-  damagedQuantity: z.coerce.number().int().min(0).max(1_000_000).optional().default(0),
-  rejectedQuantity: z.coerce.number().int().min(0).max(1_000_000).optional().default(0),
+  // Always the medicine's smallest CONTENT unit (e.g. Tablet) once
+  // `quantityUnit` conversion is applied below — never the pack/purchase unit.
+  receivedQuantity: z.coerce.number().int().min(0).max(10_000_000),
+  freeQuantity: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+  damagedQuantity: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+  rejectedQuantity: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+  // Rates always stay anchored to the medicine's PACK unit (e.g. Strip) —
+  // the real invoiced/printed number — regardless of which unit the
+  // quantities on this line were counted in. Never scaled by quantityUnit.
   purchaseRate: z.coerce.number().min(0).max(10_000_000),
   mrp: z.coerce.number().min(0).max(10_000_000),
   // What the pharmacy sells this batch for (worked out from margin in the UI); never above MRP.
   sellingRate: z.coerce.number().min(0).max(10_000_000).optional(),
   discountPercent: z.coerce.number().min(0).max(100).optional().default(0),
   gstRate: z.coerce.number().min(0).max(28).optional().default(0),
-  // Quantities and rates on this line are in the medicine's purchase unit (e.g. Box) — converted to stock units here.
-  inPurchaseUnit: z.boolean().optional().default(false),
+  // Which unit the pharmacist actually counted this line's quantities in:
+  // "content" (Tablet — already native, the default, no conversion),
+  // "pack" (Strip — × content_per_pack), "purchase" (Box — ×
+  // units_per_purchase × content_per_pack, what suppliers usually invoice in).
+  quantityUnit: z.enum(["content", "pack", "purchase"]).optional().default("content"),
 });
 
 const createSchema = z.object({
@@ -80,24 +88,22 @@ export const POST = apiRoute("grn:create", async (request, { session }) => {
       let it = rawItem;
       const medicine = await tx.medicines.findUnique({ where: { id: BigInt(it.medicineId) } });
       if (!medicine) throw new HttpError(400, `medicine_not_found:${it.medicineId}`);
-      // Box -> strips: multiply counts, divide money, so stock/billing only ever see stock units.
-      // MRP is DELIBERATELY excluded from this — it's a printed, regulated
-      // number the pharmacist always enters directly at the Strip level
-      // (GrnTab.jsx's mrpUnitName/mrpPer), never per-Box, so it needs no
-      // conversion here — dividing it too would silently corrupt a
-      // correctly-entered strip MRP (see InventoryTab's own version of this
-      // same real bug, src/app/api/pharmacy/stock/route.js).
-      if (it.inPurchaseUnit) {
-        const f = medicine.units_per_purchase || 1;
-        if (f > 1) {
-          const r2 = (n) => Math.round((n / f) * 100) / 100;
-          it = {
-            ...it,
-            receivedQuantity: it.receivedQuantity * f, freeQuantity: it.freeQuantity * f,
-            damagedQuantity: it.damagedQuantity * f, rejectedQuantity: it.rejectedQuantity * f,
-            purchaseRate: r2(it.purchaseRate), ...(it.sellingRate != null ? { sellingRate: r2(it.sellingRate) } : {}),
-          };
-        }
+      // Box/Strip -> Tablet: multiply every quantity up to the medicine's
+      // real content unit, whichever unit the pharmacist actually counted
+      // this line in. Rates (Purchase/MRP/Selling) are NEVER touched here —
+      // they always stay at the pack unit, the real printed/invoiced
+      // number — scaling them would silently corrupt a correctly-entered
+      // strip price (see stock/route.js's identical comment; this project
+      // already hit exactly this bug once for MRP: ₹65 became ₹650).
+      const packF = medicine.content_per_pack || 1;
+      const purchaseF = (medicine.units_per_purchase || 1) * packF;
+      const f = it.quantityUnit === "purchase" ? purchaseF : it.quantityUnit === "pack" ? packF : 1;
+      if (f > 1) {
+        it = {
+          ...it,
+          receivedQuantity: it.receivedQuantity * f, freeQuantity: it.freeQuantity * f,
+          damagedQuantity: it.damagedQuantity * f, rejectedQuantity: it.rejectedQuantity * f,
+        };
       }
       const accepted = it.receivedQuantity + it.freeQuantity - it.damagedQuantity - it.rejectedQuantity;
       if (accepted < 0) throw new HttpError(400, "accepted_quantity_cannot_be_negative");

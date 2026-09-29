@@ -36,10 +36,10 @@ function TabParamsReader({ onReady }) {
 // (No module / instance / connection jargon anywhere in this screen.)
 const CATEGORIES = [
   {
-    key: "customer", label: "Customers & Sales", hint: "Prescriptions, dispensing, billing, returns",
+    key: "billing", label: "Billing", hint: "Prescriptions, dispensing, sales, returns",
     tabs: [
       ["queue", "Prescriptions & Dispensing"],
-      ["sell", "Sales / Billing"],
+      ["sell", "Sales"],
       ["returns", "Returns"],
       ["history", "Purchase History"],
     ],

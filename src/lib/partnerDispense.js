@@ -10,6 +10,7 @@
 const { prisma } = require("./prismaClient");
 const { HttpError } = require("./apiRoute");
 const { priceLine } = require("./pricing");
+const { perContentUnitRate } = require("./pharmacyPricing");
 const { recomputeBillStatus } = require("./billing");
 const { emitToModule } = require("./realtime");
 const partners = require("./partners");
@@ -96,14 +97,14 @@ async function dispensePartnerOrder(session, id, origin, requestedQty) {
             ORDER BY (expiry_date IS NULL) ASC, expiry_date ASC, id ASC FOR UPDATE`,
           tenantId, instanceId, payload.medicineName,
         );
-        // One medicine's batches always share the same medicine_id/GST rate
-        // — looked up once, from whichever batch is actually linked to the
-        // catalog (a legacy unlinked batch just prices at 0 tax, same as
-        // everywhere else in this codebase that has no rate to work from).
+        // One medicine's batches always share the same medicine_id/GST
+        // rate/pack size — looked up once, from whichever batch is actually
+        // linked to the catalog (a legacy unlinked batch just prices at 0
+        // tax and no pack conversion, same as everywhere else in this
+        // codebase that has no rate to work from).
         const medicineId = batches.find((b) => b.medicine_id != null)?.medicine_id;
-        const gst = medicineId
-          ? Number((await tx.medicines.findUnique({ where: { id: medicineId }, select: { gst_rate: true } }))?.gst_rate || 0)
-          : 0;
+        const linkedMedicine = medicineId ? await tx.medicines.findUnique({ where: { id: medicineId }, select: { gst_rate: true, content_per_pack: true } }) : null;
+        const gst = Number(linkedMedicine?.gst_rate || 0);
 
         // This IS a real sale — this pharmacy's own stock is genuinely
         // leaving the building for another hospital's patient — so it gets
@@ -139,11 +140,14 @@ async function dispensePartnerOrder(session, id, origin, requestedQty) {
               ...(session.userId ? { users: { connect: { id: toId(session.userId) } } } : {}),
             },
           });
-          const rate = b.selling_rate ?? b.mrp;
+          // b.selling_rate/mrp are per PACK (Strip); `take` is a count of
+          // the smallest CONTENT unit (Tablet) — see pharmacyPricing.js's
+          // perContentUnitRate().
+          const rate = perContentUnitRate(b.selling_rate ?? b.mrp, linkedMedicine?.content_per_pack);
           let lineAmount = 0;
           let priced = null;
           if (rate != null) {
-            priced = priceLine({ price: Number(rate), tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, take);
+            priced = priceLine({ price: rate, tax_inclusive: false, cgst_rate: gst / 2, sgst_rate: gst / 2, igst_rate: 0 }, take);
             lineAmount = Number(priced.amount);
             amountTotal += lineAmount;
           }
