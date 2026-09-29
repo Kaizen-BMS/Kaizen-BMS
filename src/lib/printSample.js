@@ -7,3 +7,4 @@ export const SAMPLE_ITEMS = [
   { description: "CBC test", qty: 1, unit: 730, amount: 730 },
 ];
 export const SAMPLE_TOTALS = { subtotal: 1250, discount: 50, total: 1200, paid: 200, balance: 1000 };
+export const SAMPLE_STAFF = { name: "Sample Staff", employeeId: "EMP-014", designation: "Staff Nurse", department: "OPD", phone: "98XXXXXX10", email: "staff@example.com", joinDate: "15/01/26", duty: "09:00 – 17:00", bloodGroup: "O+", status: "Active", emergencyContact: "Family · 98XXXXXX20" };

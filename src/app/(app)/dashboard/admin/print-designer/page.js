@@ -5,5 +5,5 @@ export const metadata = { title: "Print designer" };
 
 export default async function Page({ searchParams }) {
   const { doc } = await searchParams;
-  return <PrintDesigner doc={doc === "invoice" ? "invoice" : "slip"} />;
+  return <PrintDesigner doc={doc === "invoice" ? "invoice" : doc === "staffCard" ? "staffCard" : "slip"} />;
 }

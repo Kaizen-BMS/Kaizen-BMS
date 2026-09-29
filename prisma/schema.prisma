@@ -425,7 +425,7 @@ model print_branding {
   scope           print_branding_scope @default(TENANT)
   doctor_user_id  BigInt?              @db.UnsignedBigInt
   header_name     String
-  logo_url        String?              @db.VarChar(500)
+  logo_url        String?              @db.MediumText
   qualifications  String?              @db.VarChar(255)
   address         String?              @db.VarChar(500)
   phone           String?              @db.VarChar(64)

@@ -3,7 +3,7 @@ import { PAPER_SIZE, resolveText } from "@/lib/printLayout";
 // Draws a print layout: a paper with positioned pieces. Used by the real
 // print pages and by the designer (which passes pointer handlers so pieces can
 // be dragged) — so the designer shows exactly what prints.
-export default function LayoutRender({ layout, data, items, totals, payments, logo, selectedId, onPointerDownEl, showGuides }) {
+export default function LayoutRender({ layout, data, items, totals, payments, logo, photo, selectedId, onPointerDownEl, showGuides }) {
   const size = PAPER_SIZE[layout.paper];
   const table = layout.elements.find((e) => e.type === "table" && e.visible !== false);
   const below = layout.elements.filter((e) => e.belowTable && e.visible !== false && table);
@@ -54,14 +54,16 @@ export default function LayoutRender({ layout, data, items, totals, payments, lo
         if (e.type === "line") {
           return <div key={e.id} {...wrapProps(e)} style={{ ...wrapProps(e).style, position: "absolute", left: `${e.x}mm`, top: `${e.y}mm`, width: `${e.w}mm`, height: `${Math.max(e.thickness || 0.4, onPointerDownEl ? 1.2 : 0)}mm`, background: "transparent", ...outline(e) }}><div style={{ marginTop: "0", height: `${e.thickness || 0.4}mm`, background: e.color }} /></div>;
         }
-        if (e.type === "logo") {
+        if (e.type === "logo" || e.type === "photo") {
+          const src = e.type === "logo" ? logo : photo;
+          const label = e.type === "logo" ? "Logo" : "Photo";
           return (
             <div key={e.id} {...wrapProps(e)} style={{ ...wrapProps(e).style, position: "absolute", left: `${e.x}mm`, top: `${e.y}mm`, width: `${e.w}mm`, height: `${e.h}mm`, ...outline(e) }}>
-              {logo ? (
+              {src ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={logo} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "left top" }} />
+                <img src={src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: e.type === "photo" ? "cover" : "contain", objectPosition: e.type === "photo" ? "center" : "left top" }} />
               ) : onPointerDownEl ? (
-                <div style={{ width: "100%", height: "100%", border: "1px dashed #94a3b8", color: "#94a3b8", fontSize: "8pt", display: "grid", placeItems: "center" }}>Logo</div>
+                <div style={{ width: "100%", height: "100%", border: "1px dashed #94a3b8", color: "#94a3b8", fontSize: "8pt", display: "grid", placeItems: "center" }}>{label}</div>
               ) : null}
             </div>
           );

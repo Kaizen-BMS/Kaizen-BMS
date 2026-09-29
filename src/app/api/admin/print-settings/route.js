@@ -21,13 +21,15 @@ export const GET = apiRoute("formtemplate:manage", async (request, { session }) 
 });
 
 const paper = z.enum(Object.keys(PAPERS));
+const customPresets = z.array(z.any()).max(20).optional();
 const schema = z.object({
   slip: z.object({
     enabled: z.boolean(), autoPrint: z.boolean(), paper, title: z.string().trim().max(60),
     showToken: z.boolean(), showAge: z.boolean(), showGender: z.boolean(), showPhone: z.boolean(),
-    showReason: z.boolean(), showFee: z.boolean(), showDateTime: z.boolean(), footer: z.string().trim().max(200), layout: z.any().optional(),
+    showReason: z.boolean(), showFee: z.boolean(), showDateTime: z.boolean(), footer: z.string().trim().max(200), layout: z.any().optional(), customPresets,
   }),
-  invoice: z.object({ paper, showGstin: z.boolean(), layout: z.any().optional() }),
+  invoice: z.object({ paper, showGstin: z.boolean(), layout: z.any().optional(), customPresets }),
+  staffCard: z.object({ paper, layout: z.any().optional(), customPresets }),
 });
 
 export const PUT = apiRoute("formtemplate:manage", async (request, { session }) => {

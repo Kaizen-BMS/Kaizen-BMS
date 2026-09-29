@@ -4,15 +4,21 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { apiGet, apiSend } from "./api";
 import LayoutRender from "./LayoutRender";
-import { PAPER_SIZE, presetLayout, rescaleLayout, T, LINE } from "@/lib/printLayout";
-import { SAMPLE_SLIP, SAMPLE_INVOICE, SAMPLE_ITEMS, SAMPLE_TOTALS } from "@/lib/printSample";
+import { PAPER_SIZE, presetLayout, rescaleLayout, T, LINE, LOGO, PHOTO } from "@/lib/printLayout";
+import { SAMPLE_SLIP, SAMPLE_INVOICE, SAMPLE_STAFF, SAMPLE_ITEMS, SAMPLE_TOTALS } from "@/lib/printSample";
 
 const PX_PER_MM = 3.7795;
 const newId = () => `d${Math.random().toString(36).slice(2, 9)}`;
 const input = "w-full rounded-md border border-slate-300 px-2 py-1 text-sm";
+const DOC_LABEL = { slip: "registration slip (parcha)", invoice: "bill / invoice", staffCard: "staff ID card" };
+const HISTORY_LIMIT = 50;
 
-// Live print designer: drag any piece of the slip / bill, edit it on the right,
-// pick a ready-made style, save. The canvas is the same renderer the printer uses.
+// Live print designer: drag any piece of the slip / bill / staff card, edit
+// it on the right, pick a ready-made style, save. The canvas is the same
+// renderer the printer uses. Undo/redo is a simple past/future stack of
+// whole-layout snapshots -- every change() call records where the layout
+// was a moment ago, so any small edit can be stepped back through, not just
+// the last one.
 export default function PrintDesigner({ doc }) {
   const [d, setD] = useState(null);
   const [layout, setLayout] = useState(null);
@@ -20,21 +26,72 @@ export default function PrintDesigner({ doc }) {
   const [zoom, setZoom] = useState(1);
   const [msg, setMsg] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [presetName, setPresetName] = useState("");
   const drag = useRef(null);
   const layoutRef = useRef(null);
   useEffect(() => { layoutRef.current = layout; });
+  const history = useRef({ past: [], future: [] });
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const syncHistoryButtons = () => { setCanUndo(history.current.past.length > 0); setCanRedo(history.current.future.length > 0); };
 
   useEffect(() => {
-    apiGet("/api/admin/print-settings").then((r) => { setD(r); setLayout(r.settings[doc].layout); }).catch((e) => setMsg(e.message));
+    apiGet("/api/admin/print-settings").then((r) => { setD(r); setLayout(r.settings[doc].layout); history.current = { past: [], future: [] }; syncHistoryButtons(); }).catch((e) => setMsg(e.message));
   }, [doc]);
 
-  const change = useCallback((fn) => { setLayout((l) => fn(l)); setDirty(true); }, []);
+  const change = useCallback((fn) => {
+    setLayout((l) => {
+      const next = fn(l);
+      if (next === l) return l;
+      history.current.past = [...history.current.past.slice(-(HISTORY_LIMIT - 1)), l];
+      history.current.future = [];
+      syncHistoryButtons();
+      return next;
+    });
+    setDirty(true);
+  }, []);
   const patch = useCallback((id, p) => change((l) => ({ ...l, elements: l.elements.map((e) => (e.id === id ? { ...e, ...p } : e)) })), [change]);
+  // A drag fires dozens of position updates a second — recording each one as
+  // its own undo step would make Ctrl+Z undo one pixel at a time instead of
+  // the whole move. This applies a patch WITHOUT touching history; the drag
+  // start/end handlers below record exactly one history entry per drag.
+  const patchSilent = useCallback((id, p) => setLayout((l) => ({ ...l, elements: l.elements.map((e) => (e.id === id ? { ...e, ...p } : e)) })), []);
+
+  function undo() {
+    const h = history.current;
+    if (h.past.length === 0) return;
+    const prev = h.past[h.past.length - 1];
+    h.past = h.past.slice(0, -1);
+    h.future = [layoutRef.current, ...h.future].slice(0, HISTORY_LIMIT);
+    setLayout(prev);
+    setDirty(true);
+    syncHistoryButtons();
+  }
+  function redo() {
+    const h = history.current;
+    if (h.future.length === 0) return;
+    const next = h.future[0];
+    h.future = h.future.slice(1);
+    h.past = [...h.past, layoutRef.current].slice(-HISTORY_LIMIT);
+    setLayout(next);
+    setDirty(true);
+    syncHistoryButtons();
+  }
+  useEffect(() => {
+    const key = (ev) => {
+      if (/INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) return;
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); ev.shiftKey ? redo() : undo(); }
+      else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "y") { ev.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function onDown(ev, el) {
     ev.stopPropagation();
     setSel(el.id);
-    drag.current = { id: el.id, sx: ev.clientX, sy: ev.clientY, ox: el.x, oy: el.y, moved: false };
+    drag.current = { id: el.id, sx: ev.clientX, sy: ev.clientY, ox: el.x, oy: el.y, moved: false, startLayout: layoutRef.current };
   }
   useEffect(() => {
     const move = (ev) => {
@@ -44,13 +101,22 @@ export default function PrintDesigner({ doc }) {
       const nx = Math.round((g.ox + (ev.clientX - g.sx) / k) * 2) / 2;
       const ny = Math.round((g.oy + (ev.clientY - g.sy) / k) * 2) / 2;
       g.moved = true;
-      patch(g.id, { x: nx, y: ny });
+      patchSilent(g.id, { x: nx, y: ny });
+      setDirty(true);
     };
-    const up = () => { drag.current = null; };
+    const up = () => {
+      const g = drag.current;
+      if (g && g.moved && g.startLayout) {
+        history.current.past = [...history.current.past.slice(-(HISTORY_LIMIT - 1)), g.startLayout];
+        history.current.future = [];
+        syncHistoryButtons();
+      }
+      drag.current = null;
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-  }, [zoom, patch]);
+  }, [zoom, patchSilent]);
 
   useEffect(() => {
     const key = (ev) => {
@@ -73,18 +139,31 @@ export default function PrintDesigner({ doc }) {
   if (!d || !layout) return <p className="p-4 text-sm text-slate-400">{msg || "Loading…"}</p>;
 
   const isInv = doc === "invoice";
+  const isCard = doc === "staffCard";
   const el = layout.elements.find((e) => e.id === sel);
   const tokens = d.tokens[doc];
-  const data = { facility: d.branding.name || "Your Facility", address: d.branding.address || "Address line", phone: d.branding.phone || "Phone", gstin: "22AAAAA0000A1Z5", footer: "Thank you — get well soon", ...(isInv ? SAMPLE_INVOICE : SAMPLE_SLIP) };
+  const data = isCard
+    ? { facility: d.branding.name || "Your Facility", ...SAMPLE_STAFF }
+    : { facility: d.branding.name || "Your Facility", address: d.branding.address || "Address line", phone: d.branding.phone || "Phone", gstin: "22AAAAA0000A1Z5", footer: "Thank you — get well soon", ...(isInv ? SAMPLE_INVOICE : SAMPLE_SLIP) };
+  const customPresets = d.settings[doc].customPresets || [];
 
   const add = (o) => { const e = o; change((l) => ({ ...l, elements: [...l.elements, e] })); setSel(e.id); };
   const dup = () => el && add({ ...el, id: newId(), x: el.x + 4, y: el.y + 4 });
   const remove = () => { change((l) => ({ ...l, elements: l.elements.filter((x) => x.id !== sel) })); setSel(null); };
 
+  function swapLayout(next) {
+    history.current.past = [...history.current.past.slice(-(HISTORY_LIMIT - 1)), layoutRef.current];
+    history.current.future = [];
+    syncHistoryButtons();
+    setLayout(next); setSel(null); setDirty(true);
+  }
   function applyPreset(key) {
     if (!key) return;
-    if (dirty && !confirm("Replace the current design with this style?")) return;
-    setLayout(presetLayout(doc, key)); setSel(null); setDirty(true);
+    swapLayout(presetLayout(doc, key));
+  }
+  function applyCustomPreset(id) {
+    const p = customPresets.find((x) => x.id === id);
+    if (p) swapLayout(p.layout);
   }
   function switchPaper(paper) { change((l) => rescaleLayout(l, paper)); }
 
@@ -100,6 +179,37 @@ export default function PrintDesigner({ doc }) {
     } catch (e) { setMsg(`Could not save (${e.message}).`); }
   }
 
+  // "Design it, save it, use it later" -- a NAMED snapshot of the current
+  // canvas, separate from the one active/live layout above. Saved alongside
+  // the active layout in the same print_settings JSON (no new table), so it
+  // survives reload and can be reloaded into the canvas any time via
+  // applyCustomPreset(), without touching what's currently live until you do.
+  async function saveAsTemplate() {
+    const name = presetName.trim();
+    if (!name) return;
+    setMsg("");
+    const entry = { id: `c${Date.now().toString(36)}`, name, savedAt: new Date().toISOString(), layout };
+    const s = d.settings;
+    const nextGroup = { ...s[doc], customPresets: [...customPresets, entry] };
+    const next = { ...s, [doc]: nextGroup };
+    try {
+      const r = await apiSend("/api/admin/print-settings", "PUT", next);
+      setD({ ...d, settings: r.settings });
+      setPresetName("");
+      setMsg(`Saved as "${name}".`);
+    } catch (e) { setMsg(`Could not save (${e.message}).`); }
+  }
+  async function deleteTemplate(id) {
+    if (!confirm("Delete this saved design? This can't be undone.")) return;
+    setMsg("");
+    const s = d.settings;
+    const next = { ...s, [doc]: { ...s[doc], customPresets: customPresets.filter((p) => p.id !== id) } };
+    try {
+      const r = await apiSend("/api/admin/print-settings", "PUT", next);
+      setD({ ...d, settings: r.settings });
+    } catch (e) { setMsg(`Could not delete (${e.message}).`); }
+  }
+
   const size = PAPER_SIZE[layout.paper];
   const Num = ({ label, k, min, max, step = 1 }) => (
     <label className="text-xs"><span className="block text-slate-500">{label}</span>
@@ -112,12 +222,14 @@ export default function PrintDesigner({ doc }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <Link href="/dashboard/admin/settings" className="text-xs text-slate-500 hover:underline">← Settings</Link>
-          <h1 className="text-lg font-semibold">{isInv ? "Design bill / invoice" : "Design registration slip (parcha)"}</h1>
-          <p className="text-xs text-slate-500">Drag anything to move it. Arrow keys nudge (Shift = bigger), Delete removes.</p>
+          <h1 className="text-lg font-semibold">Design {DOC_LABEL[doc]}</h1>
+          <p className="text-xs text-slate-500">Drag anything to move it. Arrow keys nudge (Shift = bigger), Delete removes, Ctrl+Z undoes.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Link href={`/dashboard/admin/print-designer?doc=${isInv ? "slip" : "invoice"}`} className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">Switch to {isInv ? "slip" : "bill"}</Link>
-          <a href={`/print/sample/${doc}`} target="_blank" rel="noreferrer" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">Test print (saved)</a>
+          {Object.keys(DOC_LABEL).filter((k) => k !== doc).map((k) => (
+            <Link key={k} href={`/dashboard/admin/print-designer?doc=${k}`} className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">Switch to {k === "staffCard" ? "staff card" : k === "invoice" ? "bill" : "slip"}</Link>
+          ))}
+          <a href={doc === "staffCard" ? "/print/sample/staffCard" : `/print/sample/${doc}`} target="_blank" rel="noreferrer" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">Test print (saved)</a>
           <button onClick={save} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-sm font-medium text-[var(--hms-btn-fg)]">Save design</button>
           {msg && <span className="text-xs text-emerald-700">{msg}</span>}
           {dirty && !msg && <span className="text-xs text-amber-600">Unsaved changes</span>}
@@ -131,22 +243,54 @@ export default function PrintDesigner({ doc }) {
             {d.presets[doc].map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
         </label>
+        {customPresets.length > 0 && (
+          <label className="text-xs"><span className="block text-slate-500">My saved designs</span>
+            <select value="" onChange={(e) => applyCustomPreset(e.target.value)} className={input}>
+              <option value="">Choose one…</option>
+              {customPresets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+        )}
         <label className="text-xs"><span className="block text-slate-500">Paper</span>
           <select value={layout.paper} onChange={(e) => switchPaper(e.target.value)} className={input}>
             {d.papers.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
         </label>
         <div className="flex gap-1.5">
+          <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-40">↶ Undo</button>
+          <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-40">↷ Redo</button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
           <button onClick={() => add(T({ x: 10, y: 10, w: 60, text: "New text", fontSize: 10 }))} className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">+ Text</button>
           <button onClick={() => add(LINE({ x: 8, y: 20, w: Math.min(100, size.w - 16) }))} className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">+ Line</button>
           <button onClick={() => add(T({ x: 10, y: 10, w: 50, h: 14, text: "Box", fontSize: 10, bg: "#e5e7eb", padding: 2 }))} className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">+ Box</button>
+          <button onClick={() => add(LOGO({ x: 8, y: 8, w: 20, h: 20 }))} title="Facility logo, from Branding" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">+ Logo</button>
+          {isCard && <button onClick={() => add(PHOTO({ x: 8, y: 8, w: 20, h: 24 }))} title="The staff member's own photo" className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50">+ Photo</button>}
         </div>
         <label className="text-xs"><span className="block text-slate-500">Zoom</span>
           <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className={input}>
             {[0.5, 0.75, 1, 1.25, 1.5].map((z) => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
           </select>
         </label>
+        <div className="flex items-end gap-1.5">
+          <label className="text-xs"><span className="block text-slate-500">Save this design for later</span>
+            <input value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder="e.g. Diwali special slip" className={`${input} w-48`} />
+          </label>
+          <button onClick={saveAsTemplate} disabled={!presetName.trim()} className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-40">Save as…</button>
+        </div>
       </div>
+
+      {customPresets.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5 text-xs">
+          <span className="text-slate-500">My saved designs:</span>
+          {customPresets.map((p) => (
+            <span key={p.id} className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2.5 pr-1">
+              <button onClick={() => applyCustomPreset(p.id)} className="hover:underline">{p.name}</button>
+              <button onClick={() => deleteTemplate(p.id)} title="Delete" className="rounded-full px-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">✕</button>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-[1fr_20rem]">
         <div className="max-h-[75vh] overflow-auto rounded-lg border border-dashed border-slate-300 bg-slate-200 p-4" onPointerDown={() => setSel(null)}>
@@ -206,7 +350,8 @@ export default function PrintDesigner({ doc }) {
                   <label className="text-xs"><span className="block text-slate-500">Colour</span><input type="color" value={el.color || "#111111"} onChange={(e) => patch(el.id, { color: e.target.value })} className="h-8 w-full" /></label>
                 </div>
               )}
-              {el.type === "logo" && <div className="grid grid-cols-2 gap-2">{Num({ label: "Height (mm)", k: "h", min: 1 })}<p className="text-xs text-slate-500">Logo comes from Branding.</p></div>}
+              {el.type === "logo" && <div className="grid grid-cols-2 gap-2">{Num({ label: "Height (mm)", k: "h", min: 1 })}<p className="text-xs text-slate-500">Logo comes from Branding — upload/change it there.</p></div>}
+              {el.type === "photo" && <div className="grid grid-cols-2 gap-2">{Num({ label: "Height (mm)", k: "h", min: 1 })}<p className="text-xs text-slate-500">Each person&apos;s own photo, from their staff profile.</p></div>}
               {el.type === "table" && (
                 <>
                   {Num({ label: "Font size (pt)", k: "fontSize", min: 5, max: 20 })}
@@ -230,7 +375,7 @@ export default function PrintDesigner({ doc }) {
           )}
         </aside>
       </div>
-      <p className="text-xs text-slate-400">Long bills: the items table grows downward and is not split across pages — keep footer pieces well below it. Prescription and lab-report printing are not part of this designer.</p>
+      <p className="text-xs text-slate-400">Long bills: the items table grows downward and is not split across pages — keep footer pieces well below it. Prescription and lab-report printing are not part of this designer.{isCard && " Every staff member's card uses this same design, with their own name, ID and photo filled in."}</p>
     </div>
   );
 }

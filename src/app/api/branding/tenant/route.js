@@ -8,7 +8,9 @@ export const dynamic = "force-dynamic";
 
 const putSchema = z.object({
   headerName: z.string().trim().min(1).max(191),
-  logoUrl: z.string().trim().max(500).optional().or(z.literal("")),
+  // Either a real http(s) URL, or a compressed data URL from the browse/
+  // upload button (same no-file-storage convention as signatureImage below).
+  logoUrl: z.string().trim().max(400_000).optional().or(z.literal("")),
   qualifications: z.string().trim().max(255).optional().or(z.literal("")),
   address: z.string().trim().max(500).optional().or(z.literal("")),
   phone: z.string().trim().max(64).optional().or(z.literal("")),

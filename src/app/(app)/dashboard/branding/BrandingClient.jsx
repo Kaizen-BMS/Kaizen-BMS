@@ -113,7 +113,38 @@ export default function BrandingClient() {
             {isSolo ? "Your practice branding" : "Hospital branding (default on every document)"}
           </p>
           <Field label="Header name" value={tenantForm.headerName} onChange={(v) => setTenantForm((s) => ({ ...s, headerName: v }))} required />
-          <Field label="Logo URL" value={tenantForm.logoUrl} onChange={(v) => setTenantForm((s) => ({ ...s, logoUrl: v }))} />
+          <div className="space-y-1.5 text-sm">
+            <span className="font-medium">Logo</span>
+            <p className="text-xs text-slate-500">Shown on the registration slip, bills, receipts and staff cards wherever the design places it.</p>
+            <div className="flex items-center gap-3">
+              {tenantForm.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={tenantForm.logoUrl} alt="Logo" className="h-14 rounded border border-slate-200 bg-white px-2" />
+              ) : (
+                <span className="text-xs text-slate-400">No logo uploaded yet.</span>
+              )}
+              <label className="cursor-pointer rounded-md border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-50">
+                {tenantForm.logoUrl ? "Change" : "Browse…"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    const url = await compressImageToDataUrl(file, 400, 0.85);
+                    setTenantForm((s) => ({ ...s, logoUrl: url }));
+                  }}
+                />
+              </label>
+              {tenantForm.logoUrl && (
+                <button type="button" onClick={() => setTenantForm((s) => ({ ...s, logoUrl: "" }))} className="text-xs text-red-600 underline">
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
           {isSolo && (
             <>
               <Field label="Qualifications (e.g. MBBS, MD)" value={tenantForm.qualifications} onChange={(v) => setTenantForm((s) => ({ ...s, qualifications: v }))} />

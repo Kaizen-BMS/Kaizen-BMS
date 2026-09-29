@@ -3,7 +3,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prismaClient";
 import { resolveBranding } from "@/lib/branding";
 import { merge, PAPERS } from "@/lib/printSettings";
-import { SAMPLE_SLIP, SAMPLE_INVOICE, SAMPLE_ITEMS, SAMPLE_TOTALS } from "@/lib/printSample";
+import { SAMPLE_SLIP, SAMPLE_INVOICE, SAMPLE_STAFF, SAMPLE_ITEMS, SAMPLE_TOTALS } from "@/lib/printSample";
 import LayoutRender from "@/components/hms/LayoutRender";
 import PrintButton from "@/components/hms/PrintButton";
 
@@ -15,11 +15,14 @@ export default async function SamplePage({ params }) {
   const session = await getSession();
   if (!session || !session.tenantId) redirect("/login");
   const { doc } = await params;
-  const kind = doc === "invoice" ? "invoice" : "slip";
+  const kind = doc === "invoice" ? "invoice" : doc === "staffCard" ? "staffCard" : "slip";
   const t = await prisma.tenants.findUnique({ where: { id: BigInt(session.tenantId) }, select: { print_settings: true, name: true } });
   const layout = merge(t?.print_settings)[kind].layout;
   const b = await resolveBranding(session.tenantId, null);
-  const data = { facility: b.header.header_name || t?.name, address: b.header.address || "", phone: b.header.phone || "", gstin: b.header.gstin || "", footer: b.header.footer_text || "", ...(kind === "slip" ? SAMPLE_SLIP : SAMPLE_INVOICE) };
+  const data =
+    kind === "staffCard"
+      ? { facility: b.header.header_name || t?.name, ...SAMPLE_STAFF }
+      : { facility: b.header.header_name || t?.name, address: b.header.address || "", phone: b.header.phone || "", gstin: b.header.gstin || "", footer: b.header.footer_text || "", ...(kind === "slip" ? SAMPLE_SLIP : SAMPLE_INVOICE) };
   const p = PAPERS[layout.paper];
   return (
     <div className="p-4 print:p-0">
