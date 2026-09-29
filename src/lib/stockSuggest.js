@@ -43,4 +43,4 @@ async function suggest(tenantId, rawQuery) {
   return { sources };
 }
 
-module.exports = { suggest };
+module.exports = { suggest, matches };

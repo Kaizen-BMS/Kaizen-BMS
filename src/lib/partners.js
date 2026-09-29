@@ -28,6 +28,7 @@ const { runWithContext } = require("./requestContext");
 const { emitToTenant } = require("./realtime");
 const { peerWebhookSecret } = require("./peerSecret");
 const catalog = require("./partnerCatalog");
+const stockSuggest = require("./stockSuggest");
 
 const OPEN_STATUSES = ["REQUESTED", "REVIEWING", "ACCEPTED", "ACTIVE", "PAUSED"];
 
@@ -586,6 +587,30 @@ async function sendDirect(session, connectionId, input) {
   return { ref: await deliverPeerOrder(conn.id, payload, { direct: true }) };
 }
 
+/**
+ * "What does this connected partner pharmacy actually have?" — the same
+ * name-and-yes/no shape stockSuggest.js already gives a doctor while
+ * prescribing (never quantities, batches or prices — see that file's own
+ * comment), just scoped to ONE chosen connection instead of aggregated
+ * across every partner, so it can back a typeahead while requesting a
+ * medicine from a specific partner rather than a generic hint. Only the
+ * REQUESTER side may browse (the same restriction sendDirect already
+ * enforces), and only once that partner has opted in via share_stock —
+ * the same consent flag, not a second one, since sharing "is this in
+ * stock" for a doctor's hint and for a pharmacy-to-pharmacy request is the
+ * same disclosure in spirit.
+ */
+async function partnerStock(session, connectionId, q) {
+  const conn = await loadForParty(session, connectionId);
+  if (Number(conn.requester_tenant_id) !== Number(session.tenantId)) throw new HttpError(403, "only_requester_can_browse");
+  if (conn.service_type !== "PHARMACY") throw new HttpError(422, "not_a_pharmacy_connection");
+  if (conn.status !== "ACTIVE") throw new HttpError(409, "connection_not_active");
+  if (!conn.share_stock) throw new HttpError(403, "stock_not_shared");
+  const text = String(q || "").trim();
+  if (text.length < 2) return { items: [] };
+  return { items: await stockSuggest.matches(conn.receiver_tenant_id, text) };
+}
+
 /** Requests THIS facility sent to partners, with their status/result. */
 async function listOutbound(session) {
   const conns = await prisma.org_connections.findMany({ where: { requester_tenant_id: toId(session.tenantId) } });
@@ -632,4 +657,5 @@ module.exports = {
   sendDirect,
   listOutbound,
   isPeerConnectionActive,
+  partnerStock,
 };

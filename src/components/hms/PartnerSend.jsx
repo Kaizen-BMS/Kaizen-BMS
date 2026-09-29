@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, apiSend } from "./api";
 import { useRealtime } from "./useRealtime";
 
@@ -18,6 +18,89 @@ const COPY = {
 
 const EMPTY = { connectionId: "", name: "", quantity: "", patientName: "", age: "", gender: "", phone: "", reason: "", summary: "" };
 const money = (n) => (n != null ? ` · ₹${Number(n).toLocaleString("en-IN")}` : "");
+
+// Typeahead against THAT ONE partner's own stock (name + available only —
+// never a quantity, matching stockSuggest.js's own privacy stance), so a
+// request can be built from what they actually have instead of typing a
+// name blind. Degrades silently to a plain text field if the partner
+// hasn't turned stock-sharing on (403 stock_not_shared) — this is a
+// convenience on top of the request, never a requirement to send one.
+function PartnerMedicineField({ connectionId, value, onChange, className }) {
+  const [items, setItems] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [available, setAvailable] = useState(true);
+  const [lastConnId, setLastConnId] = useState(connectionId);
+  const reqRef = useRef(0);
+  const timer = useRef(null);
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+  // A different partner picked — drop whatever was showing and give the new
+  // one a fresh chance at stock-sharing, same "adjust state during render
+  // when a prop changes" pattern DateInput.jsx already uses instead of an effect.
+  if (connectionId !== lastConnId) {
+    setLastConnId(connectionId);
+    setItems([]);
+    setOpen(false);
+    setAvailable(true);
+  }
+
+  function search(text) {
+    clearTimeout(timer.current);
+    if (!available || !connectionId || text.trim().length < 2) { setItems([]); setOpen(false); return; }
+    timer.current = setTimeout(async () => {
+      const id = ++reqRef.current;
+      try {
+        const d = await apiGet(`/api/partners/connections/${connectionId}/stock?q=${encodeURIComponent(text.trim())}`);
+        if (reqRef.current !== id) return;
+        setItems(d.items || []);
+        setOpen((d.items || []).length > 0);
+      } catch (err) {
+        if (reqRef.current !== id) return;
+        if (err.message === "stock_not_shared") setAvailable(false); // stop asking again for this partner
+        setItems([]);
+        setOpen(false);
+      }
+    }, 150);
+  }
+
+  return (
+    <div ref={boxRef} className="relative">
+      <input
+        required
+        value={value}
+        autoComplete="off"
+        placeholder={available ? "Start typing to see their stock…" : "Medicine name"}
+        onChange={(e) => { onChange(e.target.value); search(e.target.value); }}
+        onFocus={() => items.length && setOpen(true)}
+        className={className}
+      />
+      {open && (
+        <ul className="absolute left-0 right-0 z-30 mt-1 max-h-56 w-56 overflow-auto rounded-lg border border-slate-200 bg-white p-1 text-sm shadow-lg">
+          {items.map((it) => (
+            <li key={it.name}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { onChange(it.name); setOpen(false); }}
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-100"
+              >
+                <span>{it.name}</span>
+                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${it.available ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                  {it.available ? "Available" : "Not in stock"}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function outcome(service, o) {
   if (o.status !== "COMPLETED") return "Waiting";
@@ -103,7 +186,13 @@ export default function PartnerSend({ service }) {
             </>
           ) : (
             <>
-              <label className="text-xs"><span className="block text-slate-500">{isPh ? "Medicine" : "Test"}</span><input required value={f.name} onChange={set("name")} className={input} /></label>
+              <label className="text-xs"><span className="block text-slate-500">{isPh ? "Medicine" : "Test"}</span>
+                {isPh ? (
+                  <PartnerMedicineField connectionId={connectionId} value={f.name} onChange={(v) => setF((x) => ({ ...x, name: v }))} className={input} />
+                ) : (
+                  <input required value={f.name} onChange={set("name")} className={input} />
+                )}
+              </label>
               {isPh && <label className="text-xs"><span className="block text-slate-500">Quantity</span><input required type="number" min="1" value={f.quantity} onChange={set("quantity")} className={`${input} w-24`} /></label>}
               <label className="text-xs"><span className="block text-slate-500">Patient (optional)</span><input value={f.patientName} onChange={set("patientName")} className={input} /></label>
             </>
