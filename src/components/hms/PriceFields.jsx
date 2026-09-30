@@ -20,7 +20,7 @@ export const EMPTY_PRICE = { totalPaid: "", purchaseRate: "", mrp: "", marginMod
 // `unitName` units make up one `mrpUnitName` unit) so the field the
 // pharmacist types into always matches what's actually printed on the
 // pack, regardless of what unit everything else on this form is in.
-export default function PriceFields({ value, onChange, quantity, unitName = "unit", mrpUnitName, mrpPer = 1, contentUnit, contentPerPack, levels, stockPer = 1, stockUnitName }) {
+export default function PriceFields({ value, onChange, quantity, unitName = "unit", mrpUnitName, mrpPer = 1, contentUnit, contentPerPack, levels, stockPer = 1, stockUnitName, hideMrp = false }) {
   const v = { ...EMPTY_PRICE, ...value };
   const qty = Number(quantity);
   const total = Number(v.totalPaid);
@@ -82,9 +82,15 @@ export default function PriceFields({ value, onChange, quantity, unitName = "uni
         <label className={lab}>Cost per {unitName}
           <input type="number" min="0" step="0.01" placeholder="50" value={v.purchaseRate} onChange={(e) => recompute({ purchaseRate: e.target.value, totalPaid: "" })} className={`${cell} ${derivedRate != null ? "bg-slate-50" : ""}`} />
         </label>
-        <label className={lab}>MRP per {mrpLabel} <span className="font-normal normal-case text-slate-400">(as printed on the pack)</span>
-          <input type="number" min="0" step="0.01" placeholder="80" value={v.mrp} onChange={(e) => recompute({ mrp: e.target.value })} className={cell} />
-        </label>
+        {/* MRP is a property of the pack itself, same as Sold-as/Contains/Per-unit — a caller that
+            already shows those together can set hideMrp and render its own MRP field right there
+            instead (still flowing into `value.mrp`/`onChange` here, since the margin math below
+            still needs it) rather than repeating it a second time in this pricing grid. */}
+        {!hideMrp && (
+          <label className={lab}>MRP per {mrpLabel} <span className="font-normal normal-case text-slate-400">(as printed on the pack)</span>
+            <input type="number" min="0" step="0.01" placeholder="80" value={v.mrp} onChange={(e) => recompute({ mrp: e.target.value })} className={cell} />
+          </label>
+        )}
         <div className={lab}>
           Margin
           <div className="mt-0.5 flex gap-1">
@@ -102,8 +108,8 @@ export default function PriceFields({ value, onChange, quantity, unitName = "uni
         </label>
         <p className="col-span-full text-[10px] text-slate-400">Enter the total you paid, or the rate directly — the rest is worked out on the right.</p>
       </div>
-      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-2 text-xs">
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Calculation</p>
+      <div className={`rounded-lg text-xs ${showCalc ? "border border-slate-200 bg-slate-50/70 p-2" : "px-1 py-0.5"}`}>
+        {showCalc && <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Calculation</p>}
         {showCalc ? (
           <>
             <table className="w-full text-right tabular-nums">
@@ -132,7 +138,7 @@ export default function PriceFields({ value, onChange, quantity, unitName = "uni
             )}
           </>
         ) : (
-          <p className="text-slate-400">Fill in the cost and MRP — per {unitName}{rows.length > 1 ? ", per " + rows.slice(1).map((r) => r.label).join(" and per ") : ""} and profit show up here.</p>
+          <p className="text-[11px] text-slate-400">Cost/MRP → profit shows up here.</p>
         )}
       </div>
     </div>

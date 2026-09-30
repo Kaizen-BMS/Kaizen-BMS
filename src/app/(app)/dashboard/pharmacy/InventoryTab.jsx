@@ -269,6 +269,10 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                     <label className="text-xs font-medium text-slate-600">Sold as<input placeholder="Strip" value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value, packagingUnset: true }))} className={`${input} mt-1 w-28`} /></label>
                     <label className="text-xs font-medium text-slate-600">Contains<input type="number" min="1" placeholder="10" value={form.contentPerPack} onChange={(e) => setForm((f) => ({ ...f, contentPerPack: e.target.value, packagingUnset: true }))} className={`${input} mt-1 w-20`} /></label>
                     <label className="text-xs font-medium text-slate-600">Per {form.unit || "unit"}<input placeholder="Tablet" value={form.contentUnit} onChange={(e) => setForm((f) => ({ ...f, contentUnit: e.target.value, packagingUnset: true }))} className={`${input} mt-1 w-24`} /></label>
+                    {/* MRP is a property of the pack, same as the fields above — kept right here
+                        instead of down in the pricing row (PriceFields' own hideMrp skips it there,
+                        but still uses form.mrp for its margin math). */}
+                    <label className="text-xs font-medium text-slate-600">MRP per {form.unit || "unit"} <span className="font-normal text-slate-400">(on the pack)</span><input type="number" min="0" step="0.01" placeholder="80" value={form.mrp} onChange={(e) => setForm((f) => ({ ...f, mrp: e.target.value }))} className={`${input} mt-1 w-24`} /></label>
                     {form.packagingUnset && <span className="pb-1.5 text-[11px] text-amber-700">Not set on this medicine yet — saving this batch will remember it.</span>}
                   </div>
                 </div>
@@ -289,6 +293,7 @@ export default function InventoryTab({ canStockIn, canAdjust, initialFilter, onE
                 mrpUnitName={(form.unit || "unit").toLowerCase()}
                 contentUnit={form.contentUnit}
                 contentPerPack={Number(form.contentPerPack) || null}
+                hideMrp={!!form.medicineId}
               />
               <label className={label}>Location
                 <input placeholder="Rack A - Shelf 3" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={`${input} mt-1`} />

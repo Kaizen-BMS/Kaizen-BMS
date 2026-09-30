@@ -377,7 +377,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
   }
 
   return (
-    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+    <div className="space-y-2 rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">
           {bill.patient_name} <span className="text-xs font-normal text-slate-400">#{bill.id}</span>
@@ -391,10 +391,10 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
         <tbody>
           {bill.bill_items.map((it) => (
             <tr key={it.id} className="border-t border-slate-100">
-              <td className="py-1.5 pr-2">
+              <td className="py-1 pr-2">
                 {it.description} <span className="text-slate-400">({it.source})</span>
               </td>
-              <td className="py-1.5 text-right">
+              <td className="py-1 text-right">
                 {canUpdate && !bill.finalized_at ? (
                   <div className="flex items-center justify-end gap-1">
                     <input
@@ -424,7 +424,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
       </table>
 
       {canUpdate && !bill.finalized_at && (
-        <form onSubmit={addItem} className="space-y-1.5 border-t border-slate-100 pt-2">
+        <form onSubmit={addItem} className="space-y-1.5 border-t border-slate-100 pt-1.5">
           <MedicineInput
             endpoint="/api/pharmacy/medicines/suggest"
             value={addForm.description}
@@ -446,7 +446,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
         </form>
       )}
 
-      <div className="space-y-1 border-t border-slate-200 pt-2 text-xs">
+      <div className="space-y-1 border-t border-slate-200 pt-1.5 text-xs">
         <div className="flex justify-between"><span>Items total</span><span>₹{itemsTotal.toFixed(2)}</span></div>
         {discountTotal > 0 && <div className="flex justify-between text-amber-700"><span>Discounts</span><span>-₹{discountTotal.toFixed(2)}</span></div>}
         {paidTotal > 0 && <div className="flex justify-between text-green-700"><span>Paid</span><span>₹{paidTotal.toFixed(2)}</span></div>}
@@ -455,7 +455,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
       </div>
 
       {(bill.payments.length > 0 || bill.refunds.length > 0) && (
-        <div className="border-t border-slate-100 pt-2 text-xs">
+        <div className="border-t border-slate-100 pt-1.5 text-xs">
           <p className="mb-1 font-medium text-slate-500">Payment history</p>
           <ul className="space-y-0.5">
             {[...bill.payments.map((p) => ({ ...p, kind: "payment", at: p.paid_at })), ...bill.refunds.map((r) => ({ ...r, kind: "refund", at: r.refunded_at }))]
@@ -471,7 +471,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
       )}
 
       {canUpdate && balance > 0 && (
-        <form onSubmit={recordPayment} className="flex items-end gap-2 border-t border-slate-100 pt-2">
+        <form onSubmit={recordPayment} className="flex items-end gap-2 border-t border-slate-100 pt-1.5">
           <input autoFocus type="number" min="0.01" step="0.01" required placeholder="amount" value={payment.amount}
             onChange={(e) => setPayment((s) => ({ ...s, amount: e.target.value }))}
             className="w-24 rounded border border-slate-300 px-2 py-1 text-xs" />
@@ -486,7 +486,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
       )}
 
       {canUpdate && (
-        <details className="border-t border-slate-100 pt-2 text-xs">
+        <details className="border-t border-slate-100 pt-1.5 text-xs">
           <summary className="cursor-pointer text-slate-500">Discount / refund</summary>
           <form onSubmit={recordDiscount} className="mt-2 flex items-end gap-2">
             <input type="number" min="0.01" step="0.01" required placeholder="discount amount" value={discount.amount}
