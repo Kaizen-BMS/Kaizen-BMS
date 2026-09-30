@@ -46,11 +46,12 @@ function WalkInBill({ onCreated, onError }) {
   const [prices, setPrices] = useState([]);
 
   // Search the pharmacy's own medicine catalog to add a line quickly — a misc/manual line here, not
-  // a real dispense (that stays Pharmacy → Sales / Billing, which actually deducts batch stock). The
-  // price isn't guessed from any batch, since a medicine can have several batches at different
-  // rates — billing staff price it here exactly as every other manual line already works.
+  // a real dispense (that stays Pharmacy → Sales / Billing, which actually deducts batch stock).
+  // Price is pre-filled from the medicine's real, current selling rate (per its smallest unit — see
+  // medicineSuggest.js) so billing staff aren't retyping a number they can already see in the
+  // suggestion list; it stays editable since this line isn't locked to any one batch.
   function addMedicine(m) {
-    const row = { description: m.name, quantity: 1, unitPrice: "" };
+    const row = { description: m.name, quantity: 1, unitPrice: m.sellingRate != null ? String(m.sellingRate) : "" };
     setItems((xs) => (xs.length === 1 && !xs[0].description && !xs[0].unitPrice ? [row] : [...xs, row]));
     setMedQuery("");
   }
@@ -428,7 +429,7 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
             endpoint="/api/pharmacy/medicines/suggest"
             value={addForm.description}
             onChange={(t) => setAddForm((f) => ({ ...f, description: t }))}
-            onPick={(m) => setAddForm((f) => ({ ...f, description: m.name }))}
+            onPick={(m) => setAddForm((f) => ({ ...f, description: m.name, unitPrice: m.sellingRate != null ? String(m.sellingRate) : f.unitPrice }))}
             placeholder="Add another medicine to this bill…"
             className={`${input} w-full`}
           />
