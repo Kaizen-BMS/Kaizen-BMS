@@ -77,15 +77,21 @@ function ReturnFromBill({ bill, onDone, onCancel }) {
   }
 
   if (pharmacyItems.length === 0) return <p className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs text-slate-400">No pharmacy items on this bill to return.</p>;
+  const picked = pharmacyItems.find((it) => String(it.id) === f.billItemId);
+  const unitPrice = picked ? (picked.unit_price != null ? Number(picked.unit_price) : Number(picked.amount) / Number(picked.quantity || 1)) : null;
   return (
     <form onSubmit={submit} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
       <select required value={f.billItemId} onChange={(e) => setF({ ...f, billItemId: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm">
         <option value="">— which item is being returned —</option>
         {pharmacyItems.map((it) => <option key={it.id} value={it.id}>{it.quantity} × {it.description} · {rupee(it.amount)}</option>)}
       </select>
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <input required type="number" min="1" placeholder="Quantity returned" value={f.quantity} onChange={(e) => setF({ ...f, quantity: e.target.value })} className="w-32 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
         <input required placeholder="Reason" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} className="flex-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm" />
+        {/* Live refund preview — quantity x this line's own per-unit price, same math the
+            server actually applies (returns/customer/route.js), so it's obvious quantity
+            changes what comes back, not just what was sold. */}
+        {unitPrice != null && f.quantity !== "" && <span className="shrink-0 text-sm font-medium text-slate-600">= ₹{(unitPrice * Number(f.quantity)).toFixed(2)}</span>}
       </div>
       <div className="flex items-center gap-2">
         <button disabled={busy} className="rounded-md bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{busy ? "Saving…" : "Return & refund"}</button>

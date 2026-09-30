@@ -261,6 +261,12 @@ export function ReturnsTab({ onError, mode = "customer" }) {
                     </select>
                   </label>
                   <label className={lab}>Quantity returned<input required type="number" min="1" placeholder="2" value={custForm.quantity} onChange={(e) => setCustForm({ ...custForm, quantity: e.target.value })} className={`${input} mt-1`} /></label>
+                  {(() => {
+                    const picked = pharmacyItems.find((it) => String(it.id) === custForm.billItemId);
+                    if (!picked || custForm.quantity === "") return null;
+                    const unitPrice = picked.unit_price != null ? Number(picked.unit_price) : Number(picked.amount) / Number(picked.quantity || 1);
+                    return <p className="text-xs text-slate-500">Refund: <b>₹{(unitPrice * Number(custForm.quantity)).toFixed(2)}</b></p>;
+                  })()}
                   <label className={lab}>Reason<input required placeholder="Wrong medicine" value={custForm.reason} onChange={(e) => setCustForm({ ...custForm, reason: e.target.value })} className={`${input} mt-1`} /></label>
                   <button className={primary}>Return &amp; refund</button>
                 </>

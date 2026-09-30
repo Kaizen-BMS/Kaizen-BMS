@@ -122,6 +122,9 @@ function WalkInBill({ onCreated, onError }) {
           <input placeholder="Item / medicine / test" value={it.description} readOnly={!!it.serviceId} onChange={(e) => upd(idx, { description: e.target.value })} className={`${input} min-w-[12rem] flex-1`} />
           <input type="number" min="0.01" step="any" value={it.quantity} onChange={(e) => upd(idx, { quantity: e.target.value })} className={`${input} w-20`} aria-label="Quantity" />
           <input type="number" min="0" step="any" placeholder="₹ price" value={it.unitPrice} readOnly={!!it.serviceId} onChange={(e) => upd(idx, { unitPrice: e.target.value })} className={`${input} w-28`} />
+          {/* Price above is per unit and never changes with quantity — this is the line's
+              actual total, shown live so it's obvious quantity IS being accounted for. */}
+          {it.unitPrice !== "" && <span className="w-20 shrink-0 text-right text-sm font-medium text-slate-600">= ₹{((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0)).toFixed(2)}</span>}
           <button type="button" onClick={() => removeItem(idx)} aria-label="Remove line" className="text-red-500 hover:text-red-700">✕</button>
         </div>
       ))}
