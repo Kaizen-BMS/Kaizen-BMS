@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { apiGet, apiSend } from "@/components/hms/api";
 import PhoneInput from "@/components/hms/PhoneInput";
 
-const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
+const input = "w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-500 focus:outline-none";
 const lab = "block text-xs font-medium text-slate-600";
 const help = "mt-0.5 block text-[11px] font-normal leading-tight text-slate-400";
 const card = "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm";

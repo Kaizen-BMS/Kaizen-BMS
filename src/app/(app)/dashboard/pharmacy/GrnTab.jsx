@@ -9,7 +9,7 @@ import MonthYearInput from "@/components/hms/MonthYearInput";
 import PriceFields, { EMPTY_PRICE } from "@/components/hms/PriceFields";
 import { TYPE_DEFAULTS } from "@/lib/medicineTypes";
 
-const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
+const input = "w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-500 focus:outline-none";
 const lab = "block text-xs font-medium text-slate-600";
 const help = "mt-0.5 block text-[11px] leading-tight text-slate-400";
 

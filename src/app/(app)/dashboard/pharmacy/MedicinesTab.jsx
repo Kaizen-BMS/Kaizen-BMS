@@ -7,7 +7,7 @@ import { MEDICINE_TYPES, SCHEDULES, TYPE_DEFAULTS } from "@/lib/medicineTypes";
 import { composeMedicineName } from "@/lib/medicineName";
 import BarcodeScanner from "@/components/hms/BarcodeScanner";
 
-const input = "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
+const input = "w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-500 focus:outline-none";
 
 function Field({ label, help, children, className = "" }) {
   return (
