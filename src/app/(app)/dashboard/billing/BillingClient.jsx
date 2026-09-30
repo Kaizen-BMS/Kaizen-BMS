@@ -40,7 +40,10 @@ const STATUS_STYLE = {
 
 function WalkInBill({ onCreated, onError }) {
   const [f, setF] = useState({ customerName: "", phone: "" });
-  const [items, setItems] = useState([{ description: "", quantity: 1, unitPrice: "" }]);
+  // Starts empty — a lone blank "type it yourself" row alongside the search box above was
+  // confusing (which one am I supposed to use?). A line only appears once you've actually
+  // picked a medicine, picked from the price list, or explicitly asked for a manual one below.
+  const [items, setItems] = useState([]);
   const [medQuery, setMedQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [prices, setPrices] = useState([]);
@@ -51,8 +54,7 @@ function WalkInBill({ onCreated, onError }) {
   // medicineSuggest.js) so billing staff aren't retyping a number they can already see in the
   // suggestion list; it stays editable since this line isn't locked to any one batch.
   function addMedicine(m) {
-    const row = { description: m.name, quantity: 1, unitPrice: m.sellingRate != null ? String(m.sellingRate) : "" };
-    setItems((xs) => (xs.length === 1 && !xs[0].description && !xs[0].unitPrice ? [row] : [...xs, row]));
+    setItems((xs) => [...xs, { description: m.name, quantity: 1, unitPrice: m.sellingRate != null ? String(m.sellingRate) : "" }]);
     setMedQuery("");
   }
   useEffect(() => {
@@ -63,6 +65,7 @@ function WalkInBill({ onCreated, onError }) {
     return a + (i.serviceId && i.taxPercent && !i.taxInclusive ? line * (1 + i.taxPercent / 100) : line);
   }, 0);
   const upd = (idx, patch) => setItems((xs) => xs.map((x, j) => (j === idx ? { ...x, ...patch } : x)));
+  const removeItem = (idx) => setItems((xs) => xs.filter((_, j) => j !== idx));
 
   async function submit(e) {
     e.preventDefault();
@@ -76,7 +79,7 @@ function WalkInBill({ onCreated, onError }) {
           .map((i) => (i.serviceId ? { serviceId: i.serviceId, quantity: Number(i.quantity) } : { description: i.description, quantity: Number(i.quantity), unitPrice: Number(i.unitPrice) })),
       });
       setF({ customerName: "", phone: "" });
-      setItems([{ description: "", quantity: 1, unitPrice: "" }]);
+      setItems([]);
       onCreated(bill.id);
     } catch (err) {
       onError(err.message);
@@ -101,7 +104,7 @@ function WalkInBill({ onCreated, onError }) {
             const p = prices.find((x) => String(x.serviceId) === e.target.value);
             if (!p) return;
             const row = { description: p.name, quantity: 1, unitPrice: p.price, serviceId: p.serviceId, taxPercent: p.taxPercent, taxInclusive: p.taxInclusive };
-            setItems((xs) => (xs.length === 1 && !xs[0].description && !xs[0].unitPrice ? [row] : [...xs, row]));
+            setItems((xs) => [...xs, row]);
           }}
           className={input}
         >
@@ -113,11 +116,13 @@ function WalkInBill({ onCreated, onError }) {
         <MedicineInput endpoint="/api/pharmacy/medicines/suggest" value={medQuery} onChange={setMedQuery} onPick={addMedicine} placeholder="Search medicine to add a line…" className={input} />
         <p className="mt-0.5 text-[11px] text-slate-400">Adds a manual line here — price it yourself. To actually dispense against pharmacy stock, use Pharmacy → Sales / Billing instead.</p>
       </div>
+      {items.length === 0 && <p className="text-xs text-slate-400">No items yet — search a medicine above, add from the price list, or add a manual line below.</p>}
       {items.map((it, idx) => (
         <div key={idx} className="flex flex-wrap items-center gap-2">
           <input placeholder="Item / medicine / test" value={it.description} readOnly={!!it.serviceId} onChange={(e) => upd(idx, { description: e.target.value })} className={`${input} min-w-[12rem] flex-1`} />
           <input type="number" min="0.01" step="any" value={it.quantity} onChange={(e) => upd(idx, { quantity: e.target.value })} className={`${input} w-20`} aria-label="Quantity" />
           <input type="number" min="0" step="any" placeholder="₹ price" value={it.unitPrice} readOnly={!!it.serviceId} onChange={(e) => upd(idx, { unitPrice: e.target.value })} className={`${input} w-28`} />
+          <button type="button" onClick={() => removeItem(idx)} aria-label="Remove line" className="text-red-500 hover:text-red-700">✕</button>
         </div>
       ))}
       <div className="flex flex-wrap items-center gap-3">
