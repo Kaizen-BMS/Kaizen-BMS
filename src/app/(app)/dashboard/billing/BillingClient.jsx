@@ -434,8 +434,13 @@ function BillDetail({ bill, canUpdate, onChanged, onError }) {
             className={`${input} w-full`}
           />
           <div className="flex items-center gap-2">
-            <input type="number" min="0.01" step="1" value={addForm.quantity} onChange={(e) => setAddForm((f) => ({ ...f, quantity: e.target.value }))} aria-label="Quantity" className={`${input} w-16`} />
+            {/* min/step must agree (both whole numbers) — min="0.01" with step="1" made every
+                whole number the browser's own number-input validation considered "invalid"
+                (Chrome's stepMismatch: valid values became 0.01, 1.01, 2.01…), silently blocking
+                the field and the total that depends on it. */}
+            <input type="number" min="1" step="1" value={addForm.quantity} onChange={(e) => setAddForm((f) => ({ ...f, quantity: e.target.value }))} aria-label="Quantity" className={`${input} w-16`} />
             <input type="number" min="0" step="0.01" placeholder="₹ price" value={addForm.unitPrice} onChange={(e) => setAddForm((f) => ({ ...f, unitPrice: e.target.value }))} className={`${input} w-24`} />
+            {addForm.unitPrice !== "" && <span className="text-xs font-medium text-slate-600">= ₹{((Number(addForm.quantity) || 0) * Number(addForm.unitPrice)).toFixed(2)}</span>}
             <button disabled={addBusy || !addForm.description.trim() || addForm.unitPrice === ""} className="rounded-lg bg-[var(--hms-btn-bg)] px-3 py-1.5 text-xs font-medium text-[var(--hms-btn-fg)] disabled:opacity-50">{addBusy ? "Adding…" : "Add to this bill"}</button>
           </div>
         </form>
