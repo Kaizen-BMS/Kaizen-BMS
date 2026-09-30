@@ -375,12 +375,15 @@ function DutyRosterTab({ canManage }) {
                     </button>
                   )}
                   {showAssign === key && (
-                    <div className="mt-1 space-y-1 rounded border border-amber-200 bg-amber-50 p-1.5">
+                    // slate/white here (not amber) so this actually retints in dark mode —
+                    // amber-50/amber-200 are never redefined by (app)/app.css's dark-mode tokens,
+                    // so they stayed a literal pale cream box on a dark page.
+                    <div className="mt-1 space-y-1 rounded border border-slate-200 bg-white p-1.5 shadow-sm">
                       {assignErr && <p className="rounded bg-red-100 px-1.5 py-1 text-[11px] text-red-700">{assignErr}</p>}
                       <select
                         value={assignForm.userId}
                         onChange={(e) => setAssignForm((f) => ({ ...f, userId: e.target.value }))}
-                        className="w-full rounded border border-slate-300 px-1 py-1 text-xs"
+                        className="w-full rounded border border-slate-300 bg-white px-1 py-1 text-xs"
                       >
                         <option value="">staff…</option>
                         {staffList.map((s) => (
@@ -392,15 +395,15 @@ function DutyRosterTab({ canManage }) {
                           aria-label="Shift"
                           value=""
                           onChange={(e) => { const t = templates.find((x) => String(x.id) === e.target.value); if (t) setAssignForm((f) => ({ ...f, startTime: t.start, endTime: t.end })); }}
-                          className="w-full rounded border border-slate-300 px-1 py-1 text-xs"
+                          className="w-full rounded border border-slate-300 bg-white px-1 py-1 text-xs"
                         >
                           <option value="">shift…</option>
                           {templates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.start}–{t.end})</option>)}
                         </select>
                       )}
                       <div className="flex gap-1">
-                        <input type="time" value={assignForm.startTime} onChange={(e) => setAssignForm((f) => ({ ...f, startTime: e.target.value }))} className="w-full rounded border border-slate-300 px-1 py-1 text-xs" />
-                        <input type="time" value={assignForm.endTime} onChange={(e) => setAssignForm((f) => ({ ...f, endTime: e.target.value }))} className="w-full rounded border border-slate-300 px-1 py-1 text-xs" />
+                        <input type="time" value={assignForm.startTime} onChange={(e) => setAssignForm((f) => ({ ...f, startTime: e.target.value }))} className="w-full rounded border border-slate-300 bg-white px-1 py-1 text-xs" />
+                        <input type="time" value={assignForm.endTime} onChange={(e) => setAssignForm((f) => ({ ...f, endTime: e.target.value }))} className="w-full rounded border border-slate-300 bg-white px-1 py-1 text-xs" />
                       </div>
                       <button
                         onClick={() => assign(key)}
