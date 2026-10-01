@@ -105,7 +105,7 @@ const SERVICES = [
       "IT support & system admins",
     ],
     ctaLabel: "View Openings",
-    ctaHref: "/services/placement-services",
+    ctaHref: "https://mycityhelpline.com",
   },
 ];
 

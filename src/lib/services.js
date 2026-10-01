@@ -20,7 +20,7 @@ export const SERVICES = [
     slug: "jobs-placement",
     title: "Jobs & Placement",
     description: "Recruitment, placement and career advancement.",
-    href: "/services/placement-services",
+    href: "https://mycityhelpline.com",
   },
   {
     slug: "custom-software",

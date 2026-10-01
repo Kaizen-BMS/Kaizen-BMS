@@ -13,7 +13,7 @@ const COMPANY_LINKS = [
 const SERVICE_LINKS = [
   { label: "Hospital Management", href: "/services/hospital-management" },
   { label: "Education", href: "/#how-we-work" },
-  { label: "Recruitment", href: "/services/placement-services" },
+  { label: "Recruitment", href: "https://mycityhelpline.com" },
   { label: "Software", href: "/#how-we-work" },
   { label: "Consultancy", href: "/#how-we-work" },
   { label: "Website & SEO", href: "/#how-we-work" },
