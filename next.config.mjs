@@ -36,6 +36,24 @@ const nextConfig = {
   // 15.5.6, confirmed by the community not to have this regression (see
   // CLAUDE.md "Deployment gotchas").
   // reactCompiler: true,
+  // Deploy-platform build failure 2026-11: `next build --webpack` crashed
+  // during page-data collection with "OS can't spawn worker thread:
+  // Resource temporarily unavailable (os error 11)" (EAGAIN) across 63
+  // parallel build workers — a thread/process ulimit on the build
+  // container, not a code or dependency error (confirmed: compilation
+  // itself had already succeeded by that point). This is a DIFFERENT
+  // failure from the earlier /_global-error prerender crash (see the
+  // reactCompiler comment above) where `cpus: 1` alone was tried and
+  // found to have zero effect — that crash's real cause turned out to be
+  // a missing devDependency, unrelated to worker count. Here the error is
+  // literally about spawning too many OS threads, so capping the worker
+  // pool directly addresses it. Reducing parallelism costs build time,
+  // never correctness — safe to keep even if it turns out not to be the
+  // whole fix.
+  experimental: {
+    cpus: 1,
+    workerThreads: false,
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
