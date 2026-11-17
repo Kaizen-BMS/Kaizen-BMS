@@ -16,7 +16,7 @@ export default function CTA({
   return (
     <section
       id={id}
-      className="relative flex min-h-[42vh] items-center overflow-hidden bg-[#080808] py-16 md:py-20"
+      className="relative flex min-h-[42vh] items-center overflow-hidden bg-[#0A2A43] py-16 md:py-20"
     >
       <div className="pointer-events-none absolute -left-32 top-1/2 h-[440px] w-[440px] -translate-y-1/2 kbms-float md:-left-16">
         <CyanBlob className="h-full w-full" opacity={0.24} />
@@ -50,7 +50,7 @@ export default function CTA({
           >
             <a
               href={primaryHref}
-              className="kbms-glass-invert group inline-flex items-center gap-2 px-7 py-3.5 font-body text-sm font-medium text-[#FAFAF7] transition-colors hover:bg-[#08DCDC] hover:text-[#080808] hover:border-[#08DCDC]"
+              className="kbms-glass-invert group inline-flex items-center gap-2 px-7 py-3.5 font-body text-sm font-medium text-[#FAFAF7] transition-colors hover:bg-[#16A34A] hover:text-[#0A2A43] hover:border-[#16A34A]"
             >
               {primaryLabel}
               <span className="transition-transform duration-300 group-hover:translate-x-1">
@@ -60,7 +60,7 @@ export default function CTA({
             {secondaryLabel && (
               <a
                 href={secondaryHref}
-                className="group inline-flex items-center gap-2 border-b border-[#FAFAF7]/40 pb-1 font-body text-sm font-medium text-[#FAFAF7] transition-colors hover:border-[#08DCDC] hover:text-[#08DCDC]"
+                className="group inline-flex items-center gap-2 border-b border-[#FAFAF7]/40 pb-1 font-body text-sm font-medium text-[#FAFAF7] transition-colors hover:border-[#16A34A] hover:text-[#16A34A]"
               >
                 {secondaryLabel}
                 <span className="transition-transform duration-300 group-hover:translate-x-1">

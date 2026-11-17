@@ -3,7 +3,6 @@ import localFont from "next/font/local";
 import Script from "next/script";
 import "./kaizen.css";
 import ThemeToggle from "@/components/ThemeToggle";
-import ServiceRail from "@/components/ServiceRail";
 import GoogleAnalyticsPageview from "@/components/GoogleAnalyticsPageview";
 
 // Google Analytics (gtag.js) — marketing-site traffic only, scoped to this
@@ -70,7 +69,6 @@ export default function CompanyLayout({ children }) {
         <GoogleAnalyticsPageview gaId={GA_MEASUREMENT_ID} />
       </Suspense>
       {children}
-      <ServiceRail />
       <ThemeToggle />
     </div>
   );

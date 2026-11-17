@@ -1,9 +1,8 @@
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
-import Stats from "@/components/Stats";
-import HowWeWork from "@/components/HowWeWork";
+import AboutStrip from "@/components/AboutStrip";
+import ServicesOverview from "@/components/ServicesOverview";
 import Partners from "@/components/Partners";
-import CTA from "@/components/CTA";
 import Contact from "@/components/Contact";
 import Footer from "@/components/Footer";
 
@@ -27,10 +26,9 @@ export default function Home() {
       <Header />
       <main>
         <Hero />
-        <Stats />
-        <HowWeWork />
+        <AboutStrip />
+        <ServicesOverview />
         <Partners />
-        <CTA />
         <Contact />
       </main>
       <Footer />

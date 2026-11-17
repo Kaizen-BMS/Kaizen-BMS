@@ -491,7 +491,7 @@ function EditProviderModal({ provider, onClose, onSaved }) {
           <p className="text-xs font-semibold uppercase text-slate-500">Behavior</p>
           <label className="mt-2 block text-xs text-slate-500">Request timeout (ms)</label>
           <input type="number" value={timeoutMs} onChange={(e) => setTimeoutMs(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="10000" />
-          <label className="mt-2 block text-xs text-slate-500">Status mapping (vendor status → Kaizen status, JSON)</label>
+          <label className="mt-2 block text-xs text-slate-500">Status mapping (vendor status → Kaizen BMS status, JSON)</label>
           <textarea
             value={statusMapJson}
             onChange={(e) => setStatusMapJson(e.target.value)}
@@ -660,7 +660,7 @@ function SimulateModal({ provider, onClose }) {
     <Modal title={`Simulate provider webhook — ${provider.name}`} onClose={onClose}>
       <div className="space-y-3">
         <p className="text-xs text-slate-500">
-          Makes a real, signed HTTP call to Kaizen&apos;s own webhook endpoint — exercising the genuine inbound
+          Makes a real, signed HTTP call to Kaizen BMS&apos;s own webhook endpoint — exercising the genuine inbound
           pipeline (signature, replay window, idempotency, contract validation, business update, realtime), not a
           function-call shortcut. Use the external order reference from an order you sent (Outbound Orders tab).
         </p>

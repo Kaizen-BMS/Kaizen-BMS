@@ -67,6 +67,11 @@ const NAV = [
   { key: "createTenant", label: "Create Tenant", section: "PLATFORM", route: "/dashboard/platform/tenants/new", icon: "createTenant", action: "tenant:manage", status: "live" },
   { key: "registry", label: "Module Registry", section: "PLATFORM", route: "/dashboard/platform/modules", icon: "registry", action: "tenant:read", status: "live" },
   { key: "platformAnalytics", label: "Platform Analytics", section: "PLATFORM", route: "/dashboard/platform/analytics", icon: "reports", action: "analytics:platform", status: "live" },
+  // Reachable by SUPER_ADMIN and CONTENT_EDITOR alike (rbac.js's
+  // SCOPE_RESTRICTED_ACTIONS names both for blogpost:read) — the only
+  // PLATFORM-section entry a CONTENT_EDITOR's permission array satisfies,
+  // so this is the one item they actually see in the sidebar.
+  { key: "blog", label: "Blog", section: "PLATFORM", route: "/dashboard/platform/blog", icon: "registry", action: "blogpost:read", status: "live" },
 ];
 
 /**

@@ -240,7 +240,7 @@ function PlatformDashboard({ data }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold">Kaizen Platform</h1>
+          <h1 className="text-2xl font-semibold">Kaizen BMS Platform</h1>
           <p className="text-sm text-slate-500">
             {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · Platform owner view
           </p>

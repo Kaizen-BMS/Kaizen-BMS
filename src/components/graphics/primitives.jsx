@@ -7,7 +7,7 @@
  * is a stock icon — every shape is authored for this system.
  */
 
-export const ACCENT = "#08DCDC";
+export const ACCENT = "#16A34A";
 export const ACCENT_2 = "#6E5BFF";
 // Theme-aware — these read the same custom properties the rest of the
 // site themes through, so any primitive using the defaults (Crosshair,

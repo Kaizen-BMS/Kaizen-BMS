@@ -4,7 +4,6 @@ import LiveDashboard from "@/components/LiveDashboard";
 import Process from "@/components/Process";
 import ServiceDetailGrid from "@/components/ServiceDetailGrid";
 import PartnerShowcase from "@/components/PartnerShowcase";
-import CTA from "@/components/CTA";
 import Contact from "@/components/Contact";
 import Footer from "@/components/Footer";
 
@@ -136,6 +135,8 @@ export default function HospitalManagementPage() {
           primaryHref="#services"
           secondaryLabel="Book a Consultation"
           secondaryHref="#contact"
+          image="/images/stock/hospital-hallway.jpg"
+          imageAlt="Clinical staff walking through a hospital corridor"
         />
         <LiveDashboard />
         <Process
@@ -158,14 +159,6 @@ export default function HospitalManagementPage() {
           note="Want your hospital on this list?"
           noteCtaLabel="Become a Partner Hospital"
           noteCtaHref="#contact"
-        />
-        <CTA
-          headline="Ready to transform your hospital?"
-          supporting="Stronger systems, better culture, sustainable growth."
-          primaryLabel="Get Free Consultation"
-          primaryHref="#contact"
-          secondaryLabel="Explore Services"
-          secondaryHref="#services"
         />
         <Contact
           eyebrow="Send Enquiry"

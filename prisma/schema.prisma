@@ -562,6 +562,7 @@ model users {
   attendance_logs                                              attendance_logs[]
   bed_transfers                                                bed_transfers[]
   bills                                                        bills[]
+  blog_posts                                                   blog_posts[]
   consent_forms                                                consent_forms[]
   consultations                                                consultations[]
   departments_departments_created_byTousers                    departments[]                @relation("departments_created_byTousers")
@@ -2034,6 +2035,27 @@ model radiology_tests {
   @@index([tenant_id], map: "idx_radiology_tests_tenant")
 }
 
+model blog_posts {
+  id             BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  slug           String            @unique(map: "uq_blog_posts_slug")
+  title          String            @db.VarChar(255)
+  excerpt        String            @db.VarChar(500)
+  category       String            @db.VarChar(100)
+  cover_image    String?           @db.MediumText
+  content        String            @db.LongText
+  key_points     String?           @db.LongText
+  gallery_images String?           @db.LongText
+  status         blog_posts_status @default(DRAFT)
+  author_user_id BigInt?           @db.UnsignedBigInt
+  published_at   DateTime?         @db.DateTime(0)
+  created_at     DateTime          @default(now()) @db.DateTime(0)
+  updated_at     DateTime          @default(now()) @db.DateTime(0)
+  users          users?            @relation(fields: [author_user_id], references: [id], onUpdate: Restrict, map: "fk_blog_posts_author")
+
+  @@index([author_user_id], map: "idx_blog_posts_author")
+  @@index([status, published_at], map: "idx_blog_posts_status_published")
+}
+
 enum form_templates_form_type {
   PATIENT_REGISTRATION
   CONSULTATION
@@ -2294,21 +2316,6 @@ enum bill_items_source {
   RADIOLOGY
 }
 
-enum users_role {
-  SUPER_ADMIN
-  HOSPITAL_ADMIN
-  DOCTOR
-  PHARMACIST
-  LAB_TECH
-  BILLING_STAFF
-  RECEPTIONIST
-  NURSE
-  OWNER_DOCTOR
-  OWNER_PHARMACIST
-  OWNER_LAB_TECH
-  RADIOLOGY_STAFF
-}
-
 enum radiology_orders_priority {
   ROUTINE
   URGENT
@@ -2439,4 +2446,25 @@ enum vital_parameters_value_type {
 enum staff_profiles_duty_type {
   FIXED
   SHIFT
+}
+
+enum users_role {
+  SUPER_ADMIN
+  HOSPITAL_ADMIN
+  DOCTOR
+  PHARMACIST
+  LAB_TECH
+  BILLING_STAFF
+  RECEPTIONIST
+  NURSE
+  OWNER_DOCTOR
+  OWNER_PHARMACIST
+  OWNER_LAB_TECH
+  RADIOLOGY_STAFF
+  CONTENT_EDITOR
+}
+
+enum blog_posts_status {
+  DRAFT
+  PUBLISHED
 }

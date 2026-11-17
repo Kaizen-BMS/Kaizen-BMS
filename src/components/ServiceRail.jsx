@@ -16,7 +16,7 @@ import { SERVICES, serviceHref } from "@/lib/services";
  * brackets), in the site's own SVG language rather than a stock icon set,
  * but each hinting at what its service is.
  */
-const A = "#08DCDC";
+const A = "#16A34A";
 const MARKS = {
   "hospital-management": (
     <>
@@ -257,7 +257,7 @@ export default function ServiceRail() {
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="mr-[-1px] w-64 self-center border border-(--kbms-line) bg-(--kbms-bg) p-5 shadow-[-8px_0_28px_rgba(0,0,0,0.1)]"
             >
-              <p className="font-body text-[10px] font-medium uppercase tracking-[0.16em] text-[#08DCDC]">
+              <p className="font-body text-[10px] font-medium uppercase tracking-[0.16em] text-[#16A34A]">
                 {open.status === "coming-soon" ? "Coming soon" : "Service"}
               </p>
               <h3 className="font-display mt-1.5 text-lg leading-tight text-(--kbms-ink)">
@@ -270,7 +270,7 @@ export default function ServiceRail() {
                 <a
                   href={serviceHref(open)}
                   onClick={() => setOpenSlug(null)}
-                  className="group mt-4 inline-flex items-center gap-2 border-b border-[#08DCDC] pb-0.5 font-body text-sm font-medium text-(--kbms-ink) transition-colors hover:text-[#08DCDC]"
+                  className="group mt-4 inline-flex items-center gap-2 border-b border-[#16A34A] pb-0.5 font-body text-sm font-medium text-(--kbms-ink) transition-colors hover:text-[#16A34A]"
                 >
                   Explore
                   <span className="transition-transform duration-300 group-hover:translate-x-1">

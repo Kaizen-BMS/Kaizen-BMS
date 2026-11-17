@@ -36,7 +36,7 @@ export default function LiveDashboard() {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="font-body flex items-center gap-2 border border-(--kbms-line) px-3.5 py-1.5 text-sm text-(--kbms-ink)"
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-[#08DCDC]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-[#16A34A]" />
             Revenue up 24% vs. last month
           </motion.div>
         </div>

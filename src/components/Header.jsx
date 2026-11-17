@@ -7,11 +7,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { SERVICES, serviceHref } from "@/lib/services";
 
 const NAV_LINKS = [
-  { label: "About", href: "#about" },
+  { label: "Home", href: "/" },
   { label: "Services", href: "#how-we-work", hasDropdown: true },
-  { label: "Industries", href: "#industries" },
-  { label: "Work", href: "#work" },
-  { label: "Contact", href: "#contact" },
+  { label: "Blog", href: "/blog" },
+  { label: "Contact", href: "/contact" },
 ];
 
 export default function Header() {
@@ -24,7 +23,10 @@ export default function Header() {
   const isHome = pathname === "/";
   // In-page anchors only resolve on the homepage — from a sub-page (e.g.
   // /services/hospital-management) they need to link back to "/" first.
-  const withHome = (hash) => (isHome ? hash : `/${hash}`);
+  // A real absolute path (e.g. "/careers") is already correct from anywhere,
+  // so it passes through untouched instead of picking up a doubled slash.
+  const withHome = (href) =>
+    href.startsWith("#") ? (isHome ? href : `/${href}`) : href;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -50,10 +52,8 @@ export default function Header() {
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 border-b transition-colors duration-500 ${
-        scrolled || menuOpen
-          ? "border-(--kbms-line) bg-(--kbms-bg)/90 backdrop-saturate-150"
-          : "border-transparent bg-transparent"
+      className={`fixed inset-x-0 top-0 z-50 border-b border-(--kbms-line) bg-(--kbms-bg) transition-shadow duration-500 ${
+        scrolled || menuOpen ? "shadow-[0_2px_16px_rgba(10,42,67,0.08)]" : ""
       }`}
     >
       <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between px-6 md:h-20 md:px-10">
@@ -108,7 +108,7 @@ export default function Header() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 8 }}
                       transition={{ duration: 0.22, ease: "easeOut" }}
-                      className="kbms-glass-light absolute left-1/2 top-full mt-3 w-[340px] -translate-x-1/2 p-2"
+                      className="absolute left-1/2 top-full mt-3 w-[340px] -translate-x-1/2 rounded-xl border border-(--kbms-line) bg-(--kbms-bg) p-2 shadow-[0_12px_30px_rgba(10,42,67,0.14)]"
                     >
                       {SERVICES.map((service) => {
                         const comingSoon = service.status === "coming-soon";
@@ -131,7 +131,7 @@ export default function Header() {
                                 Soon
                               </span>
                             ) : (
-                              <span className="shrink-0 text-[#08DCDC] opacity-0 transition-opacity group-hover:opacity-100">
+                              <span className="shrink-0 text-[#16A34A] opacity-0 transition-opacity group-hover:opacity-100">
                                 →
                               </span>
                             )}
@@ -169,9 +169,9 @@ export default function Header() {
           )}
           <a
             href={withHome("#contact")}
-            className="kbms-glass group hidden items-center gap-2 px-5 py-2 font-body text-sm font-medium text-(--kbms-bg) transition-colors hover:bg-[#08DCDC] hover:text-(--kbms-ink) lg:inline-flex"
+            className="group hidden items-center gap-2 rounded-full bg-[#16A34A] px-5 py-2.5 font-body text-sm font-medium text-white shadow-[0_2px_10px_rgba(22,163,74,0.35)] transition-colors hover:bg-[#15803D] lg:inline-flex"
           >
-            Book a Consultation
+            Let&apos;s Talk
             <span className="transition-transform duration-300 group-hover:translate-x-1">
               →
             </span>
@@ -313,9 +313,9 @@ export default function Header() {
                   duration: 0.5,
                   ease: "easeOut",
                 }}
-                className="kbms-glass mt-6 inline-flex w-fit items-center gap-2 px-6 py-3 font-body text-lg font-medium text-(--kbms-bg) transition-colors hover:bg-[#08DCDC] hover:text-(--kbms-ink)"
+                className="mt-6 inline-flex w-fit items-center gap-2 rounded-full bg-[#16A34A] px-6 py-3 font-body text-lg font-medium text-white transition-colors hover:bg-[#15803D]"
               >
-                Book a Consultation →
+                Let&apos;s Talk →
               </motion.a>
               {!isHome && (
                 <motion.a

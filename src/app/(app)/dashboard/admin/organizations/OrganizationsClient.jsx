@@ -64,7 +64,7 @@ export default function OrganizationsClient() {
                   </p>
                 </div>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${f.current ? "bg-blue-100 text-blue-700" : f.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                  {f.current ? "Working here" : f.platformSuspended ? "Suspended by Kaizen" : f.enabled ? "Active" : "Inactive"}
+                  {f.current ? "Working here" : f.platformSuspended ? "Suspended by Kaizen BMS" : f.enabled ? "Active" : "Inactive"}
                 </span>
               </div>
               <dl className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">

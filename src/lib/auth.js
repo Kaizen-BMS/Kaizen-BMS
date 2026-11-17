@@ -5,6 +5,12 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { SESSION_TTL_SECONDS } = require("./authConstants");
 
+// Roles that legitimately have tenant_id = NULL (not tied to one tenant).
+// SUPER_ADMIN is the platform team; CONTENT_EDITOR is the one
+// responsibility the blog CMS assigns — same "lives outside every tenant"
+// shape, see rbac.js.
+const PLATFORM_ROLES = new Set(["SUPER_ADMIN", "CONTENT_EDITOR"]);
+
 function getSecret() {
   const s = process.env.JWT_SECRET;
   if (!s || s.length < 32) {
@@ -37,15 +43,16 @@ function signSession({ userId, tenantId, role, homeTenantId }) {
 
 /**
  * Verify a session token → { userId, tenantId, role } | null.
- * tenantId is null only for SUPER_ADMIN (platform team, not tied to one
- * tenant); every other role must carry one.
+ * tenantId is null only for a platform-level role (SUPER_ADMIN,
+ * CONTENT_EDITOR — see PLATFORM_ROLES above); every other role must carry
+ * one.
  */
 async function verifySession(token) {
   try {
     const p = jwt.verify(token, getSecret(), { algorithms: ["HS256"] });
     if (p.uid == null || !p.role) return null;
-    const isSuper = p.role === "SUPER_ADMIN";
-    if (p.tid == null && !isSuper) return null;
+    const isPlatform = PLATFORM_ROLES.has(p.role);
+    if (p.tid == null && !isPlatform) return null;
     return {
       userId: Number(p.uid),
       tenantId: p.tid == null ? null : Number(p.tid),

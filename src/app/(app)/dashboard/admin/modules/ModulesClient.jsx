@@ -74,7 +74,7 @@ function ModuleCard({ m }) {
             </Link>
           </>
         ) : m.rentable ? (
-          <p className="text-xs text-slate-400">Contact your Kaizen account manager to enable this module.</p>
+          <p className="text-xs text-slate-400">Contact your Kaizen BMS account manager to enable this module.</p>
         ) : (
           <p className="text-xs text-slate-400">Not available yet.</p>
         )}

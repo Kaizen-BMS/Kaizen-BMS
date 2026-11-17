@@ -3,8 +3,8 @@ import "./app.css";
 
 export const metadata = {
   title: {
-    default: "Kaizen HMS",
-    template: "%s | Kaizen HMS",
+    default: "Kaizen BMS",
+    template: "%s | Kaizen BMS",
   },
   robots: { index: false, follow: false },
 };

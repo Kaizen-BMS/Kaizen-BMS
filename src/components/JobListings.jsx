@@ -22,7 +22,7 @@ const JOBS = [
   },
 ];
 
-/** Editorial job-listing rows — same numbered-row idiom as the homepage's service index. */
+/** Open-role cards — same card language as the rest of the redesigned site. */
 export default function JobListings() {
   return (
     <section id="jobs" className="border-b border-(--kbms-line) py-11 md:py-16">
@@ -33,7 +33,7 @@ export default function JobListings() {
           size="lg"
         />
 
-        <div className="mt-10 border-t border-(--kbms-line) md:mt-12">
+        <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 md:mt-12">
           {JOBS.map((job, i) => (
             <motion.div
               key={job.title}
@@ -41,27 +41,25 @@ export default function JobListings() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "0px 0px -10% 0px" }}
               transition={{ duration: 0.5, delay: i * 0.1, ease: "easeOut" }}
-              className="flex flex-col gap-6 border-b border-(--kbms-line) py-8 md:flex-row md:items-center md:justify-between md:py-10"
+              className="flex flex-col rounded-2xl border border-(--kbms-line) bg-(--kbms-hover) p-7 shadow-[0_2px_14px_rgba(10,42,67,0.05)] transition-shadow hover:shadow-[0_10px_30px_rgba(10,42,67,0.1)]"
             >
-              <div>
-                <p className="font-body text-xs font-medium uppercase tracking-[0.14em] text-[#08DCDC]">
-                  {job.company}
-                </p>
-                <h3 className="font-display mt-2 text-lg leading-tight text-(--kbms-ink) md:text-xl">
-                  {job.title}
-                </h3>
-                <p className="font-body mt-3 text-sm text-(--kbms-ink-soft)">
-                  {job.location} · {job.type} · {job.skills}
-                </p>
-              </div>
+              <p className="font-body text-xs font-medium uppercase tracking-[0.14em] text-[#16A34A]">
+                {job.company}
+              </p>
+              <h3 className="font-display mt-2 text-lg leading-tight text-(--kbms-ink) md:text-xl">
+                {job.title}
+              </h3>
+              <p className="font-body mt-3 text-sm text-(--kbms-ink-soft)">
+                {job.location} · {job.type} · {job.skills}
+              </p>
 
-              <div className="flex items-center justify-between gap-8 md:flex-col md:items-end md:gap-3">
+              <div className="mt-6 flex items-center justify-between border-t border-(--kbms-line) pt-5">
                 <p className="font-display text-base text-(--kbms-ink)">
                   {job.salary}
                 </p>
                 <a
                   href="#contact"
-                  className="group inline-flex items-center gap-2 border-b border-(--kbms-ink)/30 pb-0.5 font-body text-sm font-medium text-(--kbms-ink) transition-colors hover:border-(--kbms-ink)"
+                  className="group inline-flex items-center gap-2 rounded-full border border-(--kbms-ink)/25 px-4 py-2 font-body text-sm font-medium text-(--kbms-ink) transition-colors hover:border-(--kbms-ink)"
                 >
                   Apply
                   <span className="transition-transform duration-300 group-hover:translate-x-1">

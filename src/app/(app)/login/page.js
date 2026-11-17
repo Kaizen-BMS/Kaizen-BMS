@@ -12,7 +12,7 @@ const ERRORS = {
   too_many_attempts: "Too many attempts. Wait 15 minutes and try again.",
   unauthorized: "Session expired. Please sign in again.",
   account_disabled: "This login has been switched off. Please contact your admin.",
-  tenant_suspended: "This hospital's account is currently suspended. Contact Kaizen support.",
+  tenant_suspended: "This hospital's account is currently suspended. Contact Kaizen BMS support.",
 };
 
 function LoginForm() {
@@ -77,7 +77,7 @@ function LoginForm() {
             />
           </Link>
           <div>
-            <h1 className="text-xl font-semibold">Kaizen HMS</h1>
+            <h1 className="text-xl font-semibold">Kaizen BMS</h1>
             <p className="text-sm text-slate-500">Staff sign in</p>
           </div>
         </div>
@@ -154,7 +154,7 @@ function LoginForm() {
       </form>
 
       <p className="relative z-10 text-xs text-slate-500">
-        Want Kaizen HMS for your hospital?{" "}
+        Want Kaizen BMS for your hospital?{" "}
         <Link
           href="/services/hospital-management#contact"
           className="underline hover:text-slate-800"

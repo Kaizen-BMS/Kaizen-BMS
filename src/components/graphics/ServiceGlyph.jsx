@@ -39,9 +39,9 @@ export default function ServiceGlyph({ index = 0, size = 160 }) {
           />
         );
       })}
-      <line x1={c} y1={c} x2={nodes[0].x} y2={nodes[0].y} stroke="#08DCDC" strokeOpacity="0.5" strokeWidth="0.75" />
+      <line x1={c} y1={c} x2={nodes[0].x} y2={nodes[0].y} stroke="#16A34A" strokeOpacity="0.5" strokeWidth="0.75" />
       {nodes.map((n, i) => (
-        <circle key={`n-${i}`} cx={n.x} cy={n.y} r={n.big ? 4.5 : 2.4} fill={n.big ? "#08DCDC" : "var(--kbms-ink)"} fillOpacity={n.big ? 1 : 0.55} />
+        <circle key={`n-${i}`} cx={n.x} cy={n.y} r={n.big ? 4.5 : 2.4} fill={n.big ? "#16A34A" : "var(--kbms-ink)"} fillOpacity={n.big ? 1 : 0.55} />
       ))}
       <circle cx={c} cy={c} r={3} fill="var(--kbms-ink)" />
     </svg>

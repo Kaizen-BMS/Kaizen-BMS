@@ -71,6 +71,10 @@ const RULES = [
   [/^\/api\/referral-sources/, null, "Changed referral sources", "admin"],
   [/^\/api\/branding/, null, "Changed print branding", "admin"],
   [/^\/api\/services|^\/api\/tariffs/, null, "Changed the price list", "billing"],
+  [/^\/api\/admin\/blog$/, "POST", "Created a blog post", "blog"],
+  [/^\/api\/admin\/blog\/\d+$/, "PATCH", "Updated a blog post", "blog"],
+  [/^\/api\/admin\/blog\/\d+$/, "DELETE", "Deleted a blog post", "blog"],
+  [/^\/api\/admin\/blog-editors/, null, "Changed blog editor accounts", "blog"],
 ];
 
 const VERB = { POST: "Added", PUT: "Updated", PATCH: "Updated", DELETE: "Removed" };

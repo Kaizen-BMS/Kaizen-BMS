@@ -12,9 +12,10 @@ export const SERVICES = [
   },
   {
     slug: "educational-services",
-    title: "Educational Services",
+    title: "Educational Services & Consultancy",
     description:
-      "Academic support, career counselling, STEM and institutional development.",
+      "Academic support, career counselling and study-abroad admissions guidance.",
+    href: "https://globalvistaeducators.com/",
   },
   {
     slug: "jobs-placement",
@@ -26,34 +27,20 @@ export const SERVICES = [
     slug: "custom-software",
     title: "Custom Software",
     description: "ERP, portals, automation and enterprise apps, built to fit.",
-  },
-  {
-    slug: "expert-consultancy",
-    title: "Expert Consultancy",
-    description: "Strategy, process optimization and digital transformation.",
+    href: "/services/custom-software",
   },
   {
     slug: "website-development-seo",
     title: "Website Development & SEO",
     description: "Websites, portals, SEO and digital presence.",
+    href: "/services/website-development-seo",
   },
   {
     slug: "digital-marketing",
     title: "Digital Marketing",
     description:
       "SEO, paid ads, social, content, branding and lead generation.",
-  },
-  {
-    slug: "educational-consultancy",
-    title: "Educational Consultancy",
-    description:
-      "University admissions, scholarships, visas and study-abroad support.",
-  },
-  {
-    slug: "online-marketplace",
-    title: "Online Marketplace",
-    description: "Medical, laboratory and institutional supplies.",
-    status: "coming-soon",
+    href: "/services/digital-marketing",
   },
 ];
 

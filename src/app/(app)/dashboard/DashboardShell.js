@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Icon from "@/components/hms/icons";
@@ -82,11 +83,15 @@ export default function DashboardShell({ user, groups, children }) {
           className="flex items-center gap-2 border-b px-3"
           style={{ height: "var(--hms-topbar-h)", borderColor: "var(--hms-border)" }}
         >
-          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[var(--hms-accent)] text-xs font-bold text-[var(--hms-btn-fg)]">
-            K
-          </div>
+          <Image
+            src="/images/KaizenBMS infinity logo.png"
+            alt="Kaizen BMS"
+            width={28}
+            height={28}
+            className="h-7 w-7 shrink-0 object-contain"
+          />
           {!collapsed && (
-            <span className="truncate text-sm font-semibold">Kaizen HMS</span>
+            <span className="truncate text-sm font-semibold">Kaizen BMS HMS</span>
           )}
         </div>
 

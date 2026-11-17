@@ -153,7 +153,7 @@ function IndustriesPanel() {
               onClick={() => setActive(i)}
               className={`font-body border px-3 py-1.5 text-sm transition-colors ${
                 i === active
-                  ? "border-[#08DCDC] bg-[#08DCDC] text-(--kbms-ink)"
+                  ? "border-[#16A34A] bg-[#16A34A] text-(--kbms-ink)"
                   : "border-(--kbms-line) text-(--kbms-ink) hover:bg-(--kbms-hover)"
               }`}
             >
@@ -240,7 +240,7 @@ function RadialMetrics() {
               cx={130 + Math.cos(a) * 100}
               cy={130 + Math.sin(a) * 100}
               r="3"
-              fill="#08DCDC"
+              fill="#16A34A"
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ duration: 0.3, delay: 0.5 + i * 0.08 }}
@@ -283,7 +283,7 @@ function Flow() {
           className="flex items-center gap-3"
         >
           <span className="font-display text-base md:text-lg">{s}</span>
-          {i < arr.length - 1 && <span className="text-[#08DCDC]">→</span>}
+          {i < arr.length - 1 && <span className="text-[#16A34A]">→</span>}
         </motion.span>
       ))}
     </div>
@@ -302,7 +302,7 @@ function Funnel() {
             transition={{ ...spring, delay: i * 0.12 }}
             className={
               i === stages.length - 1
-                ? "origin-bottom bg-[#08DCDC]"
+                ? "origin-bottom bg-[#16A34A]"
                 : "origin-bottom bg-(--kbms-ink)"
             }
             style={{ height: 104, width: `${100 - i * 20}%` }}
@@ -333,7 +333,7 @@ function ConsultingBars() {
                 delay: i * 0.12,
                 ease: [0.16, 1, 0.3, 1],
               }}
-              className={`h-full ${i === STEPS.length - 1 ? "bg-[#08DCDC]" : "bg-(--kbms-ink)"}`}
+              className={`h-full ${i === STEPS.length - 1 ? "bg-[#16A34A]" : "bg-(--kbms-ink)"}`}
             />
           </div>
         </div>
@@ -366,7 +366,7 @@ export default function HowWeWork() {
               onClick={() => setTab(t.id)}
               className={`font-body pb-1 text-sm font-medium transition-colors ${
                 tab === t.id
-                  ? "border-b border-[#08DCDC] text-(--kbms-ink)"
+                  ? "border-b border-[#16A34A] text-(--kbms-ink)"
                   : "text-(--kbms-ink-soft) hover:text-(--kbms-ink)"
               }`}
             >
@@ -482,7 +482,7 @@ export default function HowWeWork() {
                         className="grid grid-cols-1 gap-2 border-b border-(--kbms-line) py-4 md:grid-cols-12 md:gap-6"
                       >
                         <div className="md:col-span-4">
-                          <p className="font-body text-[11px] font-medium uppercase tracking-[0.14em] text-[#08DCDC]">
+                          <p className="font-body text-[11px] font-medium uppercase tracking-[0.14em] text-[#16A34A]">
                             {c.industry}
                           </p>
                           <p className="font-display mt-1 text-base text-(--kbms-ink) md:text-lg">

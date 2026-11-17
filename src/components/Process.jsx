@@ -29,7 +29,7 @@ const DEFAULT_STAGES = [
 
 export default function Process({
   id = "about",
-  eyebrow = "The Kaizen Approach",
+  eyebrow = "The Kaizen BMS Approach",
   title = "Not one big change — a system of better decisions, better processes, better execution.",
   stages = DEFAULT_STAGES,
 }) {
@@ -54,24 +54,21 @@ export default function Process({
           <div className="absolute left-0 right-0 top-[18px] hidden h-px bg-(--kbms-line) md:block" />
           <motion.div
             style={{ scaleX: lineScale }}
-            className="absolute left-0 right-0 top-[18px] hidden h-px origin-left bg-[#08DCDC] md:block"
+            className="absolute left-0 right-0 top-[18px] hidden h-px origin-left bg-[#16A34A] md:block"
           />
 
           <div className="grid grid-cols-1 gap-12 md:grid-cols-4 md:gap-8">
             {stages.map((stage, i) => (
               <motion.div
-                key={stage.n}
+                key={stage.title}
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "0px 0px -15% 0px" }}
                 transition={{ duration: 0.6, delay: i * 0.15, ease: "easeOut" }}
                 className="relative"
               >
-                <div className="relative z-10 mb-6 h-[9px] w-[9px] rounded-full bg-(--kbms-ink) md:mx-0" />
-                <p className="font-body text-xs font-medium tracking-[0.16em] text-[#08DCDC]">
-                  {stage.n}
-                </p>
-                <h3 className="font-display mt-2 text-2xl text-(--kbms-ink)">
+                <div className="relative z-10 mb-5 h-[9px] w-[9px] rounded-full bg-[#16A34A] md:mx-0" />
+                <h3 className="font-display text-2xl text-(--kbms-ink)">
                   {stage.title}
                 </h3>
                 <p className="mt-3 font-body text-sm leading-relaxed text-(--kbms-ink-soft)">

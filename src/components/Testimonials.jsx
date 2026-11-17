@@ -6,7 +6,7 @@ import SectionHeading from "./SectionHeading";
 const TESTIMONIALS = [
   {
     quote:
-      "As a recruiter, I've hired 15+ top talents through Kaizen. The candidate quality is exceptional.",
+      "As a recruiter, I've hired 15+ top talents through Kaizen BMS. The candidate quality is exceptional.",
     name: "Amit Patel",
     role: "HR Manager, GlobalSoft",
   },

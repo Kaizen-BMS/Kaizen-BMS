@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import SectionHeading from "./SectionHeading";
 
 const FIELD_CLASS =
-  "w-full border-0 border-b border-(--kbms-line) bg-transparent py-3 font-body text-base text-(--kbms-ink) placeholder:text-(--kbms-ink-soft)/60 outline-none transition-colors focus:border-[#08DCDC]";
+  "w-full border-0 border-b border-(--kbms-line) bg-transparent py-3 font-body text-base text-(--kbms-ink) placeholder:text-(--kbms-ink-soft)/60 outline-none transition-colors focus:border-[#16A34A]";
 
 const DEFAULT_FIELDS = [
   { name: "name", placeholder: "Name", required: true },
@@ -60,7 +60,7 @@ export default function Contact({
                 </p>
                 <a
                   href="mailto:mybusinessaffairs01@gmail.com"
-                  className="font-body mt-1.5 block break-words text-base text-(--kbms-ink) hover:text-[#08DCDC]"
+                  className="font-body mt-1.5 block break-words text-base text-(--kbms-ink) hover:text-[#16A34A]"
                 >
                   mybusinessaffairs01@gmail.com
                 </a>
@@ -71,7 +71,7 @@ export default function Contact({
                 </p>
                 <a
                   href="tel:+919814561099"
-                  className="font-body mt-1.5 block text-base text-(--kbms-ink) hover:text-[#08DCDC]"
+                  className="font-body mt-1.5 block text-base text-(--kbms-ink) hover:text-[#16A34A]"
                 >
                   +91 98145 61099
                 </a>
@@ -122,7 +122,7 @@ export default function Contact({
                 <div className="sm:col-span-2">
                   <button
                     type="submit"
-                    className="kbms-glass group mt-2 inline-flex items-center gap-2 px-7 py-3.5 font-body text-sm font-medium text-(--kbms-bg) transition-colors hover:bg-[#08DCDC] hover:text-(--kbms-ink)"
+                    className="kbms-glass group mt-2 inline-flex items-center gap-2 px-7 py-3.5 font-body text-sm font-medium text-(--kbms-bg) transition-colors hover:bg-[#16A34A] hover:text-(--kbms-ink)"
                   >
                     {submitLabel}
                     <span className="transition-transform duration-300 group-hover:translate-x-1">

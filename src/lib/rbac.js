@@ -25,6 +25,13 @@ const ROLES = [
   "OWNER_PHARMACIST",
   "OWNER_LAB_TECH",
   "RADIOLOGY_STAFF",
+  // Platform-level, like SUPER_ADMIN (tenant_id NULL) — Kaizen's own public
+  // blog is not tenant data, so its one responsible person sits outside
+  // every tenant too. Deliberately NOT given the "*" wildcard: this role's
+  // only job is the blog (see BLOG_EDITOR below) — see canPlatform()'s
+  // BLOG_RESTRICTED_ACTIONS for why that's enforced even against a wildcard
+  // role.
+  "CONTENT_EDITOR",
 ];
 
 // Staff Management self-service: every staff role (not OWNER_* — a solo
@@ -243,9 +250,15 @@ const OWNER_EXTRAS = [
   "tariff:manage",
 ];
 
+// The one, narrow job a CONTENT_EDITOR account exists for — never the "*"
+// wildcard, so assigning someone this responsibility can never accidentally
+// also hand them tenant/platform control.
+const BLOG_EDITOR = ["blogpost:manage", "blogpost:read"];
+
 const PERMISSIONS = {
   SUPER_ADMIN: ["*"],
   HOSPITAL_ADMIN: ["*"],
+  CONTENT_EDITOR: BLOG_EDITOR,
 
   RECEPTIONIST,
   DOCTOR,
@@ -299,10 +312,29 @@ function isPlatformOnlyAction(action) {
   return PLATFORM_ONLY_ACTIONS.has(action);
 }
 
-/** can(role, action) AND, for platform-only actions, session.role === "SUPER_ADMIN". */
+/**
+ * Same shape as PLATFORM_ONLY_ACTIONS above, generalized to an explicit
+ * allow-list of roles instead of "SUPER_ADMIN only" — added for the blog
+ * CMS, where the one correct role is CONTENT_EDITOR, not SUPER_ADMIN.
+ * Kaizen's public blog is platform content, not tenant content, so
+ * HOSPITAL_ADMIN's (and any other role's) "*" wildcard must never satisfy
+ * these either — exactly the gap the 2026-09-15 fix closed for
+ * tenant:read/tenant:manage, generalized here instead of duplicated.
+ * blogeditor:manage (creating/removing a CONTENT_EDITOR login) is
+ * SUPER_ADMIN-only — a content editor must never be able to grant that
+ * responsibility to someone else.
+ */
+const SCOPE_RESTRICTED_ACTIONS = new Map([
+  ["blogpost:read", new Set(["SUPER_ADMIN", "CONTENT_EDITOR"])],
+  ["blogpost:manage", new Set(["SUPER_ADMIN", "CONTENT_EDITOR"])],
+  ["blogeditor:manage", new Set(["SUPER_ADMIN"])],
+]);
+
+/** can(role, action) AND, for platform-only / scope-restricted actions, role is on that action's explicit allow-list. */
 function canPlatform(session, action) {
   if (!session || !can(session.role, action)) return false;
   if (isPlatformOnlyAction(action)) return session.role === "SUPER_ADMIN";
+  if (SCOPE_RESTRICTED_ACTIONS.has(action)) return SCOPE_RESTRICTED_ACTIONS.get(action).has(session.role);
   return true;
 }
 
